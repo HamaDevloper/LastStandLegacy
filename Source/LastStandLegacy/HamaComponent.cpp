@@ -177,6 +177,18 @@ void UHamaComponent::IncreaseMaxStamina(float AmountToAdd)
 	Client_OnMaxStaminaChanged(MaxStamina, Stamina);
 }
 
+void UHamaComponent::ResetMaxStamina()
+{
+	// دڵنیابوونەوە لەوەی تەنها سێرڤەر ئەم کارە دەکات
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
+
+	// گەڕاندنەوەی ماکس ستامینا بۆ ١٠٠ (یان هەر بڕێک کە دیفۆڵتە لای خۆت)
+	MaxStamina = 100.f;
+
+	// بەکارهێنانەوەی هەمان ئەو فەنکشنەی خۆت بۆ ئاگادارکردنەوەی کڵایەنتەکە
+	Client_OnMaxStaminaChanged(MaxStamina, Stamina);
+}
+
 void UHamaComponent::Client_OnMaxStaminaChanged_Implementation(float NewMaxStamina, float NewCurrentStamina)
 {
 	MaxStamina = NewMaxStamina;

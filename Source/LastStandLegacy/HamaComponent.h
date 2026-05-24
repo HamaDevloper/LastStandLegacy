@@ -68,6 +68,7 @@ public:
 	void SetFiring(bool bNewFiring);
 
 	void IncreaseMaxStamina(float AmountToAdd);
+	void ResetMaxStamina();
 
 public:
 	// ✅ ڤاریابڵەکان وەک خۆیان پارێزراون بەڵام ReplicatedUsing مان لابردووە چونکە Saved Moves خۆی کارەکە دەکات

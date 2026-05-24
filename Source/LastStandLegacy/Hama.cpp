@@ -1,5 +1,4 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "HamaMovementComponent.h"
@@ -65,18 +64,8 @@ void AHama::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// وەرگرتنی پۆینتەری کۆنترۆڵەر
-	OwnerController = Cast<APlayerController>(GetController());
-	if (OwnerController)
-	{
-		// چالاککردنی سیستمی Enhanced Input Mapping Context
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(OwnerController->GetLocalPlayer()))
-		{
-			Subsystem->AddMappingContext(DefaultMappingContext, 0);
-		}
-	}
-
-	if (PlayerCrossHairClass)
+	// دروستکردنی Crosshair تەنها بۆ ئەو یاریزانەی کە کۆنترۆڵی کارەکتەرەکەی لایە
+	if (IsLocallyControlled() && PlayerCrossHairClass)
 	{
 		CrossHairRef = CreateWidget<UUserWidget>(GetWorld(), PlayerCrossHairClass);
 		if (CrossHairRef)
@@ -102,12 +91,13 @@ void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AHama::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+
 	if (HamaComponent)
 	{
+		// بەکارهێنانی StartSlideRoutine بۆ ئەوەی دڵنیا بین کە Delegateـەکە دەبەسترێتەوە
 		if (bIsCrouchButtonHold && bCanJumpSlide)
 		{
-			PlayAnimMontage(SlideMontage);
-			HamaComponent->StartSlide();
+			StartSlideRoutine();
 		}
 	}
 	bCanJumpSlide = false;
@@ -125,6 +115,14 @@ void AHama::Tick(float DeltaTime)
 void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
+		{
+			Subsystem->AddMappingContext(DefaultMappingContext, 0);
+		}
+	}
 
 	if (UEnhancedInputComponent* EnhancedInput = CastChecked<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -242,10 +240,11 @@ void AHama::Look(const FInputActionValue& Value)
 
 void AHama::JumpActionPressed()
 {
+	// ئەگەر لە سلایددا بوو، سلایدەکە دەوەستێنین و ڕێگە دەدەین دوای بازدانەکە سلاید بکاتەوە
 	if (HamaComponent && HamaComponent->bIsSlide)
 	{
 		bCanJumpSlide = true;
-		HamaComponent->StopSlide();
+		StopSlideRoutine(); // وەستاندنی تەواوەتی سلاید و ئەنیمەیشنەکە
 	}
 
 	if (HamaComponent && HamaComponent->IsSprinting())
@@ -253,8 +252,8 @@ void AHama::JumpActionPressed()
 		HamaComponent->StopSprinting();
 	}
 
-	// ئەگەر کارەکتەرەکە کڕنووشی بردبوو (Crouch)، پێش بازدانەکە با هەستێتەوە
-	if (bIsCrouched) UnCrouch();
+	// ئەگەر کارەکتەرەکە کڕنووشی بردبوو، پێش بازدانەکە با هەستێتەوە
+	if (GetCharacterMovement()->IsCrouching()) UnCrouch();
 
 	Jump();
 }
@@ -262,17 +261,16 @@ void AHama::JumpActionPressed()
 void AHama::CrouchActionPressed()
 {
 	bIsCrouchButtonHold = true;
+	if (HamaComponent && HamaComponent->bIsSlide) return;
+
 	if (HamaComponent && IsSprinting())
 	{
-		HamaComponent->StopSprinting();
-		PlayAnimMontage(SlideMontage);
-		HamaComponent->StartSlide();
-		FOnMontageEnded MontageEndedDelegate;
-		MontageEndedDelegate.BindUObject(this, &AHama::OnMontageEnded);
-		GetMesh()->GetAnimInstance()->Montage_SetEndDelegate(MontageEndedDelegate, SlideMontage);
+		StartSlideRoutine();
 		return;
 	}
+
 	if (GetCharacterMovement()->IsFalling()) return;
+
 	if (HamaMovementComponent)
 	{
 		if(HamaMovementComponent->IsCrouching())
@@ -286,6 +284,36 @@ void AHama::CrouchActionPressed()
 void AHama::CrouchActionReleased()
 {
 	bIsCrouchButtonHold = false;
+}
+
+void AHama::StartSlideRoutine()
+{
+	if (!HamaComponent) return;
+
+	HamaComponent->StopSprinting();
+	PlayAnimMontage(SlideMontage);
+	HamaComponent->StartSlide();
+
+	// بەستنەوەی فەنکشنی کۆتایی مۆنتاژ بۆ ئەوەی لە کاتی خۆی سلایدەکە بوەستێت
+	if (GetMesh() && GetMesh()->GetAnimInstance() && SlideMontage)
+	{
+		FOnMontageEnded MontageEndedDelegate;
+		MontageEndedDelegate.BindUObject(this, &AHama::OnMontageEnded);
+		GetMesh()->GetAnimInstance()->Montage_SetEndDelegate(MontageEndedDelegate, SlideMontage);
+	}
+}
+
+void AHama::StopSlideRoutine()
+{
+	if (!HamaComponent) return;
+
+	HamaComponent->StopSlide();
+
+	// وەستاندنی ئەنیمەیشنەکە بە زۆر (Force Stop) بۆ Slide Cancel
+	if (SlideMontage)
+	{
+		StopAnimMontage(SlideMontage);
+	}
 }
 
 void AHama::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)

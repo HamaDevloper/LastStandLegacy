@@ -151,6 +151,8 @@ protected:
 	void JumpActionPressed();
 	void CrouchActionPressed();
 	void CrouchActionReleased();
+    void StartSlideRoutine();
+    void StopSlideRoutine();
 	void SwitchCameraPressed(const FInputActionInstance& Instance);
 	void SwitchCameraReleased();
 	void SprintActionPressed();
