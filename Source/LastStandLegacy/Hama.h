@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Hama.generated.h"
 
+#define ECC_Zombie ECC_GameTraceChannel1
 // -----------------------------------------------------------------------------
 // Forward Declarations (پێناسە پێشوەختەکان)
 // -----------------------------------------------------------------------------
@@ -36,6 +37,8 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Landed(const FHitResult& Hit) override;
+	virtual void PossessedBy(AController* NewController) override; // بۆ سێرڤەر
+	virtual void OnRep_Controller() override;
 public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -68,7 +71,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|UI")
 	TSubclassOf<UUserWidget> PlayerCrossHairClass;
 
-	UPROPERTY()
+	UPROPERTY(BlueprintReadOnly, Category = "UI")
 	TObjectPtr<UUserWidget> CrossHairRef;
 
 public:
@@ -115,6 +118,8 @@ protected:
 	// -----------------------------------------------------------------------------
 	// Internal State Variables (گۆڕاوە ناوخۆییەکانی دۆخی کارەکتەر)
 	// -----------------------------------------------------------------------------
+	static const float CrossHairTimer;
+	
 	UPROPERTY(BlueprintReadOnly, Category = "Player|Camera")
 	bool bIsInFirstPerson = false;
 
@@ -156,16 +161,22 @@ protected:
 	void SwitchCameraPressed(const FInputActionInstance& Instance);
 	void SwitchCameraReleased();
 	void SprintActionPressed();
+	void StartCrossHairTimer();
+	void CrossHairTrace();
+	void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
 
 	void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Camera")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Event")
 	void Switchcamera(bool bIsRightShoulderViewChanged);
 
 public:
-	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Camera")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Event")
 	void OnAim(bool InAiming);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Event")
+	void CrossHairUpdate(bool bInRange);
 
 protected:
 	bool IsSprinting() const;
@@ -189,5 +200,12 @@ public:
 
 	UFUNCTION(NetMulticast, Unreliable)
 	void Multicast_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
+
+
+
+private:
+	FTimerHandle CrossHairTimerHandle;
+
+	bool bLastCrossHairState = false;
 
 };

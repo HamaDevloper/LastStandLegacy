@@ -57,6 +57,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 	FPCamera->bUsePawnControlRotation = true;
 }
 
+const float AHama::CrossHairTimer = 0.1f;
 // -----------------------------------------------------------------------------
 // Gameplay Lifecycle (دەستپێکی کایەکە)
 // -----------------------------------------------------------------------------
@@ -64,28 +65,31 @@ void AHama::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// دروستکردنی Crosshair تەنها بۆ ئەو یاریزانەی کە کۆنترۆڵی کارەکتەرەکەی لایە
 	if (IsLocallyControlled() && PlayerCrossHairClass)
 	{
 		CrossHairRef = CreateWidget<UUserWidget>(GetWorld(), PlayerCrossHairClass);
+
 		if (CrossHairRef)
 		{
 			CrossHairRef->AddToViewport();
 		}
 	}
+
+	OwnerController = Cast<APlayerController>(GetController());
+	StartCrossHairTimer();
 }
 
 void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
-	if (OwnerController)
+
+	GetWorldTimerManager().ClearTimer(CrossHairTimerHandle);
+
+	if (CrossHairRef)
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(OwnerController->GetLocalPlayer()))
-		{
-			Subsystem->RemoveMappingContext(DefaultMappingContext);
-		}
+		CrossHairRef->RemoveFromParent();
+		CrossHairRef = nullptr;
 	}
-	CrossHairRef = nullptr;
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -103,10 +107,98 @@ void AHama::Landed(const FHitResult& Hit)
 	bCanJumpSlide = false;
 }
 
+void AHama::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	// سێرڤەر کۆنترۆڵەرەکەی وەرگرت
+	StartCrossHairTimer();
+}
+
+void AHama::OnRep_Controller()
+{
+	Super::OnRep_Controller();
+
+	// کڵایەنت کۆنترۆڵەرەکەی وەرگرت
+	StartCrossHairTimer();
+}
+
 // Called every frame
 void AHama::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+}
+
+void AHama::StartCrossHairTimer()
+{
+	if (!IsLocallyControlled())
+		return;
+
+	if (!OwnerController)
+	{
+		OwnerController = Cast<APlayerController>(GetController());
+	}
+
+	if (!OwnerController)
+		return;
+
+	if (GetWorldTimerManager().IsTimerActive(CrossHairTimerHandle))
+		return;
+
+	GetWorldTimerManager().SetTimer(
+		CrossHairTimerHandle,
+		this,
+		&AHama::CrossHairTrace,
+		CrossHairTimer,
+		true
+	);
+}
+
+void AHama::CrossHairTrace()
+{
+	if (!OwnerController)
+	{
+		OwnerController = Cast<APlayerController>(GetController());
+		if (!OwnerController) return;
+	}
+
+	FVector TraceStart;
+	FRotator TraceRotation;
+
+	OwnerController->GetPlayerViewPoint(TraceStart, TraceRotation);
+
+	const FVector TraceEnd =
+		TraceStart + (TraceRotation.Vector() * 5000.f);
+
+	FTraceDelegate TraceDelegate;
+	TraceDelegate.BindUObject(this, &AHama::OnCrossHairTraceCompleted);
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(CrossHairTrace), false);
+	Params.AddIgnoredActor(this);
+
+	GetWorld()->AsyncLineTraceByChannel(
+		EAsyncTraceType::Single,
+		TraceStart,
+		TraceEnd,
+		ECC_Zombie,
+		Params,
+		FCollisionResponseParams::DefaultResponseParam,
+		&TraceDelegate
+	);
+}
+
+void AHama::OnCrossHairTraceCompleted(
+	const FTraceHandle& TraceHandle,
+	FTraceDatum& TraceDatum)
+{
+	const bool bHit = TraceDatum.OutHits.IsValidIndex(0) &&
+		IsValid(TraceDatum.OutHits[0].GetActor());
+
+	if (bHit != bLastCrossHairState)
+	{
+		bLastCrossHairState = bHit;
+		CrossHairUpdate(bHit);
+	}
 }
 
 // -----------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 #include "HamaMovementComponent.h"
 #include "GameFramework/Character.h"
-#include "HamaComponent.h" // ⚠️ زۆر گرنگە بۆ ئەوەی سێرڤەر بیبینێت
+#include "HamaComponent.h"
 #include "Net/UnrealNetwork.h"
 
 UHamaMovementComponent::UHamaMovementComponent()

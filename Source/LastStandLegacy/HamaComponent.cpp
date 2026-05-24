@@ -67,20 +67,15 @@ void UHamaComponent::StartSlide()
 {
 	if (bIsSlide) return;
 	bIsSlide = true;
-	if (!OwnerCharacter->HasAuthority()) Server_SetSlideState(true);
+	//if (!OwnerCharacter->HasAuthority()) Server_SetSlideState(true);
+	OnRep_Slide();
 }
 
 void UHamaComponent::StopSlide()
 {
 	if (!bIsSlide) return;
 	bIsSlide = false;
-	if (!OwnerCharacter->HasAuthority()) Server_SetSlideState(false);
-}
-
-void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
-{
-	if (bIsSlide == bNewSlideState) return;
-	bIsSlide = bNewSlideState;
+	OnRep_Slide();
 }
 
 void UHamaComponent::SetSprinting(bool bNewSprinting)
