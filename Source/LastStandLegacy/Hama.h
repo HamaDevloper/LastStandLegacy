@@ -34,7 +34,8 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
-
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Landed(const FHitResult& Hit) override;
 public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -121,8 +122,9 @@ protected:
 	bool bIsInRightShoulderView = false;
 
 	bool bIsHoldedTrigger = false;
-
 	bool bIsAimButtonHold = false;
+	bool bIsCrouchButtonHold = false;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "Player|Perks")
 	void StaminaUpPerk();
@@ -145,6 +147,7 @@ protected:
 	void Look(const FInputActionValue& Value);
 	void JumpActionPressed();
 	void CrouchActionPressed();
+	void CrouchActionReleased();
 	void SwitchCameraPressed(const FInputActionInstance& Instance);
 	void SwitchCameraReleased();
 	void SprintActionPressed();
@@ -157,4 +160,24 @@ public:
 
 protected:
 	bool IsSprinting() const;
+
+
+
+
+protected:
+	// ئەنیمەیشنی پەرکەکە لە جۆری Anim Montage
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animations")
+	UAnimMontage* DrinkPerkMontage;
+
+public:
+	// ئەمە فەنکشنە سەرەکییەکەیە کە لۆکاڵی لێدەدات
+	void PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
+
+	// ئەمە فەنکشنی سێرڤەرە بۆ ئەوەی یاریزانەکانی تر ئاگادار بکاتەوە
+	UFUNCTION(Server, Reliable)
+	void Server_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
+
 };

@@ -65,14 +65,17 @@ public:
 
 public:
 	// ✅ ڤاریابڵەکان وەک خۆیان پارێزراون بەڵام ReplicatedUsing مان لابردووە چونکە Saved Moves خۆی کارەکە دەکات
-	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
+	UPROPERTY(ReplicatedUsing = OnRep_Sprinting, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	bool bIsSprinting = false;
 
-	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
+	UPROPERTY(ReplicatedUsing = OnRep_Aiming, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	bool bIsAiming = false;
 
-	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
+	UPROPERTY(ReplicatedUsing = OnRep_Firing, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	bool bIsFiring = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_Slide, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
+	bool bSlide = false;
 
 	bool IsSprinting() const { return bIsSprinting; }
 
@@ -93,4 +96,6 @@ private:
 	UFUNCTION()
 	void OnRep_Firing();
 
+	UFUNCTION()
+	void OnRep_Slide();
 };

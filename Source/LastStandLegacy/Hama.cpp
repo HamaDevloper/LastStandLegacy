@@ -86,6 +86,24 @@ void AHama::BeginPlay()
 	}
 }
 
+void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+	if (OwnerController)
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(OwnerController->GetLocalPlayer()))
+		{
+			Subsystem->RemoveMappingContext(DefaultMappingContext);
+		}
+	}
+	CrossHairRef = nullptr;
+}
+
+void AHama::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+}
+
 // Called every frame
 void AHama::Tick(float DeltaTime)
 {
@@ -130,8 +148,19 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AHama::StaminaUpPerk()
 {
 	if (!HamaComponent) return;
-	if (HasAuthority()) HamaComponent->IncreaseMaxStamina(100.f);
-	else Server_StaminaUpPerk();
+
+	//PlayDrinkPerkAnimation(StaminaUpMontage);
+
+	if (!HasAuthority())
+	{
+		// کڵایەنت تەنها داواکاری دەنێرێت و چاوەڕێی سێرڤەر دەکات
+		Server_StaminaUpPerk();
+	}
+	else
+	{
+		// ئەگەر خۆی سێرڤەر بوو ڕاستەوخۆ زیادی دەکات
+		HamaComponent->IncreaseMaxStamina(100.f);
+	}
 }
 
 void AHama::Server_StaminaUpPerk_Implementation()
@@ -216,6 +245,8 @@ void AHama::JumpActionPressed()
 
 void AHama::CrouchActionPressed()
 {
+	if (!HamaComponent) return;
+	bIsCrouchButtonHold = true;
 	if (HamaComponent && IsSprinting())
 	{
 		HamaComponent->StopSprinting();
@@ -229,6 +260,11 @@ void AHama::CrouchActionPressed()
 		}
 		else Crouch();
 	}
+}
+
+void AHama::CrouchActionReleased()
+{
+	bIsCrouchButtonHold = false;
 }
 
 void AHama::SwitchCameraPressed(const FInputActionInstance& Instance)
@@ -282,9 +318,44 @@ void AHama::SprintActionPressed()
 	{
 		UnCrouch();
 	}
-
-	// 3. ئێستا بە دڵنیاییەوە فەرمانی ڕاکردنەکە بدە
 	HamaComponent->StartSprinting();
+}
+
+void AHama::PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay)
+{
+	// ئەگەر مۆنتاژەکە بوونی نەبوو، کۆدەکە ڕادەگرێت
+	if (!PerkMontageToPlay) return;
+
+	// ١. لێدانی ئەنیمەیشنەکە دەستبەجێ لای خۆت (0ms لاگ)
+	PlayAnimMontage(PerkMontageToPlay);
+
+	// ٢. ناردنی بۆ سێرڤەر ئەگەر کڵایەنت بوویت
+	if (!HasAuthority())
+	{
+		Server_PlayDrinkPerkAnimation(PerkMontageToPlay); // مۆنتاژەکە دەنێرێت بۆ سێرڤەر
+	}
+	else
+	{
+		Multicast_PlayDrinkPerkAnimation(PerkMontageToPlay);
+	}
+}
+
+void AHama::Server_PlayDrinkPerkAnimation_Implementation(UAnimMontage* PerkMontageToPlay)
+{
+	// سێرڤەر مۆنتاژەکە وەردەگرێت و دەیدات بە مۆڵتیکاست
+	Multicast_PlayDrinkPerkAnimation(PerkMontageToPlay);
+}
+
+void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(UAnimMontage* PerkMontageToPlay)
+{
+	// ڕێگری لە دووبارەبوونەوە لای خۆت
+	if (IsLocallyControlled()) return;
+
+	// ٣. کڵایەنتەکانی تر ڕێک ئەو مۆنتاژە لێدەدەنەوە کە نێردراوە
+	if (PerkMontageToPlay)
+	{
+		PlayAnimMontage(PerkMontageToPlay);
+	}
 }
 
 bool AHama::IsSprinting() const

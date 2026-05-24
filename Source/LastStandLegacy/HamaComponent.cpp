@@ -5,14 +5,12 @@
 #include "Hama.h"
 #include "HamaMovementComponent.h"
 
-// Sets default values for this component's properties
 UHamaComponent::UHamaComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
 }
 
-// Called when the game starts
 void UHamaComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -30,6 +28,7 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	// کڵایەنتی خۆی ئەمەی پێویست نییە چونکە بە SavedMoves پێشبینی دەکرێت، تەنها بۆ خەڵکی ترە
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsSprinting, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsAiming, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsFiring, COND_SkipOwner);
@@ -40,11 +39,7 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 	if (bIsAiming == bNewAiming) return;
 	bIsAiming = bNewAiming;
 
-	// ✅ ڕاستەوخۆ فڵاگەکە دەدەین بە مۆڤمێنت کۆمپۆنێنت، ئەو خۆی نێتۆرکەکە لە ڕێگەی Saved Moves ڕێکدەخات
-	if (MoveComp)
-	{
-		MoveComp->bAiming = bIsAiming;
-	}
+	if (MoveComp) MoveComp->bAiming = bIsAiming;
 }
 
 void UHamaComponent::SetFiring(bool bNewFiring)
@@ -52,47 +47,7 @@ void UHamaComponent::SetFiring(bool bNewFiring)
 	if (bIsFiring == bNewFiring) return;
 	bIsFiring = bNewFiring;
 
-	// ✅ ڕاستەوخۆ بۆ تەقەکردنیش بە هەمان شێوە
-	if (MoveComp)
-	{
-		MoveComp->bFiring = bIsFiring;
-	}
-}
-
-// 🌟 ئەم فەنکشنە تەنها لەسەر سێرڤەر جێبەجێ دەبێت
-void UHamaComponent::IncreaseMaxStamina(float AmountToAdd)
-{
-	if (GetOwner() && !GetOwner()->HasAuthority()) return;
-
-	// ١. دۆزینەوەی ڕێژەی ئێستای ستەمینا پێش گۆڕینی ماکس (مثلاً 50 / 100 = 0.5)
-	float CurrentStaminaPercentage = (MaxStamina > 0.f) ? (Stamina / MaxStamina) : 1.f;
-
-	// ٢. بەرزکردنەوەی ماکس ستەمینا لای سێرڤەر
-	MaxStamina += AmountToAdd;
-
-	// ٣. حیسابکردنەوەی ستەمینای نوێ بە پێی هەمان ڕێژەی کۆن (مثلاً 0.5 * 200 = 100)
-	Stamina = MaxStamina * CurrentStaminaPercentage;
-
-	// ٤. ئەگەر غار نادات، دڵنیا دەبینەوە کە تایمەری ڕیجێنەکە کار دەکات بۆ ئەوەی دەستبەجێ پڕ ببێتەوە
-	if (!bIsSprinting && !GetWorld()->GetTimerManager().IsTimerActive(StaminaRegenTimerHandle))
-	{
-		// ئەگەر لە ناو کاتی سزادا نەبووین، با ڕاستەوخۆ دەست بە ڕیجێن بکاتەوە
-		if (!GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle))
-		{
-			GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
-		}
-	}
-
-	// ٥. ناردنی فەرمان بۆ کڵایەنت بۆ ئەوەی حساباتی لۆکاڵی ڕێک بخاتەوە
-	Client_OnMaxStaminaChanged(MaxStamina, Stamina);
-}
-
-// 🌟 ئەم فەنکشنە تەنها لای کڵایەنتی خاوەن (Local Client) لێدەدات
-void UHamaComponent::Client_OnMaxStaminaChanged_Implementation(float NewMaxStamina, float NewCurrentStamina)
-{
-	// کڵایەنت بەهاکان یەکسان دەکاتەوە لەگەڵ سێرڤەر بۆ ئەوەی تووشی Desync نەبن
-	MaxStamina = NewMaxStamina;
-	Stamina = NewCurrentStamina;
+	if (MoveComp) MoveComp->bFiring = bIsFiring;
 }
 
 void UHamaComponent::StartSprinting()
@@ -116,10 +71,7 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 
 	bIsSprinting = bNewSprinting;
 
-	if (MoveComp)
-	{
-		MoveComp->bSprinting = bIsSprinting;
-	}
+	if (MoveComp) MoveComp->bSprinting = bIsSprinting;
 
 	if (bIsSprinting)
 	{
@@ -133,6 +85,8 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 	}
 }
 
+// ============== STAMINA LOGIC ==============
+
 void UHamaComponent::DrainStamina()
 {
 	if (!OwnerCharacter || !MoveComp) return;
@@ -143,8 +97,8 @@ void UHamaComponent::DrainStamina()
 		SetSprinting(false);
 		if (OwnerCharacter && OwnerCharacter->IsAimButtonHeld())
 		{
-			SetAiming(true);             // Aimەکەی بۆ چالاک بکەرەوە
-			OwnerCharacter->OnAim(true); // زوومی کامێراکەی (TPP Zoom) بۆ بگەڕێنەوە
+			SetAiming(true);
+			OwnerCharacter->OnAim(true);
 		}
 		GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, PenaltyStamina);
 		return;
@@ -186,17 +140,44 @@ void UHamaComponent::RegenerateStamina()
 	Stamina = FMath::Clamp(Stamina + StaminaRegenRate * 0.1f, 0.f, MaxStamina);
 }
 
+void UHamaComponent::IncreaseMaxStamina(float AmountToAdd)
+{
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
+
+	float CurrentStaminaPercentage = (MaxStamina > 0.f) ? (Stamina / MaxStamina) : 1.f;
+	MaxStamina += AmountToAdd;
+	Stamina = MaxStamina * CurrentStaminaPercentage;
+
+	if (!bIsSprinting && !GetWorld()->GetTimerManager().IsTimerActive(StaminaRegenTimerHandle) && !GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle))
+	{
+		GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
+	}
+
+	Client_OnMaxStaminaChanged(MaxStamina, Stamina);
+}
+
+void UHamaComponent::Client_OnMaxStaminaChanged_Implementation(float NewMaxStamina, float NewCurrentStamina)
+{
+	MaxStamina = NewMaxStamina;
+	Stamina = NewCurrentStamina;
+}
+
+// ================= ON_REP FUNCTIONS (SIMULATED PROXIES) =================
+
 void UHamaComponent::OnRep_Sprinting()
 {
+	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
 	if (MoveComp)
 	{
 		MoveComp->bSprinting = bIsSprinting;
+		// ناچارکردنی کۆمپۆنێنتەکە بۆ دووبارە حیسابکردنەوەی خێرایی بە پشتبەستن بە بڕیارە نوێیەکە
 		MoveComp->MaxWalkSpeed = MoveComp->GetMaxSpeed();
 	}
 }
 
 void UHamaComponent::OnRep_Aiming()
 {
+	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
 	if (MoveComp)
 	{
 		MoveComp->bAiming = bIsAiming;
@@ -206,9 +187,15 @@ void UHamaComponent::OnRep_Aiming()
 
 void UHamaComponent::OnRep_Firing()
 {
+	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
 	if (MoveComp)
 	{
 		MoveComp->bFiring = bIsFiring;
 		MoveComp->MaxWalkSpeed = MoveComp->GetMaxSpeed();
 	}
+}
+
+void UHamaComponent::OnRep_Slide()
+{
+	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
 }

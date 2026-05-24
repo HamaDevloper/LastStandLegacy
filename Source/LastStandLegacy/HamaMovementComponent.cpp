@@ -2,9 +2,8 @@
 
 #include "HamaMovementComponent.h"
 #include "GameFramework/Character.h"
+#include "HamaComponent.h" // ⚠️ زۆر گرنگە بۆ ئەوەی سێرڤەر بیبینێت
 #include "Net/UnrealNetwork.h"
-
-// ================= CONSTRUCTOR =================
 
 UHamaMovementComponent::UHamaMovementComponent()
 {
@@ -17,34 +16,36 @@ float UHamaMovementComponent::GetMaxSpeed() const
 {
 	float MaxSpeed = Super::GetMaxSpeed();
 
-	if (bAiming)
-	{
-		return AimSpeed;
-	}
-
-	if (IsCrouching() || bFiring)
-	{
-		return 300.f;
-	}
-
-	if (bSprinting)
-	{
-		return SprintSpeed;
-	}
+	if (bAiming) return AimSpeed;
+	if (IsCrouching() || bFiring) return 300.f;
+	if (bSprinting) return SprintSpeed;
 
 	return MaxSpeed;
 }
 
-// ================= COMPRESSED FLAGS =================
+// ================= COMPRESSED FLAGS (SERVER READS THIS) =================
 
 void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 {
 	Super::UpdateFromCompressedFlags(Flags);
 
-	// سێرڤەر لێرەدا فڵاگەکان دەخوێنێتەوە کە کڵایەنت بۆی ناردووە
+	// سێرڤەر فڵاگەکان دەخوێنێتەوە کە یاریزانەکە بۆی ناردووە
 	bSprinting = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
 	bAiming = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
 	bFiring = (Flags & FSavedMove_Character::FLAG_Custom_2) != 0;
+
+	// ✅ لێرەدا پردی پەیوەندییەکە دروست دەکەین:
+	// ئەگەر ئێمە سێرڤەرین، با ڤاریابڵە Replicatedـەکانی ناو HamaComponent ئەپدەیت بکەین
+	// بۆ ئەوەی بە ئۆتۆماتیکی بنێردرێن بۆ یاریزانەکانی تر (Simulated Proxies)
+	if (CharacterOwner && CharacterOwner->HasAuthority())
+	{
+		if (UHamaComponent* HamaComp = CharacterOwner->FindComponentByClass<UHamaComponent>())
+		{
+			HamaComp->bIsSprinting = bSprinting;
+			HamaComp->bIsAiming = bAiming;
+			HamaComp->bIsFiring = bFiring;
+		}
+	}
 }
 
 // ================= SAVED MOVE =================
@@ -57,11 +58,7 @@ void UHamaMovementComponent::FSavedMove_Hama::Clear()
 	bSavedWantsToFire = false;
 }
 
-void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(
-	ACharacter* C,
-	float DT,
-	FVector const& Accel,
-	FNetworkPredictionData_Client_Character& Data)
+void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT, FVector const& Accel, FNetworkPredictionData_Client_Character& Data)
 {
 	Super::SetMoveFor(C, DT, Accel, Data);
 	if (UHamaMovementComponent* Comp = Cast<UHamaMovementComponent>(C->GetCharacterMovement()))
@@ -83,10 +80,7 @@ void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 	}
 }
 
-bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(
-	const FSavedMovePtr& NewMove,
-	ACharacter* C,
-	float MaxDelta) const
+bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* C, float MaxDelta) const
 {
 	const FSavedMove_Hama* Other = static_cast<const FSavedMove_Hama*>(NewMove.Get());
 
@@ -101,29 +95,17 @@ uint8 UHamaMovementComponent::FSavedMove_Hama::GetCompressedFlags() const
 {
 	uint8 Result = Super::GetCompressedFlags();
 
-	// ✅ چاکسازی ڕێکخستنی بیتەکان (Bitwise) بە پێی ڕێزبەندی فەرمی لۆجیکەکە بۆ ئەوەی داتاکان تێکەڵ نەبن
-	if (bSavedWantsToSprint)
-	{
-		Result |= FSavedMove_Character::FLAG_Custom_0;
-	}
-	if (bSavedWantsToAim)
-	{
-		Result |= FSavedMove_Character::FLAG_Custom_1;
-	}
-	if (bSavedWantsToFire)
-	{
-		Result |= FSavedMove_Character::FLAG_Custom_2;
-	}
+	if (bSavedWantsToSprint) Result |= FSavedMove_Character::FLAG_Custom_0;
+	if (bSavedWantsToAim) Result |= FSavedMove_Character::FLAG_Custom_1;
+	if (bSavedWantsToFire) Result |= FSavedMove_Character::FLAG_Custom_2;
 
 	return Result;
 }
 
 // ================= PREDICTION DATA =================
 
-UHamaMovementComponent::FNetworkPredictionData_Client_Hama::FNetworkPredictionData_Client_Hama(
-	const UCharacterMovementComponent& MoveComponent)
-	: Super(MoveComponent)
-{
+UHamaMovementComponent::FNetworkPredictionData_Client_Hama::FNetworkPredictionData_Client_Hama(const UCharacterMovementComponent& MoveComponent)
+	: Super(MoveComponent) {
 }
 
 FSavedMovePtr UHamaMovementComponent::FNetworkPredictionData_Client_Hama::AllocateNewMove()
