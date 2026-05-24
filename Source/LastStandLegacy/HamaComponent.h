@@ -46,6 +46,12 @@ public:
 	void StartSprinting();
 	void StopSprinting();
 
+	void StartSlide();
+	void StopSlide();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetSlideState(bool bNewSlideState);
+
 	float GetStamina() const { return Stamina; }
 
 protected:
@@ -75,7 +81,7 @@ public:
 	bool bIsFiring = false;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Slide, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
-	bool bSlide = false;
+	bool bIsSlide = false;
 
 	bool IsSprinting() const { return bIsSprinting; }
 

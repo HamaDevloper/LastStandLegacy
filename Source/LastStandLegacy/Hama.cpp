@@ -102,6 +102,15 @@ void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AHama::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+	if (HamaComponent)
+	{
+		if (bIsCrouchButtonHold && bCanJumpSlide)
+		{
+			PlayAnimMontage(SlideMontage);
+			HamaComponent->StartSlide();
+		}
+	}
+	bCanJumpSlide = false;
 }
 
 // Called every frame
@@ -132,7 +141,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 		// بەستنەوەی کڕاکردن (Crouch)
 		EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Started, this, &AHama::CrouchActionPressed);
-	
+		EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Completed, this, &AHama::CrouchActionReleased);
 		EnhancedInput->BindAction(AimAction, ETriggerEvent::Started, this, &AHama::AimActionPressed);
 		EnhancedInput->BindAction(AimAction, ETriggerEvent::Completed, this, &AHama::AimActionReleased);
 	
@@ -233,10 +242,17 @@ void AHama::Look(const FInputActionValue& Value)
 
 void AHama::JumpActionPressed()
 {
-	if (IsSprinting())
+	if (HamaComponent && HamaComponent->bIsSlide)
+	{
+		bCanJumpSlide = true;
+		HamaComponent->StopSlide();
+	}
+
+	if (HamaComponent && HamaComponent->IsSprinting())
 	{
 		HamaComponent->StopSprinting();
 	}
+
 	// ئەگەر کارەکتەرەکە کڕنووشی بردبوو (Crouch)، پێش بازدانەکە با هەستێتەوە
 	if (bIsCrouched) UnCrouch();
 
@@ -245,11 +261,16 @@ void AHama::JumpActionPressed()
 
 void AHama::CrouchActionPressed()
 {
-	if (!HamaComponent) return;
 	bIsCrouchButtonHold = true;
 	if (HamaComponent && IsSprinting())
 	{
 		HamaComponent->StopSprinting();
+		PlayAnimMontage(SlideMontage);
+		HamaComponent->StartSlide();
+		FOnMontageEnded MontageEndedDelegate;
+		MontageEndedDelegate.BindUObject(this, &AHama::OnMontageEnded);
+		GetMesh()->GetAnimInstance()->Montage_SetEndDelegate(MontageEndedDelegate, SlideMontage);
+		return;
 	}
 	if (GetCharacterMovement()->IsFalling()) return;
 	if (HamaMovementComponent)
@@ -265,6 +286,17 @@ void AHama::CrouchActionPressed()
 void AHama::CrouchActionReleased()
 {
 	bIsCrouchButtonHold = false;
+}
+
+void AHama::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (Montage == SlideMontage)
+	{
+		if (HamaComponent)
+		{
+			HamaComponent->StopSlide();
+		}
+	}
 }
 
 void AHama::SwitchCameraPressed(const FInputActionInstance& Instance)

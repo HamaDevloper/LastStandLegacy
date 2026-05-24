@@ -123,7 +123,10 @@ protected:
 
 	bool bIsHoldedTrigger = false;
 	bool bIsAimButtonHold = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Player|Camera")
 	bool bIsCrouchButtonHold = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Player|Camera")
+	bool bCanJumpSlide = false;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Player|Perks")
@@ -151,6 +154,10 @@ protected:
 	void SwitchCameraPressed(const FInputActionInstance& Instance);
 	void SwitchCameraReleased();
 	void SprintActionPressed();
+
+	void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Camera")
 	void Switchcamera(bool bIsRightShoulderViewChanged);
 
@@ -161,13 +168,14 @@ public:
 protected:
 	bool IsSprinting() const;
 
-
-
-
 protected:
 	// ئەنیمەیشنی پەرکەکە لە جۆری Anim Montage
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animations")
 	UAnimMontage* DrinkPerkMontage;
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animations")
+	UAnimMontage* SlideMontage;
 
 public:
 	// ئەمە فەنکشنە سەرەکییەکەیە کە لۆکاڵی لێدەدات

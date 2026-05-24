@@ -32,6 +32,7 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsSprinting, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsAiming, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsFiring, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(UHamaComponent, bIsSlide, COND_SkipOwner);
 }
 
 void UHamaComponent::SetAiming(bool bNewAiming)
@@ -60,6 +61,26 @@ void UHamaComponent::StopSprinting()
 {
 	if (!bIsSprinting) return;
 	SetSprinting(false);
+}
+
+void UHamaComponent::StartSlide()
+{
+	if (bIsSlide) return;
+	bIsSlide = true;
+	if (!OwnerCharacter->HasAuthority()) Server_SetSlideState(true);
+}
+
+void UHamaComponent::StopSlide()
+{
+	if (!bIsSlide) return;
+	bIsSlide = false;
+	if (!OwnerCharacter->HasAuthority()) Server_SetSlideState(false);
+}
+
+void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
+{
+	if (bIsSlide == bNewSlideState) return;
+	bIsSlide = bNewSlideState;
 }
 
 void UHamaComponent::SetSprinting(bool bNewSprinting)
@@ -198,4 +219,16 @@ void UHamaComponent::OnRep_Firing()
 void UHamaComponent::OnRep_Slide()
 {
 	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
+
+	UAnimInstance* AnimInstance = OwnerCharacter->GetMesh()->GetAnimInstance();
+	if (!AnimInstance || !OwnerCharacter->SlideMontage) return;
+
+	if (bIsSlide)
+	{
+		AnimInstance->Montage_Play(OwnerCharacter->SlideMontage);
+	}
+	else
+	{
+		AnimInstance->Montage_Stop(0.2f, OwnerCharacter->SlideMontage);
+	}
 }
