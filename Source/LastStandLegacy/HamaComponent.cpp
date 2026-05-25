@@ -66,16 +66,34 @@ void UHamaComponent::StopSprinting()
 void UHamaComponent::StartSlide()
 {
 	if (bIsSlide) return;
+
 	bIsSlide = true;
-	//if (!OwnerCharacter->HasAuthority()) Server_SetSlideState(true);
-	OnRep_Slide();
+	if (!OwnerCharacter->HasAuthority())
+	{
+		Server_SetSlideState(true);
+	}
 }
 
 void UHamaComponent::StopSlide()
 {
 	if (!bIsSlide) return;
+
 	bIsSlide = false;
-	OnRep_Slide();
+	if (!OwnerCharacter->HasAuthority())
+	{
+		Server_SetSlideState(false);
+	}
+}
+
+void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
+{
+	if (bIsSlide == bNewSlideState) return;
+	bIsSlide = bNewSlideState;
+
+	if (GetNetMode() == NM_ListenServer)
+	{
+		OnRep_Slide();
+	}
 }
 
 void UHamaComponent::SetSprinting(bool bNewSprinting)
@@ -148,6 +166,7 @@ void UHamaComponent::DrainStamina()
 
 void UHamaComponent::RegenerateStamina()
 {
+	if (bIsSlide) return;
 	if (Stamina >= MaxStamina)
 	{
 		GetWorld()->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
@@ -198,8 +217,6 @@ void UHamaComponent::OnRep_Sprinting()
 	if (MoveComp)
 	{
 		MoveComp->bSprinting = bIsSprinting;
-		// ناچارکردنی کۆمپۆنێنتەکە بۆ دووبارە حیسابکردنەوەی خێرایی بە پشتبەستن بە بڕیارە نوێیەکە
-		MoveComp->MaxWalkSpeed = MoveComp->GetMaxSpeed();
 	}
 }
 
@@ -209,7 +226,6 @@ void UHamaComponent::OnRep_Aiming()
 	if (MoveComp)
 	{
 		MoveComp->bAiming = bIsAiming;
-		MoveComp->MaxWalkSpeed = MoveComp->GetMaxSpeed();
 	}
 }
 
@@ -219,7 +235,6 @@ void UHamaComponent::OnRep_Firing()
 	if (MoveComp)
 	{
 		MoveComp->bFiring = bIsFiring;
-		MoveComp->MaxWalkSpeed = MoveComp->GetMaxSpeed();
 	}
 }
 

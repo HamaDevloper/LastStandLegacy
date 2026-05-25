@@ -7,11 +7,13 @@
 #include "Hama.generated.h"
 
 #define ECC_Zombie ECC_GameTraceChannel1
+
 // -----------------------------------------------------------------------------
 // Forward Declarations (پێناسە پێشوەختەکان)
 // -----------------------------------------------------------------------------
 class UHamaComponent;
 class UHamaMovementComponent;
+class ABaseWeapon;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputMappingContext;
@@ -32,14 +34,6 @@ public:
 	// -----------------------------------------------------------------------------
 	AHama(const FObjectInitializer& ObjectInitializer);
 
-protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void Landed(const FHitResult& Hit) override;
-	virtual void PossessedBy(AController* NewController) override; // بۆ سێرڤەر
-	virtual void OnRep_Controller() override;
-public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
@@ -48,100 +42,164 @@ public:
 
 public:
 	// -----------------------------------------------------------------------------
-	// Components (پێکهاتەکانی کارەکتەرەکە)
+	// Components & References (پێکهاتەکان و سەرچاوەکان)
 	// -----------------------------------------------------------------------------
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
 	TObjectPtr<UHamaComponent> HamaComponent;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
 	TObjectPtr<UHamaMovementComponent> HamaMovementComponent;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
 	TObjectPtr<USpringArmComponent> SpringArm;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
 	TObjectPtr<UCameraComponent> TPCamera;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
 	TObjectPtr<UCameraComponent> FPCamera;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Player|References")
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|References")
 	TObjectPtr<APlayerController> OwnerController;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|UI")
-	TSubclassOf<UUserWidget> PlayerCrossHairClass;
+public:
+	// -----------------------------------------------------------------------------
+	// Weapons & Inventory (چەک و جبەخانە)
+	// -----------------------------------------------------------------------------
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
+	TSubclassOf<ABaseWeapon> DefaultWeapon;
 
-	UPROPERTY(BlueprintReadOnly, Category = "UI")
-	TObjectPtr<UUserWidget> CrossHairRef;
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	TObjectPtr<ABaseWeapon> CurrentWeapon;
+
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	TObjectPtr<ABaseWeapon> PrimaryWeapon;
+
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	TObjectPtr<ABaseWeapon> SecondaryWeapon;
+
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	TObjectPtr<ABaseWeapon> ThirdWeapon;
+
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	FName SocketName;
 
 public:
 	// -----------------------------------------------------------------------------
 	// Input Mapping & Actions (ڕێکخستنەکانی ئینپوت)
 	// -----------------------------------------------------------------------------
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> MoveAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> LookAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> JumpAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> SwitchCameraAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> SprintAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> CrouchAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> AimAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> FireAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Sensitivity")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
 	float NormalSensitivity = 1.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Sensitivity")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
 	float AimingSensitivity = 0.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player|Camera")
-	bool bIsAiming = false;
-
-protected:
+public:
 	// -----------------------------------------------------------------------------
-	// Internal State Variables (گۆڕاوە ناوخۆییەکانی دۆخی کارەکتەر)
+	// UI & HUD (ڕووکاری بەکارهێنەر)
 	// -----------------------------------------------------------------------------
-	static const float CrossHairTimer;
-	
-	UPROPERTY(BlueprintReadOnly, Category = "Player|Camera")
-	bool bIsInFirstPerson = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
+	TSubclassOf<UUserWidget> PlayerCrossHairClass;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Player|Camera")
-	bool bIsInRightShoulderView = false;
-
-	bool bIsHoldedTrigger = false;
-	bool bIsAimButtonHold = false;
-	UPROPERTY(BlueprintReadOnly, Category = "Player|Camera")
-	bool bIsCrouchButtonHold = false;
-	UPROPERTY(BlueprintReadOnly, Category = "Player|Camera")
-	bool bCanJumpSlide = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|UI")
+	TObjectPtr<UUserWidget> CrossHairRef;
 
 public:
-	UFUNCTION(BlueprintCallable, Category = "Player|Perks")
+	// -----------------------------------------------------------------------------
+	// State Checking & Logic Functions (فەنکشنەکانی پشکنینی دۆخ)
+	// -----------------------------------------------------------------------------
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
+	bool bIsCrouchButtonHold = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
+	bool bCanJumpSlide = false;
+
+	UFUNCTION(BlueprintCallable, Category = "Hama|Perks")
 	void StaminaUpPerk();
 
-	// RPC بۆ ئەوەی داواکارییەکە بنێرێت بۆ سێرڤەر
 	UFUNCTION(Server, Reliable)
 	void Server_StaminaUpPerk();
 
 	bool IsAimButtonHeld() const { return bIsAimButtonHold; }
+
+public:
+	// -----------------------------------------------------------------------------
+	// Animations (ئەنیمەیشنەکان)
+	// -----------------------------------------------------------------------------
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
+	UAnimMontage* SlideMontage;
+
+	void PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
+
+	UFUNCTION(Server, Reliable)
+	void Server_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
+
+public:
+	// -----------------------------------------------------------------------------
+	// Blueprint Events (ڕووداوەکانی بلووپڕینت)
+	// -----------------------------------------------------------------------------
+	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
+	void CrossHairUpdate(bool bInRange);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
+	void OnAim(bool InAiming);
+
+protected:
+	// -----------------------------------------------------------------------------
+	// Protected Lifecycle Overrides
+	// -----------------------------------------------------------------------------
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void Landed(const FHitResult& Hit) override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void OnRep_Controller() override;
+
+protected:
+	// -----------------------------------------------------------------------------
+	// Protected Camera & Animations
+	// -----------------------------------------------------------------------------
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
+	bool bIsInFirstPerson = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
+	bool bIsInRightShoulderView = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
+	UAnimMontage* DrinkPerkMontage;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
+	void Switchcamera(bool bIsRightShoulderViewChanged);
 
 protected:
 	// -----------------------------------------------------------------------------
@@ -156,56 +214,33 @@ protected:
 	void JumpActionPressed();
 	void CrouchActionPressed();
 	void CrouchActionReleased();
-    void StartSlideRoutine();
-    void StopSlideRoutine();
+	void StartSlideRoutine();
+	void StopSlideRoutine();
 	void SwitchCameraPressed(const FInputActionInstance& Instance);
 	void SwitchCameraReleased();
 	void SprintActionPressed();
 	void StartCrossHairTimer();
 	void CrossHairTrace();
 	void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
-
 	void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
-
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Event")
-	void Switchcamera(bool bIsRightShoulderViewChanged);
-
-public:
-	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Event")
-	void OnAim(bool InAiming);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "Player|Event")
-	void CrossHairUpdate(bool bInRange);
+	void CreateDefaultWeapon();
+	
 
 protected:
-	bool IsSprinting() const;
+	// -----------------------------------------------------------------------------
+	// Protected Internal Variables
+	// -----------------------------------------------------------------------------
+	static const float CrossHairTimer;
 
-protected:
-	// ئەنیمەیشنی پەرکەکە لە جۆری Anim Montage
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animations")
-	UAnimMontage* DrinkPerkMontage;
-
-public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animations")
-	UAnimMontage* SlideMontage;
-
-public:
-	// ئەمە فەنکشنە سەرەکییەکەیە کە لۆکاڵی لێدەدات
-	void PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
-
-	// ئەمە فەنکشنی سێرڤەرە بۆ ئەوەی یاریزانەکانی تر ئاگادار بکاتەوە
-	UFUNCTION(Server, Reliable)
-	void Server_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
-
-	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
-
-
+	bool bIsHoldedTrigger = false;
+	bool bIsAimButtonHold = false;
 
 private:
+	// -----------------------------------------------------------------------------
+	// Private Core Logic
+	// -----------------------------------------------------------------------------
 	FTimerHandle CrossHairTimerHandle;
-
 	bool bLastCrossHairState = false;
 
+	bool IsSprinting() const;
 };

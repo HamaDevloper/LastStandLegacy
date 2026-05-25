@@ -49,8 +49,8 @@ public:
 	void StartSlide();
 	void StopSlide();
 
-	//UFUNCTION(Server, Reliable)
-	//void Server_SetSlideState(bool bNewSlideState);
+	UFUNCTION(Server, Reliable)
+	void Server_SetSlideState(bool bNewSlideState);
 
 	float GetStamina() const { return Stamina; }
 

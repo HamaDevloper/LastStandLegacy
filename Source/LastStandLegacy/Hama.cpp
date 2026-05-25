@@ -2,6 +2,8 @@
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "HamaMovementComponent.h"
+#include "BaseWeapon.h"
+#include "Net/UnrealNetwork.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -16,7 +18,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UHamaMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	// ناچالاککردنی Tick بۆ زیادکردنی خێرایی پڕۆژەکە
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	// ڕێکخستنەکانی نێتوۆرک و ڕێپلیکەیشن (Networking & Replication)
 	bReplicates = true;
@@ -65,6 +67,8 @@ void AHama::BeginPlay()
 {
 	Super::BeginPlay();
 
+	OwnerController = Cast<APlayerController>(GetController());
+
 	if (IsLocallyControlled() && PlayerCrossHairClass)
 	{
 		CrossHairRef = CreateWidget<UUserWidget>(GetWorld(), PlayerCrossHairClass);
@@ -75,7 +79,7 @@ void AHama::BeginPlay()
 		}
 	}
 
-	OwnerController = Cast<APlayerController>(GetController());
+	if (HasAuthority()) CreateDefaultWeapon();
 	StartCrossHairTimer();
 }
 
@@ -90,6 +94,16 @@ void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		CrossHairRef->RemoveFromParent();
 		CrossHairRef = nullptr;
 	}
+}
+
+void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME_CONDITION(AHama, CurrentWeapon, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AHama, PrimaryWeapon, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(AHama, SecondaryWeapon, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(AHama, ThirdWeapon, COND_OwnerOnly);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -156,6 +170,7 @@ void AHama::StartCrossHairTimer()
 
 void AHama::CrossHairTrace()
 {
+	if (!CurrentWeapon) return;
 	if (!OwnerController)
 	{
 		OwnerController = Cast<APlayerController>(GetController());
@@ -168,7 +183,7 @@ void AHama::CrossHairTrace()
 	OwnerController->GetPlayerViewPoint(TraceStart, TraceRotation);
 
 	const FVector TraceEnd =
-		TraceStart + (TraceRotation.Vector() * 5000.f);
+		TraceStart + (TraceRotation.Vector() * CurrentWeapon->MaxRange);
 
 	FTraceDelegate TraceDelegate;
 	TraceDelegate.BindUObject(this, &AHama::OnCrossHairTraceCompleted);
@@ -324,7 +339,7 @@ void AHama::Look(const FInputActionValue& Value)
 	FVector2D lookVector = Value.Get<FVector2D>();
 
 	// گۆڕینی هەستیاری (Sensitivity) بەپێی ئەوەی نیشانەی گرتووە یان نا
-	float ApplySensitivity = bIsAiming ? AimingSensitivity : NormalSensitivity;
+	float ApplySensitivity = bIsAimButtonHold ? AimingSensitivity : NormalSensitivity;
 
 	AddControllerYawInput(lookVector.X * ApplySensitivity);
 	AddControllerPitchInput(lookVector.Y * ApplySensitivity);
@@ -416,6 +431,62 @@ void AHama::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 		{
 			HamaComponent->StopSlide();
 		}
+	}
+}
+
+void AHama::CreateDefaultWeapon()
+{
+	// ١. پشکنین بۆ ئەوەی دڵنیا بینەوە جۆری چەکی سەرەتایی دیاری کراوە
+	if (!DefaultWeapon) return;
+	// ٢. ڕێکخستنی پارامیتەرەکانی سپۆنکردن بۆ سێرڤەر
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.Instigator = this;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FVector SpawnLocation = GetActorLocation();
+	FRotator SpawnRotation = GetActorRotation();
+
+	// ٣. سپۆنکردنی چەکەکە
+	ABaseWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ABaseWeapon>(DefaultWeapon, SpawnLocation, SpawnRotation, SpawnParams);
+
+	if (SpawnedWeapon)
+	{
+		// ٤. لۆجیکی دابەشکردنی چەکەکە بەسەر خانەکانی ئینڤێنتۆری (١، ٢، ٣)
+		if (!PrimaryWeapon)
+		{
+			PrimaryWeapon = SpawnedWeapon;
+			UE_LOG(LogTemp, Log, TEXT("چەکی یەکەم پڕکرایەوە (PrimaryWeapon)"));
+		}
+		else if (!SecondaryWeapon)
+		{
+			SecondaryWeapon = SpawnedWeapon;
+			UE_LOG(LogTemp, Log, TEXT("چەکی دووەم پڕکرایەوە (SecondaryWeapon)"));
+		}
+		else if (!ThirdWeapon)
+		{
+			ThirdWeapon = SpawnedWeapon;
+			UE_LOG(LogTemp, Log, TEXT("چەکی سێیەم پڕکرایەوە (ThirdWeapon)"));
+		}
+		else
+		{
+			// ئەگەر هەموو خانەکان پڕ بوون، چەکە کۆنەکە دەسڕێتەوە و ئەمە جێگەی دەگرێتەوە (یان دەتوانیت لۆجیکی فڕێدان دابنێیت)
+			if (CurrentWeapon)
+			{
+				CurrentWeapon->Destroy();
+			}
+			PrimaryWeapon = SpawnedWeapon;
+		}
+
+		// ٥. دیاریکردنی چەکی دەستی ئێستای یاریزانەکە
+		CurrentWeapon = SpawnedWeapon;
+
+		// ٦. بەکارهێنانی SocketName بۆ بەستنەوەی چەکەکە بە دەستی کارەکتەرەکەوە
+		// ئەگەر SocketName بەتاڵ بوو لە ناو ئیدیتەر، ناوێکی بنەڕەتی (Default) وەردەگرێت
+		FName WeaponSocketToAttach = SocketName.IsNone() ? FName("WeaponSocket") : SocketName;
+
+		FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
+		CurrentWeapon->AttachToComponent(GetMesh(), AttachRules, WeaponSocketToAttach);
 	}
 }
 
