@@ -114,6 +114,11 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 	}
 	else
 	{
+		if (OwnerCharacter && OwnerCharacter->IsAimButtonHeld())
+		{
+			SetAiming(true);
+			OwnerCharacter->OnAim(true);
+		}
 		if (GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
 		GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
 	}
@@ -129,11 +134,6 @@ void UHamaComponent::DrainStamina()
 	{
 		GetWorld()->GetTimerManager().SetTimer(StaminaPenaltyTimerHandle, PenaltyStamina, false);
 		SetSprinting(false);
-		if (OwnerCharacter && OwnerCharacter->IsAimButtonHeld())
-		{
-			SetAiming(true);
-			OwnerCharacter->OnAim(true);
-		}
 		GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, PenaltyStamina);
 		return;
 	}

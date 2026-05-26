@@ -109,11 +109,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputAction> FireAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
-	float NormalSensitivity = 1.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
-	float AimingSensitivity = 0.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+	TObjectPtr<UInputAction> ReloadAction;
 
 public:
 	// -----------------------------------------------------------------------------
@@ -203,12 +200,14 @@ protected:
 	void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void CreateDefaultWeapon();
 	void AttachWeaponToMesh(ABaseWeapon* WeaponToAttach);
+	void ReloadActionPressed();
 
 protected:
 	static const float CrossHairTimer;
 
 	bool bIsHoldedTrigger = false;
 	bool bIsAimButtonHold = false;
+public:
 	bool bIsFireButtonHold = false;
 
 private:
@@ -216,4 +215,13 @@ private:
 	bool bLastCrossHairState = false;
 
 	bool IsSprinting() const;
+
+
+protected:
+	// CameraSensitivity
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
+	float NormalSensitivity = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
+	float AimingSensitivity = 0.5f;
 };

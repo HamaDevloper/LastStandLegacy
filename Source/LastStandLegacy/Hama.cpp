@@ -316,6 +316,8 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	
 		EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHama::FireActionPressed);
 		EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHama::FireActionReleased);
+		
+		EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
 	}
 }
 
@@ -326,8 +328,6 @@ void AHama::FireActionPressed()
 {
 	if (!HamaComponent || !CurrentWeapon) return;
 	bIsFireButtonHold = true;
-	if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
-	HamaComponent->SetFiring(true);
 	CurrentWeapon->StartFire();
 }
 
@@ -354,6 +354,15 @@ void AHama::AimActionReleased()
 	bIsAimButtonHold = false;
 	HamaComponent->SetAiming(false);
 	OnAim(false);
+}
+
+void AHama::ReloadActionPressed()
+{
+	if (!CurrentWeapon) return;
+	if (CurrentWeapon->ReserveAmmo <= 0) return;
+	HamaComponent->SetFiring(false);
+	CurrentWeapon->StopFire();
+	CurrentWeapon->Reload();
 }
 
 void AHama::Move(const FInputActionValue& Value)

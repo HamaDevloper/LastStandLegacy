@@ -75,7 +75,7 @@ public:
 
 	UPROPERTY(ReplicatedUsing = OnRep_Reload, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	bool bIsReloading = false;
-
+public:
 	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	int32 CurrentAmmo = 30;
 
@@ -106,7 +106,9 @@ public:
 	void Reload();
 
 	UFUNCTION(Server, Reliable)
-	void ServerReload();
+	void ServerReload(float ReloadTime);
+
+	void ReloadFinish();
 
 	UFUNCTION()
 	void OnRep_Reload();
@@ -122,4 +124,6 @@ private:
 
 	UPROPERTY()
 	APlayerController* OwnerController;
+
+	FTimerHandle ReloadTimer;
 };
