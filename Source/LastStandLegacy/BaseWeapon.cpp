@@ -33,6 +33,11 @@ void ABaseWeapon::BeginPlay()
 void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME_CONDITION(ABaseWeapon, bIsReloading, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ABaseWeapon, MaxAmmoInClip, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ABaseWeapon, ReserveAmmo, COND_OwnerOnly);
 }
 
 void ABaseWeapon::Tick(float DeltaTime)
@@ -42,7 +47,9 @@ void ABaseWeapon::Tick(float DeltaTime)
 
 void ABaseWeapon::StartFire()
 {
-	if (CurrentAmmo <= 0 || bIsReloading) return;
+	if (bIsReloading) return;
+
+	if (CurrentAmmo <= 0) Reload();
 
 	if (FireMode == EWeaponFireMode::Single)
 	{
@@ -92,10 +99,7 @@ float ABaseWeapon::CalculateBulletSpread()
 
 void ABaseWeapon::HandleFireLocal()
 {
-	// دڵنیابوونەوە لەوەی کە خاوەنی چەکەکە لۆکاڵییە
 	if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
-
-	// ئەگەر کۆنتڕۆڵەر پوچەڵ بێت، دووبارە پڕی دەکەینەوە
 	if (!OwnerController)
 	{
 		OwnerController = Cast<APlayerController>(OwnerCharacter->GetController());
@@ -106,20 +110,15 @@ void ABaseWeapon::HandleFireLocal()
 	FRotator Rotation;
 	OwnerController->GetPlayerViewPoint(Start, Rotation);
 
-	// ۱. حیسابکردنی بڵاوبوونەوە و گۆڕینی بۆ ڕادیان
 	float Spread = CalculateBulletSpread();
 	float SpreadInRadians = FMath::DegreesToRadians(Spread);
 
-	// ۲. بەکارهێنانی VRandCone لەسەر ئاراستەی کامێراکە (Rotation.Vector())
 	FVector SpreadDirection = FMath::VRandCone(Rotation.Vector(), SpreadInRadians);
 
-	// ۳. دروستکردنی خاڵی کۆتایی نوێ بەپێی ئاراستە بڵاوبووەکە
 	FVector FinalEnd = Start + (SpreadDirection * MaxRange);
 
-	// لێدانی افێکتەکان لای خۆت ڕاستەوخۆ
 	PlayWeaponEffects();
 
-	// ٤. ناردنی خاڵی کۆتایی ڕاستەقینە و بڵاوبووەوە (FinalEnd) بۆ سێرڤەر
 	ServerHandleFire(Start, FinalEnd);
 }
 
@@ -129,6 +128,8 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 
 	// گۆڕاوێک بۆ دیاریکردنی خاڵی کۆتایی هێڵە سوورەکە (ئەگەر بەر هیچ نەکەوێت، هەر هەمان EndLocationە)
 	FVector LineVisualEnd = EndLocation;
+
+	CurrentAmmo--;
 
 	if (MaxZombiePenetration <= 1)
 	{
@@ -191,16 +192,12 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 			}
 		}
 	}
-
-	// وەرگرتنی شوێنی لوولەی چەک لەسەر سێرڤەر تەنها بۆ کێشانی هێڵەکە
 	FVector MuzzleLocation = WeaponMesh->GetSocketLocation(MuzzleLocationName);
-
-	// ئێستا هێڵە سوورەکە لە لوولەی چەکەوە (MuzzleLocation) دەکێشرێت بۆ شوێنی پێکانەکە (LineVisualEnd)
-	// ئەمەش هەم بڵاوبوونەوەکە پیشان دەدات و هەم چاوی یاریزانەکە بێزار ناکات
 	DrawDebugLine(GetWorld(), MuzzleLocation, LineVisualEnd, FColor::Red, false, 2.f, 0.f, 3.f);
 
-	// بانگکردنی مەڵتیکاست بۆ ئەوەی یاریزانەکانی تر دەنگ و افێکت ببیسن و ببینن
 	MulticastPlayFireEffects();
+
+	if (CurrentAmmo <= 0) Reload();
 }
 
 void ABaseWeapon::MulticastPlayFireEffects_Implementation()
@@ -212,5 +209,23 @@ void ABaseWeapon::MulticastPlayFireEffects_Implementation()
 
 void ABaseWeapon::PlayWeaponEffects()
 {
-	// لێرەدا دەنگی تەقە و نوێکردنەوەی UI ئەنجام بدە
+}
+
+void AHama::Reload()
+{
+	if (ReserveAmmo <= 0 || bIsReloading) return;
+	if (ReloadMontage)
+	{
+		OwnerCharacter->PlayAnimMontage(ReloadMontage);
+		
+	}
+}
+
+void ABaseWeapon::ServerReload_Implementation()
+{
+}
+
+void ABaseWeapon::OnRep_Reload()
+{
+	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
 }

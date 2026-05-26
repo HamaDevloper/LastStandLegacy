@@ -11,6 +11,7 @@
 class AHama;
 class UHamaComponent;
 class USkeletalMeshComponent;
+class UAnimMontage;
 
 // دیاریکردنی شێوازی تەقەکردنی چەکەکە
 UENUM(BlueprintType)
@@ -72,15 +73,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
 	int32 MaxZombiePenetration = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	UPROPERTY(ReplicatedUsing = OnRep_Reload, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	bool bIsReloading = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	int32 CurrentAmmo = 30;
+
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	int32 MaxAmmoInClip = 30;
+
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	int32 ReserveAmmo = 220;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	FName MuzzleLocationName;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly ,Category = "Weapon Stat|Animation")
+	UAnimMontage* ReloadMontage;
 	
 public:
 	void StartFire();
@@ -93,6 +102,14 @@ public:
 
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastPlayFireEffects();
+
+	void Reload();
+
+	UFUNCTION(Server, Reliable)
+	void ServerReload();
+
+	UFUNCTION()
+	void OnRep_Reload();
 
 private:
 	FTimerHandle FireTimerHandle;
