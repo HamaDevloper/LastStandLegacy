@@ -9,7 +9,7 @@
 #define ECC_Zombie ECC_GameTraceChannel1
 
 // -----------------------------------------------------------------------------
-// Forward Declarations (پێناسە پێشوەختەکان)
+// Forward Declarations
 // -----------------------------------------------------------------------------
 class UHamaComponent;
 class UHamaMovementComponent;
@@ -29,20 +29,13 @@ class LASTSTANDLEGACY_API AHama : public ACharacter
 	GENERATED_BODY()
 
 public:
-	// -----------------------------------------------------------------------------
-	// Lifecycle (سوڕی ژیانی ئەکتەرەکە)
-	// -----------------------------------------------------------------------------
 	AHama(const FObjectInitializer& ObjectInitializer);
-
-	// Called every frame
 	virtual void Tick(float DeltaTime) override;
-
-	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 public:
 	// -----------------------------------------------------------------------------
-	// Components & References (پێکهاتەکان و سەرچاوەکان)
+	// Components & References
 	// -----------------------------------------------------------------------------
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
 	TObjectPtr<UHamaComponent> HamaComponent;
@@ -64,29 +57,30 @@ public:
 
 public:
 	// -----------------------------------------------------------------------------
-	// Weapons & Inventory (چەک و جبەخانە)
+	// Weapons & Inventory
 	// -----------------------------------------------------------------------------
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
 	TSubclassOf<ABaseWeapon> DefaultWeapon;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	// لادانی COND_SkipOwner بۆ ئەوەی کڵایەنتی خاوەنیش چەکەکەی پێبگات
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentWeapon, BlueprintReadOnly, Category = "Hama|Weapons")
 	TObjectPtr<ABaseWeapon> CurrentWeapon;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
 	TObjectPtr<ABaseWeapon> PrimaryWeapon;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
 	TObjectPtr<ABaseWeapon> SecondaryWeapon;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
 	TObjectPtr<ABaseWeapon> ThirdWeapon;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
 	FName SocketName;
 
 public:
 	// -----------------------------------------------------------------------------
-	// Input Mapping & Actions (ڕێکخستنەکانی ئینپوت)
+	// Input Mapping & Actions
 	// -----------------------------------------------------------------------------
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -123,7 +117,7 @@ public:
 
 public:
 	// -----------------------------------------------------------------------------
-	// UI & HUD (ڕووکاری بەکارهێنەر)
+	// UI & HUD
 	// -----------------------------------------------------------------------------
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
 	TSubclassOf<UUserWidget> PlayerCrossHairClass;
@@ -133,7 +127,7 @@ public:
 
 public:
 	// -----------------------------------------------------------------------------
-	// State Checking & Logic Functions (فەنکشنەکانی پشکنینی دۆخ)
+	// State Checking & Logic Functions
 	// -----------------------------------------------------------------------------
 	UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
 	bool bIsCrouchButtonHold = false;
@@ -141,32 +135,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
 	bool bCanJumpSlide = false;
 
-	UFUNCTION(BlueprintCallable, Category = "Hama|Perks")
-	void StaminaUpPerk();
-
-	UFUNCTION(Server, Reliable)
-	void Server_StaminaUpPerk();
-
 	bool IsAimButtonHeld() const { return bIsAimButtonHold; }
 
 public:
 	// -----------------------------------------------------------------------------
-	// Animations (ئەنیمەیشنەکان)
+	// Animations
 	// -----------------------------------------------------------------------------
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
 	UAnimMontage* SlideMontage;
 
-	void PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
-
-	UFUNCTION(Server, Reliable)
-	void Server_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
-
-	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay);
-
 public:
 	// -----------------------------------------------------------------------------
-	// Blueprint Events (ڕووداوەکانی بلووپڕینت)
+	// Blueprint Events
 	// -----------------------------------------------------------------------------
 	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
 	void CrossHairUpdate(bool bInRange);
@@ -175,9 +155,6 @@ public:
 	void OnAim(bool InAiming);
 
 protected:
-	// -----------------------------------------------------------------------------
-	// Protected Lifecycle Overrides
-	// -----------------------------------------------------------------------------
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -185,10 +162,11 @@ protected:
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_Controller() override;
 
+	// فەنکشن بۆ کاتێک چەکەکە لە سێرڤەرەوە دەگاتە کڵایەنت بۆ ئەوەی Attach بێت
+	UFUNCTION()
+	void OnRep_CurrentWeapon();
+
 protected:
-	// -----------------------------------------------------------------------------
-	// Protected Camera & Animations
-	// -----------------------------------------------------------------------------
 	UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
 	bool bIsInFirstPerson = false;
 
@@ -203,7 +181,7 @@ protected:
 
 protected:
 	// -----------------------------------------------------------------------------
-	// Input Callbacks & Events (فەنکشنەکانی ئینپوت)
+	// Input Callbacks & Network RPCs
 	// -----------------------------------------------------------------------------
 	void FireActionPressed();
 	void FireActionReleased();
@@ -224,21 +202,16 @@ protected:
 	void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
 	void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void CreateDefaultWeapon();
-	
+	void AttachWeaponToMesh(ABaseWeapon* WeaponToAttach);
 
 protected:
-	// -----------------------------------------------------------------------------
-	// Protected Internal Variables
-	// -----------------------------------------------------------------------------
 	static const float CrossHairTimer;
 
 	bool bIsHoldedTrigger = false;
 	bool bIsAimButtonHold = false;
+	bool bIsFireButtonHold = false;
 
 private:
-	// -----------------------------------------------------------------------------
-	// Private Core Logic
-	// -----------------------------------------------------------------------------
 	FTimerHandle CrossHairTimerHandle;
 	bool bLastCrossHairState = false;
 

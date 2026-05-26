@@ -18,7 +18,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UHamaMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	// ناچالاککردنی Tick بۆ زیادکردنی خێرایی پڕۆژەکە
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 
 	// ڕێکخستنەکانی نێتوۆرک و ڕێپلیکەیشن (Networking & Replication)
 	bReplicates = true;
@@ -26,7 +26,6 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 	SetNetUpdateFrequency(66.f);
 	SetMinNetUpdateFrequency(33.f);
 
-	// ڕێگەپێدان بە کڕاکردن (Crouch)
 	if (GetCharacterMovement())
 	{
 		GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
@@ -44,7 +43,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 
 	// دروستکردنی SpringArm (قۆڵی کامێرا)
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
-	SpringArm->SetupAttachment(GetMesh());
+	SpringArm->SetupAttachment(RootComponent);
 	SpringArm->TargetArmLength = 300.f;
 	SpringArm->bUsePawnControlRotation = true;
 
@@ -100,10 +99,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME_CONDITION(AHama, CurrentWeapon, COND_SkipOwner);
-	DOREPLIFETIME_CONDITION(AHama, PrimaryWeapon, COND_OwnerOnly);
-	DOREPLIFETIME_CONDITION(AHama, SecondaryWeapon, COND_OwnerOnly);
-	DOREPLIFETIME_CONDITION(AHama, ThirdWeapon, COND_OwnerOnly);
+	DOREPLIFETIME(AHama, CurrentWeapon);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -216,6 +212,74 @@ void AHama::OnCrossHairTraceCompleted(
 	}
 }
 
+void AHama::CreateDefaultWeapon()
+{
+	// ١. پشکنین بۆ ئەوەی دڵنیا بینەوە جۆری چەکی سەرەتایی دیاری کراوە
+	if (!DefaultWeapon) return;
+	// ٢. ڕێکخستنی پارامیتەرەکانی سپۆنکردن بۆ سێرڤەر
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.Instigator = this;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FVector SpawnLocation = GetActorLocation();
+	FRotator SpawnRotation = GetActorRotation();
+
+	// ٣. سپۆنکردنی چەکەکە
+	ABaseWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ABaseWeapon>(DefaultWeapon, SpawnLocation, SpawnRotation, SpawnParams);
+
+	if (SpawnedWeapon)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("چەکەکە بە سەرکەوتوویی سپۆن کرا!"));
+		// ٤. لۆجیکی دابەشکردنی چەکەکە بەسەر خانەکانی ئینڤێنتۆری (١، ٢، ٣)
+		if (!PrimaryWeapon)
+		{
+			PrimaryWeapon = SpawnedWeapon;
+			UE_LOG(LogTemp, Log, TEXT("چەکی یەکەم پڕکرایەوە (PrimaryWeapon)"));
+		}
+		else if (!SecondaryWeapon)
+		{
+			SecondaryWeapon = SpawnedWeapon;
+			UE_LOG(LogTemp, Log, TEXT("چەکی دووەم پڕکرایەوە (SecondaryWeapon)"));
+		}
+		else if (!ThirdWeapon)
+		{
+			ThirdWeapon = SpawnedWeapon;
+			UE_LOG(LogTemp, Log, TEXT("چەکی سێیەم پڕکرایەوە (ThirdWeapon)"));
+		}
+		else
+		{
+			// ئەگەر هەموو خانەکان پڕ بوون، چەکە کۆنەکە دەسڕێتەوە و ئەمە جێگەی دەگرێتەوە (یان دەتوانیت لۆجیکی فڕێدان دابنێیت)
+			if (CurrentWeapon)
+			{
+				CurrentWeapon->Destroy();
+			}
+			PrimaryWeapon = SpawnedWeapon;
+		}
+
+		// ٥. دیاریکردنی چەکی دەستی ئێستای یاریزانەکە
+		CurrentWeapon = SpawnedWeapon;
+
+		FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
+		CurrentWeapon->AttachToComponent(GetMesh(), AttachRules, SocketName);
+	}
+}
+
+void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
+{
+	if (WeaponToAttach && GetMesh())
+	{
+		FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
+		WeaponToAttach->AttachToComponent(GetMesh(), AttachRules, SocketName);
+	}
+}
+
+void AHama::OnRep_CurrentWeapon()
+{
+	AttachWeaponToMesh(CurrentWeapon);
+}
+
+
 // -----------------------------------------------------------------------------
 // Input Binding (بەستنەوەی فەنکشنەکان بە ئینپوتەکانەوە)
 // -----------------------------------------------------------------------------
@@ -258,41 +322,21 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 // -----------------------------------------------------------------------------
 // Input Callback Functions (لۆجیکی کارکردنی ئینپوتەکان)
 // -----------------------------------------------------------------------------
-
-void AHama::StaminaUpPerk()
-{
-	if (!HamaComponent) return;
-
-	//PlayDrinkPerkAnimation(StaminaUpMontage);
-
-	if (!HasAuthority())
-	{
-		// کڵایەنت تەنها داواکاری دەنێرێت و چاوەڕێی سێرڤەر دەکات
-		Server_StaminaUpPerk();
-	}
-	else
-	{
-		// ئەگەر خۆی سێرڤەر بوو ڕاستەوخۆ زیادی دەکات
-		HamaComponent->IncreaseMaxStamina(100.f);
-	}
-}
-
-void AHama::Server_StaminaUpPerk_Implementation()
-{
-	HamaComponent->IncreaseMaxStamina(100.f);
-}
-
 void AHama::FireActionPressed()
 {
-	if (!HamaComponent) return;
+	if (!HamaComponent || !CurrentWeapon) return;
+	bIsFireButtonHold = true;
 	if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
 	HamaComponent->SetFiring(true);
+	CurrentWeapon->StartFire();
 }
 
 void AHama::FireActionReleased()
 {
-	if (!HamaComponent) return;
+	if (!HamaComponent || !CurrentWeapon) return;
+	bIsFireButtonHold = false;
 	HamaComponent->SetFiring(false);
+	CurrentWeapon->StopFire();
 }
 
 void AHama::AimActionPressed()
@@ -434,61 +478,6 @@ void AHama::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 	}
 }
 
-void AHama::CreateDefaultWeapon()
-{
-	// ١. پشکنین بۆ ئەوەی دڵنیا بینەوە جۆری چەکی سەرەتایی دیاری کراوە
-	if (!DefaultWeapon) return;
-	// ٢. ڕێکخستنی پارامیتەرەکانی سپۆنکردن بۆ سێرڤەر
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = this;
-	SpawnParams.Instigator = this;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	FVector SpawnLocation = GetActorLocation();
-	FRotator SpawnRotation = GetActorRotation();
-
-	// ٣. سپۆنکردنی چەکەکە
-	ABaseWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ABaseWeapon>(DefaultWeapon, SpawnLocation, SpawnRotation, SpawnParams);
-
-	if (SpawnedWeapon)
-	{
-		// ٤. لۆجیکی دابەشکردنی چەکەکە بەسەر خانەکانی ئینڤێنتۆری (١، ٢، ٣)
-		if (!PrimaryWeapon)
-		{
-			PrimaryWeapon = SpawnedWeapon;
-			UE_LOG(LogTemp, Log, TEXT("چەکی یەکەم پڕکرایەوە (PrimaryWeapon)"));
-		}
-		else if (!SecondaryWeapon)
-		{
-			SecondaryWeapon = SpawnedWeapon;
-			UE_LOG(LogTemp, Log, TEXT("چەکی دووەم پڕکرایەوە (SecondaryWeapon)"));
-		}
-		else if (!ThirdWeapon)
-		{
-			ThirdWeapon = SpawnedWeapon;
-			UE_LOG(LogTemp, Log, TEXT("چەکی سێیەم پڕکرایەوە (ThirdWeapon)"));
-		}
-		else
-		{
-			// ئەگەر هەموو خانەکان پڕ بوون، چەکە کۆنەکە دەسڕێتەوە و ئەمە جێگەی دەگرێتەوە (یان دەتوانیت لۆجیکی فڕێدان دابنێیت)
-			if (CurrentWeapon)
-			{
-				CurrentWeapon->Destroy();
-			}
-			PrimaryWeapon = SpawnedWeapon;
-		}
-
-		// ٥. دیاریکردنی چەکی دەستی ئێستای یاریزانەکە
-		CurrentWeapon = SpawnedWeapon;
-
-		// ٦. بەکارهێنانی SocketName بۆ بەستنەوەی چەکەکە بە دەستی کارەکتەرەکەوە
-		// ئەگەر SocketName بەتاڵ بوو لە ناو ئیدیتەر، ناوێکی بنەڕەتی (Default) وەردەگرێت
-		FName WeaponSocketToAttach = SocketName.IsNone() ? FName("WeaponSocket") : SocketName;
-
-		FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
-		CurrentWeapon->AttachToComponent(GetMesh(), AttachRules, WeaponSocketToAttach);
-	}
-}
 
 void AHama::SwitchCameraPressed(const FInputActionInstance& Instance)
 {
@@ -542,43 +531,6 @@ void AHama::SprintActionPressed()
 		UnCrouch();
 	}
 	HamaComponent->StartSprinting();
-}
-
-void AHama::PlayDrinkPerkAnimation(UAnimMontage* PerkMontageToPlay)
-{
-	// ئەگەر مۆنتاژەکە بوونی نەبوو، کۆدەکە ڕادەگرێت
-	if (!PerkMontageToPlay) return;
-
-	// ١. لێدانی ئەنیمەیشنەکە دەستبەجێ لای خۆت (0ms لاگ)
-	PlayAnimMontage(PerkMontageToPlay);
-
-	// ٢. ناردنی بۆ سێرڤەر ئەگەر کڵایەنت بوویت
-	if (!HasAuthority())
-	{
-		Server_PlayDrinkPerkAnimation(PerkMontageToPlay); // مۆنتاژەکە دەنێرێت بۆ سێرڤەر
-	}
-	else
-	{
-		Multicast_PlayDrinkPerkAnimation(PerkMontageToPlay);
-	}
-}
-
-void AHama::Server_PlayDrinkPerkAnimation_Implementation(UAnimMontage* PerkMontageToPlay)
-{
-	// سێرڤەر مۆنتاژەکە وەردەگرێت و دەیدات بە مۆڵتیکاست
-	Multicast_PlayDrinkPerkAnimation(PerkMontageToPlay);
-}
-
-void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(UAnimMontage* PerkMontageToPlay)
-{
-	// ڕێگری لە دووبارەبوونەوە لای خۆت
-	if (IsLocallyControlled()) return;
-
-	// ٣. کڵایەنتەکانی تر ڕێک ئەو مۆنتاژە لێدەدەنەوە کە نێردراوە
-	if (PerkMontageToPlay)
-	{
-		PlayAnimMontage(PerkMontageToPlay);
-	}
 }
 
 bool AHama::IsSprinting() const

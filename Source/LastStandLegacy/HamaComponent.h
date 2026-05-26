@@ -60,15 +60,9 @@ protected:
 	void DrainStamina();
 	void RegenerateStamina();
 	
-	UFUNCTION(Client, Reliable)
-	void Client_OnMaxStaminaChanged(float NewMaxStamina, float NewCurrentStamina);
-
 public:
 	void SetAiming(bool bNewAiming);
 	void SetFiring(bool bNewFiring);
-
-	void IncreaseMaxStamina(float AmountToAdd);
-	void ResetMaxStamina();
 
 public:
 	// ✅ ڤاریابڵەکان وەک خۆیان پارێزراون بەڵام ReplicatedUsing مان لابردووە چونکە Saved Moves خۆی کارەکە دەکات
@@ -92,7 +86,6 @@ private:
 	FTimerHandle StaminaPenaltyTimerHandle;
 	AHama* OwnerCharacter;
 	UHamaMovementComponent* MoveComp;
-
 
 	UFUNCTION()
 	void OnRep_Sprinting();

@@ -6,6 +6,12 @@
 #include "GameFramework/Actor.h"
 #include "BaseWeapon.generated.h"
 
+#define ECC_Zombie ECC_GameTraceChannel1
+
+class AHama;
+class UHamaComponent;
+class USkeletalMeshComponent;
+
 // دیاریکردنی شێوازی تەقەکردنی چەکەکە
 UENUM(BlueprintType)
 enum class EWeaponFireMode : uint8
@@ -22,10 +28,11 @@ class LASTSTANDLEGACY_API ABaseWeapon : public AActor
 
 public:
 	ABaseWeapon();
+	UPROPERTY(EditDefaultsOnly, Category = "BaseWeapon")
+	TObjectPtr<USkeletalMeshComponent> WeaponMesh;
 
 protected:
 	virtual void BeginPlay() override;
-
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
@@ -35,11 +42,12 @@ public:
 	// -----------------------------------------------------------------------------
 	// Weapon Core Stats (زانیارییە سەرەکییەکانی چەک)
 	// -----------------------------------------------------------------------------
+	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
 	EWeaponFireMode FireMode = EWeaponFireMode::Automatic;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	float BaseDamage = 25.f;
+	float Damage = 25.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
 	float HeadshotMultiplier = 2.5f;
@@ -50,63 +58,51 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
 	float MaxRange = 5000.f; // مەودای فیشەکەکە بە سانتیمەتر (50 مەتر)
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
+	float BulletSpread = 2.0f;
+
+	// ڕێژەی کەمبوونەوەی بڵاوبوونەوە کاتێک یاریزانەکە دادەنیشێت (0.5 یعنی دەبێتە نیوە)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
+	float CrouchSpreadMultiplier = 0.5f;
+
+	// ڕێژەی زیادبوونی بڵاوبوونەوە کاتێک یاریزانەکە لە ئاسماندایە (2.0 یعنی دوو هێندە دەبێت)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
+	float AirSpreadMultiplier = 2.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	float ReloadTime = 2.5f; // کاتی پێویست بۆ ڕیلۆد بە چرکە
-
-	// -----------------------------------------------------------------------------
-	// Ammo System (سیستەمی فیشەک)
-	// -----------------------------------------------------------------------------
-	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "BaseWeapon|Ammo")
-	int32 CurrentAmmoInMag; // ژمارەی فیشەکی ناو مەخزەنەکە ئێستا
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Ammo")
-	int32 MaxMagSize = 30; // بەرزترین ڕێژەی فیشەک لە یەک مەخزەندا
-
-	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "BaseWeapon|Ammo")
-	int32 CurrentReserveAmmo; // فیشەکی یەدەگ کە پێیەتی
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Ammo")
-	int32 MaxReserveAmmo = 210; // بەرزترین ڕێژەی فیشەکی یەدەگ
-
-	// -----------------------------------------------------------------------------
-	// Zombie Penetration & AoE (بۆ ئەوەی بزانین چەکەکە چەند زۆمبی دەکاتە ئامانج)
-	// -----------------------------------------------------------------------------
-
-	/* بۆ چەکی ئاسایی (وەک سنایپەر یان ڕاڕەوی فیشەک):
-	   فیشەکەکە بە ناو چەند زۆمبیدا تێپەڕ دەبێت؟ (1 واتە تەنها یەک زۆمبی، 3 واتە بە ناو 3 زۆمبیدا دەڕوات و زیانیان پێدەگەیەنێت) */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|ZombieLogic")
 	int32 MaxZombiePenetration = 1;
 
-	/* بۆ چەکی تەقینەوەیی (وەک RPG یان لۆنچەر):
-	   ئایا چەکەکە زیانی بەکۆمەڵ (Splash/AoE Damage) دەگەیەنێت؟ */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|ZombieLogic")
-	bool bIsExplosive = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	bool bIsReloading = false;
 
-	/* نیوەتیرەی تەقینەوەکە (Radius) بە سانتیمەتر، بۆ ئەوەی بزانین لە دەوروبەری شوێنی پێکانی فیشەکەکە چەند زۆمبی هەیە زیانیان پێبگات */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|ZombieLogic", meta = (EditCondition = "bIsExplosive"))
-	float ExplosionRadius = 300.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	int32 CurrentAmmo = 30;
 
-	// -----------------------------------------------------------------------------
-	// Handling & Recoil (کۆنتڕۆڵ و لەرزینی چەک)
-	// -----------------------------------------------------------------------------
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Handling")
-	float VerticalRecoil = 0.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	FName MuzzleLocationName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Handling")
-	float HorizontalRecoil = 0.2f;
+	
+public:
+	void StartFire();
+	void StopFire();
+	void HandleFireLocal();
+	float CalculateBulletSpread();
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Handling")
-	float WeaponSpread = 0.02f; // بڵاوبوونەوەی فیشەک (کەم بێت نیشانەکەی ڕاستترە)
+	UFUNCTION(Server, Reliable)
+	void ServerHandleFire(FVector StartLocation, FVector EndLocation);
 
-	// -----------------------------------------------------------------------------
-	// Visual & Audio Effects (کاریگەرییە بینراو و بیستراوەکان)
-	// -----------------------------------------------------------------------------
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Effects")
-	TObjectPtr<USoundBase> FireSound;
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayFireEffects();
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Effects")
-	TObjectPtr<UParticleSystem> MuzzleFlash;
+private:
+	FTimerHandle FireTimerHandle;
+	void PlayWeaponEffects();
+	UPROPERTY()
+	AHama* OwnerCharacter;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Effects")
-	TObjectPtr<UParticleSystem> ImpactEffect; // کاتێک فیشەکەکە لە زۆمبی یان دیوار دەدات
+	UPROPERTY()
+	UHamaComponent* HamaComponent;
+
+	UPROPERTY()
+	APlayerController* OwnerController;
 };

@@ -51,18 +51,6 @@ void UHamaComponent::SetFiring(bool bNewFiring)
 	if (MoveComp) MoveComp->bFiring = bIsFiring;
 }
 
-void UHamaComponent::StartSprinting()
-{
-	if (bIsSprinting) return;
-	SetSprinting(true);
-}
-
-void UHamaComponent::StopSprinting()
-{
-	if (!bIsSprinting) return;
-	SetSprinting(false);
-}
-
 void UHamaComponent::StartSlide()
 {
 	if (bIsSlide) return;
@@ -94,6 +82,18 @@ void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
 	{
 		OnRep_Slide();
 	}
+}
+
+void UHamaComponent::StartSprinting()
+{
+	if (bIsSprinting) return;
+	SetSprinting(true);
+}
+
+void UHamaComponent::StopSprinting()
+{
+	if (!bIsSprinting) return;
+	SetSprinting(false);
 }
 
 void UHamaComponent::SetSprinting(bool bNewSprinting)
@@ -175,39 +175,6 @@ void UHamaComponent::RegenerateStamina()
 	Stamina = FMath::Clamp(Stamina + StaminaRegenRate * 0.1f, 0.f, MaxStamina);
 }
 
-void UHamaComponent::IncreaseMaxStamina(float AmountToAdd)
-{
-	if (GetOwner() && !GetOwner()->HasAuthority()) return;
-
-	float CurrentStaminaPercentage = (MaxStamina > 0.f) ? (Stamina / MaxStamina) : 1.f;
-	MaxStamina += AmountToAdd;
-	Stamina = MaxStamina * CurrentStaminaPercentage;
-
-	if (!bIsSprinting && !GetWorld()->GetTimerManager().IsTimerActive(StaminaRegenTimerHandle) && !GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle))
-	{
-		GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
-	}
-
-	Client_OnMaxStaminaChanged(MaxStamina, Stamina);
-}
-
-void UHamaComponent::ResetMaxStamina()
-{
-	// دڵنیابوونەوە لەوەی تەنها سێرڤەر ئەم کارە دەکات
-	if (GetOwner() && !GetOwner()->HasAuthority()) return;
-
-	// گەڕاندنەوەی ماکس ستامینا بۆ ١٠٠ (یان هەر بڕێک کە دیفۆڵتە لای خۆت)
-	MaxStamina = 100.f;
-
-	// بەکارهێنانەوەی هەمان ئەو فەنکشنەی خۆت بۆ ئاگادارکردنەوەی کڵایەنتەکە
-	Client_OnMaxStaminaChanged(MaxStamina, Stamina);
-}
-
-void UHamaComponent::Client_OnMaxStaminaChanged_Implementation(float NewMaxStamina, float NewCurrentStamina)
-{
-	MaxStamina = NewMaxStamina;
-	Stamina = NewCurrentStamina;
-}
 
 // ================= ON_REP FUNCTIONS (SIMULATED PROXIES) =================
 
