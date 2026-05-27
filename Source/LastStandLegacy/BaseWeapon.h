@@ -29,6 +29,7 @@ class LASTSTANDLEGACY_API ABaseWeapon : public AActor
 
 public:
 	ABaseWeapon();
+
 	UPROPERTY(EditDefaultsOnly, Category = "BaseWeapon")
 	TObjectPtr<USkeletalMeshComponent> WeaponMesh;
 
@@ -43,7 +44,7 @@ public:
 	// -----------------------------------------------------------------------------
 	// Weapon Core Stats (زانیارییە سەرەکییەکانی چەک)
 	// -----------------------------------------------------------------------------
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
 	EWeaponFireMode FireMode = EWeaponFireMode::Automatic;
 
@@ -54,27 +55,31 @@ public:
 	float HeadshotMultiplier = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	float FireRate = 0.1f; // کاتی نێوان فیشەکەکان بە چرکە (بۆ نموونە 0.1 واتە 10 فیشەک لە چرکەیەکدا)
+	float FireRate = 0.1f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	float MaxRange = 5000.f; // مەودای فیشەکەکە بە سانتیمەتر (50 مەتر)
+	float MaxRange = 5000.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
 	float BulletSpread = 2.0f;
 
-	// ڕێژەی کەمبوونەوەی بڵاوبوونەوە کاتێک یاریزانەکە دادەنیشێت (0.5 یعنی دەبێتە نیوە)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
 	float CrouchSpreadMultiplier = 0.5f;
 
-	// ڕێژەی زیادبوونی بڵاوبوونەوە کاتێک یاریزانەکە لە ئاسماندایە (2.0 یعنی دوو هێندە دەبێت)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
 	float AirSpreadMultiplier = 2.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
 	int32 MaxZombiePenetration = 1;
 
-	UPROPERTY(ReplicatedUsing = OnRep_Reload, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	// گۆڕاوی ڕیلۆد 
+	UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	bool bIsReloading = false;
+
+	// بژمێری تەقەکردن لەبری Multicast (بۆ یاریزانەکانی تر بۆ ئەوەی بزانن چەکەکە تەقەی کردووە)
+	UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
+	uint8 BurstCounter = 0;
+
 public:
 	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	int32 CurrentAmmo = 30;
@@ -88,9 +93,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	FName MuzzleLocationName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly ,Category = "Weapon Stat|Animation")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Animation")
 	UAnimMontage* ReloadMontage;
-	
+
 public:
 	void StartFire();
 	void StopFire();
@@ -100,15 +105,22 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerHandleFire(FVector StartLocation, FVector EndLocation);
 
-	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastPlayFireEffects();
+	// پێویستت بە Multicast نامێنێت بۆ فیشەکەکەکان، گۆڕدرا بۆ ئەمە
+	UFUNCTION()
+	void OnRep_BurstCounter();
 
 	void Reload();
 
 	UFUNCTION(Server, Reliable)
 	void ServerReload();
 
+	// BlueprintCallable کراوە بۆ ئەوەی لە ناو Anim Notify ی مۆنتاژەکە بتوانێت بانگ بکرێت
+	UFUNCTION(BlueprintCallable, Category = "Weapon Stat|Ammo")
 	void ReloadFinish();
+
+	// ڕەسەنی سەلماندنی خێراکەری سێرڤەر بۆ ڕیلۆد
+	UFUNCTION(Server, Reliable)
+	void Server_FinishReloadValidation();
 
 	void CancelReload();
 
@@ -120,7 +132,10 @@ public:
 
 private:
 	FTimerHandle FireTimerHandle;
+	float LastFireTime;
+
 	void PlayWeaponEffects();
+
 	UPROPERTY()
 	AHama* OwnerCharacter;
 
@@ -129,6 +144,4 @@ private:
 
 	UPROPERTY()
 	APlayerController* OwnerController;
-
-	FTimerHandle ReloadTimer;
 };

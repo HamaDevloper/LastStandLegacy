@@ -16,6 +16,8 @@ ABaseWeapon::ABaseWeapon()
 
 	WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
 	RootComponent = WeaponMesh;
+
+	LastFireTime = 0.f;
 }
 
 void ABaseWeapon::BeginPlay()
@@ -38,6 +40,9 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ABaseWeapon, MaxAmmoInClip, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ABaseWeapon, ReserveAmmo, COND_OwnerOnly);
+
+	// فێڵی زیرەک: بژمێرەکە بە کڵایەنتەکە خۆی نادەین چونکە پێشتر دەنگەکەی لە HandleFireLocal بۆ خۆی لێداوە
+	DOREPLIFETIME_CONDITION(ABaseWeapon, BurstCounter, COND_SkipOwner);
 }
 
 void ABaseWeapon::Tick(float DeltaTime)
@@ -53,13 +58,16 @@ void ABaseWeapon::StartFire()
 		else return;
 	}
 
-	if (FireMode == EWeaponFireMode::Single)
+	float CurrentTime = GetWorld()->GetTimeSeconds();
+
+	// بە ڕێگەیەکی زۆر خێرا سەیری دەکات، ئەگەر دوو کرتەی خێرای کرد و کاتی فیشەکی نەهاتبوو تەقە نەکات 
+	if (CurrentTime - LastFireTime >= FireRate)
 	{
 		HandleFireLocal();
 	}
-	else
+
+	if (FireMode == EWeaponFireMode::Automatic || FireMode == EWeaponFireMode::Burst)
 	{
-		HandleFireLocal();
 		GetWorldTimerManager().SetTimer(FireTimerHandle, this, &ABaseWeapon::HandleFireLocal, FireRate, true);
 	}
 }
@@ -99,16 +107,13 @@ void ABaseWeapon::HandleFireLocal()
 {
 	if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
-	// ئەگەر فیشەک نەمابوو وەستاندن و ڕیلۆد
 	if (CurrentAmmo <= 0)
 	{
 		StopFire();
-
 		if (HamaComponent)
 		{
 			HamaComponent->SetFiring(false);
 		}
-
 		Reload();
 		return;
 	}
@@ -119,11 +124,13 @@ void ABaseWeapon::HandleFireLocal()
 		if (!OwnerController) return;
 	}
 
-	
+	LastFireTime = GetWorld()->GetTimeSeconds();
+
+	// ڕاستەوخۆ کەمکردنەوە (Prediction بۆ کڵایەنت تا لاگ نەبێت)
 	CurrentAmmo--;
 
 	if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
-	HamaComponent->SetFiring(true);
+	if(!HamaComponent->IsFiring()) HamaComponent->SetFiring(true);
 
 	FVector Start;
 	FRotator Rotation;
@@ -135,14 +142,17 @@ void ABaseWeapon::HandleFireLocal()
 	FVector SpreadDirection = FMath::VRandCone(Rotation.Vector(), SpreadInRadians);
 	FVector FinalEnd = Start + (SpreadDirection * MaxRange);
 
+	// تەقە ڕاستەوخۆ دیار دەبێت بۆ یاریزانەکە
 	PlayWeaponEffects();
+
+	// ئەگەر خۆت سێرڤەر نەبیت دەتوانیت Line Traceـیەکی بچووکیش بۆ پارتیکڵی سەر زۆمبی بکەیت تا نەوەستیت
 
 	ServerHandleFire(Start, FinalEnd);
 }
 
 void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector EndLocation)
 {
-	// ⚠️ پاراستنی سێرڤەر
+	// پاراستن
 	if (CurrentAmmo <= 0 || bIsReloading) return;
 
 	AController* DamageInstigator = OwnerCharacter ? OwnerCharacter->GetController() : nullptr;
@@ -152,13 +162,16 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 		CurrentAmmo--;
 	}
 
+	// بژمێری ئەفێکت زیاد دەکەین تا ئەوانی تریش بیگۆڕن
+	BurstCounter++;
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+	Params.AddIgnoredActor(GetOwner());
+
 	if (MaxZombiePenetration <= 1)
 	{
 		FHitResult Hit;
-		FCollisionQueryParams Params;
-		Params.AddIgnoredActor(this);
-		Params.AddIgnoredActor(GetOwner());
-
 		bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, StartLocation, EndLocation, ECC_Zombie, Params);
 		if (bHit)
 		{
@@ -168,10 +181,6 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 	else
 	{
 		TArray<FHitResult> Hits;
-		FCollisionQueryParams Params;
-		Params.AddIgnoredActor(this);
-		Params.AddIgnoredActor(GetOwner());
-
 		GetWorld()->LineTraceMultiByChannel(Hits, StartLocation, EndLocation, ECC_Zombie, Params);
 
 		int32 PenetrationCount = 0;
@@ -191,19 +200,17 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 	}
 
 	DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Red, false, 2.f, 0.f, 1.f);
-
-	MulticastPlayFireEffects();
 }
 
-void ABaseWeapon::MulticastPlayFireEffects_Implementation()
+// کاتێک بژمێرەکەی سێرڤەر زیاد دەبێت، بۆ simulated proxies ەکان ڕەن دەبێت. بۆ خاوەنی چەک نا، چونکە لۆکاڵ دەنگەکەی ژەند
+void ABaseWeapon::OnRep_BurstCounter()
 {
-	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
 	PlayWeaponEffects();
 }
 
 void ABaseWeapon::PlayWeaponEffects()
 {
-	// تێبینی: دەنگەکان و پارتیکڵەکانت (Particles) لێرە دەکەیتە ڕەن.
+	// تێبینی: دەنگەکان و پارتیکڵەکانت (Particles) لێرە دەکەیتە ڕەن. Muzzle flash یان دەنگ...
 }
 
 void ABaseWeapon::Reload()
@@ -212,7 +219,6 @@ void ABaseWeapon::Reload()
 
 	bIsReloading = true;
 
-	// کڵاێنت مۆنتاژەکە لە لای خۆی (لۆکاڵی) دەردەهێنێتەوە تا ئەنیمەیشن پێشبینی (Predict) بکات بە خێرایی
 	if (ReloadMontage && OwnerCharacter && OwnerCharacter->IsLocallyControlled())
 	{
 		OwnerCharacter->PlayAnimMontage(ReloadMontage);
@@ -220,10 +226,9 @@ void ABaseWeapon::Reload()
 
 	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
 	{
-		// پەیوەندی بە سێرڤەر دەکەین بەڵام چیدی خێرایی مۆنتاژی پێ نادەین! 
 		if (!HasAuthority())
 		{
-			ServerReload(); // لایبە پارامیتەرەکە تا ڕێگا بە دروستکردنی فێڵ نەکەیت!
+			ServerReload();
 		}
 		else
 		{
@@ -236,41 +241,61 @@ void ABaseWeapon::ServerReload_Implementation()
 {
 	bIsReloading = true;
 
-	// 📌 چارەسەری دووەم: سێرڤەر خۆی تایمی ئەنیمەیشن دەستنیشان دەکات نەک یاریزان کاتی هەڵە (Hack) بینێرێت.
-	float SecureReloadTime = 1.5f; // ئەگەر ئەنیمەیشنت نەبوو
-	if (ReloadMontage)
-	{
-		SecureReloadTime = ReloadMontage->GetPlayLength(); // درێژی مۆنتاژە بە سێکورەی سێرڤەر دۆزرایەوە.
-	}
+	// تایمەر لابرا! لەجیاتی ئەوە کڵاێنت کاتێک مۆنتاژەکەی گەیشتە کاتی (Anim Notify)، بانگی ReloadFinish دەکات.
+	// سێرڤەریش ئەگەر Simulated ەکانی کرد بێت خۆیان ڕوودەدەن.
 
-	// کڵاێنتەکانی تر ئاگادار دەکەینەوە کە ئەنیمەیشن لێبدەن
 	if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
 	{
 		OnRep_Reload();
 	}
-
-	GetWorldTimerManager().SetTimer(ReloadTimer, this, &ABaseWeapon::ReloadFinish, SecureReloadTime, false);
 }
 
 void ABaseWeapon::ReloadFinish()
 {
-	bIsReloading = false;
+	// ئەم فەنکشنە پێویستە لەلایەن (Anim Notify) لە بلوپرینتی مۆنتاژەکە (کاتێک دەستی ئەچێتە ناو مەخزەنەکە) بانگ بکرێت 
+
+	if (HasAuthority())
+	{
+		int32 AmmoNeeded = MaxAmmoInClip - CurrentAmmo;
+		int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
+
+		CurrentAmmo += AmmoToMove;
+		ReserveAmmo -= AmmoToMove;
+		bIsReloading = false;
+
+		if (OwnerCharacter && OwnerCharacter->IsLocallyControlled() && OwnerCharacter->bIsFireButtonHold)
+		{
+			StartFire();
+		}
+	}
+	else
+	{
+		// پێش سەلماندنی سێرڤەر ڕاستەوخۆ خۆی بۆی پڕ دەکات (وەهمی)، پاشان بۆ سێرڤەری دەنێرێت
+		int32 AmmoNeeded = MaxAmmoInClip - CurrentAmmo;
+		int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
+		CurrentAmmo += AmmoToMove;
+		ReserveAmmo -= AmmoToMove;
+		bIsReloading = false;
+
+		Server_FinishReloadValidation();
+
+		if (OwnerCharacter && OwnerCharacter->IsLocallyControlled() && OwnerCharacter->bIsFireButtonHold)
+		{
+			StartFire();
+		}
+	}
+}
+
+void ABaseWeapon::Server_FinishReloadValidation_Implementation()
+{
+	if (!bIsReloading) return;
 
 	int32 AmmoNeeded = MaxAmmoInClip - CurrentAmmo;
 	int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
 
 	CurrentAmmo += AmmoToMove;
 	ReserveAmmo -= AmmoToMove;
-
-	if (OwnerCharacter)
-	{
-		OnRep_Reload();
-	}
-
-	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled() && OwnerCharacter->bIsFireButtonHold)
-	{
-		StartFire();
-	}
+	bIsReloading = false;
 }
 
 void ABaseWeapon::CancelReload()
@@ -278,7 +303,7 @@ void ABaseWeapon::CancelReload()
 	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
 	{
 		USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
-		if (MeshComp)
+		if (MeshComp && MeshComp->GetAnimInstance())
 		{
 			MeshComp->GetAnimInstance()->Montage_Stop(0.2f, ReloadMontage);
 		}
@@ -287,7 +312,6 @@ void ABaseWeapon::CancelReload()
 	if (HasAuthority())
 	{
 		bIsReloading = false;
-		GetWorldTimerManager().ClearTimer(ReloadTimer);
 	}
 	else
 	{
@@ -298,12 +322,11 @@ void ABaseWeapon::CancelReload()
 void ABaseWeapon::Server_CancelReload_Implementation()
 {
 	bIsReloading = false;
-	GetWorldTimerManager().ClearTimer(ReloadTimer);
 
 	if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
 	{
 		USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
-		if (MeshComp)
+		if (MeshComp && MeshComp->GetAnimInstance())
 		{
 			MeshComp->GetAnimInstance()->Montage_Stop(0.2f, ReloadMontage);
 		}
@@ -314,17 +337,8 @@ void ABaseWeapon::OnRep_Reload()
 {
 	if (!OwnerCharacter) return;
 
-	// کڵایەنتی سەرەکی پێویستی بەم بەشەی خوارەوە نییە چونکە لە CancelReload لای خۆی ڕایگرتووە
-	if (OwnerCharacter->IsLocallyControlled())
-	{
-		if (!bIsReloading && OwnerCharacter->bIsFireButtonHold)
-		{
-			StartFire(); // ئەگەر دەستی لەسەر تەقەکردن بوو، ڕاستەوخۆ دەست بە تەقە بکاتەوە
-		}
-		return;
-	}
+	if (OwnerCharacter->IsLocallyControlled()) return;
 
-	// ئەم بەشە تەنها بۆ یاریزانەکانی ترە (Simulated Proxies) بۆ ئەوەی ئەنیمەیشنی یەکتر ببینن
 	USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
 	if (!MeshComp) return;
 
@@ -333,16 +347,10 @@ void ABaseWeapon::OnRep_Reload()
 
 	if (bIsReloading)
 	{
-		if (ReloadMontage)
-		{
-			AnimInstance->Montage_Play(ReloadMontage);
-		}
+		if (ReloadMontage) AnimInstance->Montage_Play(ReloadMontage);
 	}
 	else
 	{
-		if (ReloadMontage)
-		{
-			AnimInstance->Montage_Stop(0.2f, ReloadMontage);
-		}
+		if (ReloadMontage) AnimInstance->Montage_Stop(0.2f, ReloadMontage);
 	}
 }
