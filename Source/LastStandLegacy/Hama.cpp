@@ -360,7 +360,17 @@ void AHama::ReloadActionPressed()
 {
 	if (!CurrentWeapon) return;
 	if (CurrentWeapon->ReserveAmmo <= 0) return;
-	HamaComponent->SetFiring(false);
+	if (HamaComponent)
+	{
+		if (HamaComponent->IsFiring())
+		{
+			HamaComponent->SetFiring(false);
+		}
+		if (HamaComponent->IsSprinting())
+		{
+			HamaComponent->StopSprinting();
+		}
+	}
 	CurrentWeapon->StopFire();
 	CurrentWeapon->Reload();
 }
@@ -521,7 +531,6 @@ void AHama::SwitchCameraReleased()
 			Switchcamera(bIsInRightShoulderView);
 		}
 	}
-
 	// هەمیشە لە کاتی لادانی دەستدا ئەم گۆڕاوە ڕیست دەبێتەوە بۆ جاری داهاتوو
 	bIsHoldedTrigger = false;
 }
@@ -535,6 +544,12 @@ void AHama::SprintActionPressed()
 		HamaComponent->SetAiming(false);
 		OnAim(false);
 	}
+	if (bIsFireButtonHold)
+	{
+		HamaComponent->SetFiring(false);
+		if (CurrentWeapon) CurrentWeapon->StopFire();
+	}
+	if (CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
 	if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching())
 	{
 		UnCrouch();

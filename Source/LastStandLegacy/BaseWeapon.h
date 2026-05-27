@@ -106,9 +106,14 @@ public:
 	void Reload();
 
 	UFUNCTION(Server, Reliable)
-	void ServerReload(float ReloadTime);
+	void ServerReload();
 
 	void ReloadFinish();
+
+	void CancelReload();
+
+	UFUNCTION(Server, Reliable)
+	void Server_CancelReload();
 
 	UFUNCTION()
 	void OnRep_Reload();

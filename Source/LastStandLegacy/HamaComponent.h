@@ -79,7 +79,7 @@ public:
 	bool bIsSlide = false;
 
 	bool IsSprinting() const { return bIsSprinting; }
-
+	bool IsFiring() const { return bIsFiring; }
 private:
 	FTimerHandle StaminaDrainTimerHandle;
 	FTimerHandle StaminaRegenTimerHandle;

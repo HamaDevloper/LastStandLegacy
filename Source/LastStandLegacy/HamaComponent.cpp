@@ -119,6 +119,10 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 			SetAiming(true);
 			OwnerCharacter->OnAim(true);
 		}
+		if (OwnerCharacter && OwnerCharacter->IsFireButtonHolded())
+		{
+			OwnerCharacter->FireActionPressed();
+		}
 		if (GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
 		GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
 	}

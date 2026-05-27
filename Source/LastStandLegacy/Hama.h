@@ -133,6 +133,7 @@ public:
 	bool bCanJumpSlide = false;
 
 	bool IsAimButtonHeld() const { return bIsAimButtonHold; }
+	bool IsFireButtonHolded() const { return bIsFireButtonHold; }
 
 public:
 	// -----------------------------------------------------------------------------
@@ -176,11 +177,13 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
 	void Switchcamera(bool bIsRightShoulderViewChanged);
 
-protected:
+
 	// -----------------------------------------------------------------------------
 	// Input Callbacks & Network RPCs
 	// -----------------------------------------------------------------------------
+public:
 	void FireActionPressed();
+protected:
 	void FireActionReleased();
 	void AimActionPressed();
 	void AimActionReleased();
