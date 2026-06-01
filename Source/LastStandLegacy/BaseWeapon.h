@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Engine/DataTable.h" // پێویستە بۆ Data Table
 #include "BaseWeapon.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
@@ -13,13 +14,68 @@ class UHamaComponent;
 class USkeletalMeshComponent;
 class UAnimMontage;
 
-// دیاریکردنی شێوازی تەقەکردنی چەکەکە
+/** دیاریکردنی شێوازی تەقەکردنی چەکەکە */
 UENUM(BlueprintType)
 enum class EWeaponFireMode : uint8
 {
 	Single     UMETA(DisplayName = "Single Shot"),
 	Burst      UMETA(DisplayName = "Burst"),
 	Automatic  UMETA(DisplayName = "Full Automatic")
+};
+
+/** پێکهاتەی زانیارییەکانی چەک بۆ ناو Data Table */
+USTRUCT(BlueprintType)
+struct FWeaponData : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
+	EWeaponFireMode FireMode = EWeaponFireMode::Automatic;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
+	float Damage = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
+	float HeadshotMultiplier = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
+	float FireRate = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
+	float MaxRange = 5000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
+	int32 MaxZombiePenetration = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
+	int32 BurstShotCount = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
+	float BulletSpread = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
+	float CrouchSpreadMultiplier = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
+	float AirSpreadMultiplier = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
+	int32 MaxAmmoInClip = 30;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
+	int32 MaxReserveAmmo = 220;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
+	float DefaultReloadTime = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Visuals")
+	TSoftObjectPtr<USkeletalMesh> WeaponMeshAsset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Visuals")
+	UAnimMontage* ReloadMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Visuals")
+	FName MuzzleLocationName = FName("Muzzle");
 };
 
 UCLASS()
@@ -30,7 +86,7 @@ class LASTSTANDLEGACY_API ABaseWeapon : public AActor
 public:
 	ABaseWeapon();
 
-	UPROPERTY(EditDefaultsOnly, Category = "BaseWeapon")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Mesh")
 	TObjectPtr<USkeletalMeshComponent> WeaponMesh;
 
 protected:
@@ -38,66 +94,44 @@ protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
-	virtual void Tick(float DeltaTime) override;
-
-public:
 	// -----------------------------------------------------------------------------
-	// Weapon Core Stats (زانیارییە سەرەکییەکانی چەک)
+	// Data Table Setup
 	// -----------------------------------------------------------------------------
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Data")
+	UDataTable* WeaponDataTable;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	EWeaponFireMode FireMode = EWeaponFireMode::Automatic;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Data")
+	FName WeaponRowName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	float Damage = 25.f;
+	// فەنکشن بۆ خوێندنەوەی زانیارییەکان لە داتاتەیبڵەوە
+	void InitializeWeaponData();
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	float HeadshotMultiplier = 2.5f;
+protected:
+	// زانیارییە ناوخۆییەکانی ئەم چەکە کاتێک لە داتابەیسەکەوە دەیخوێنێتەوە
+	FWeaponData CurrentWeaponData;
+	// ئەو گۆڕاوانەی کە پێویستە بەردەوام نوێ ببنەوە یان ڕیپڵیکەیت بن
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
+	int32 CurrentAmmo;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	float FireRate = 0.1f;
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
+	int32 MaxAmmoInClip;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	float MaxRange = 5000.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
-	float BulletSpread = 2.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
-	float CrouchSpreadMultiplier = 0.5f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Spread", meta = (AllowPrivateAccess = "true"))
-	float AirSpreadMultiplier = 2.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
-	int32 MaxZombiePenetration = 1;
-
-	// بە SkipOwner دەکرێت بۆ ئەوەی خاوەن چەک خۆی کۆنترۆڵی بکات بێ وەستان (High Ping fix)
-	UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
-	bool bIsReloading = false;
-
-	// بژمێری تەقەکردن لەبری Multicast
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
 	uint8 BurstCounter = 0;
 
+	FTimerHandle FireTimerHandle;
+	FTimerHandle ReloadTimerHandle;
+
+	float LastFireTime;
+	int32 CurrentBurstShotsLeft = 0;
+
 public:
-	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
-	int32 CurrentAmmo = 30;
 
-	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
-	int32 MaxAmmoInClip = 30;
+	UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon|LiveStats")
+	bool bIsReloading = false;
 
-	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
-	int32 ReserveAmmo = 220;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
-	float DefaultReloadTime = 2.0f; // ئەگەر مۆنتاژ نەبوو پشت بەمە دەبەسترێت
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
-	FName MuzzleLocationName;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Animation")
-	UAnimMontage* ReloadMontage;
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
+	int32 ReserveAmmo;
 
 public:
 	void StartFire();
@@ -125,17 +159,8 @@ public:
 	void OnRep_Reload();
 
 protected:
-	FTimerHandle FireTimerHandle;
-	FTimerHandle ReloadTimerHandle; // بۆ بەڕێوەبردنی کاتی پڕکردنەوە لای سێرڤەر و کڵایەنت
-
-	float LastFireTime;
-
-	// ڕووداوەکەی پڕکردنەوە کاتێک کاتەکەی تەواو دەبێت بۆ یاریزان
 	void Local_ReloadComplete();
-
-	// ڕووداوەکەی پڕکردنەوە بۆ سێرڤەر کە ڕاستییەکەی بەدەستەوەیە
 	void Server_ReloadComplete();
-
 	void PlayWeaponEffects();
 
 	UPROPERTY()
@@ -146,4 +171,8 @@ protected:
 
 	UPROPERTY()
 	APlayerController* OwnerController;
+
+
+public:
+	FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }
 };

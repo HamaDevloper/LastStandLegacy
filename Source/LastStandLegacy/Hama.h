@@ -177,6 +177,18 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
 	void Switchcamera(bool bIsRightShoulderViewChanged);
 
+	// -----------------------------------------------------------------------------
+	// Health
+	// -----------------------------------------------------------------------------
+public:
+	UPROPERTY(ReplicatedUsing = OnRep_Health,EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
+	float CurrentHealth;
+
+	UPROPERTY(ReplicatedUsing = OnRep_Health, EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
+	float MaxHealth = 100.f;
+
+	UFUNCTION()
+	void OnRep_Health();
 
 	// -----------------------------------------------------------------------------
 	// Input Callbacks & Network RPCs

@@ -100,6 +100,9 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AHama, CurrentWeapon);
+
+	DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -173,7 +176,7 @@ void AHama::CrossHairTrace()
 	OwnerController->GetPlayerViewPoint(TraceStart, TraceRotation);
 
 	// Fallback range just in case MaxRange is 0 in your Blueprint
-	const float TraceDistance = CurrentWeapon->MaxRange;
+	const float TraceDistance = CurrentWeapon->GetWeaponMaxRange();
 	const FVector TraceEnd = TraceStart + (TraceRotation.Vector() * TraceDistance);
 
 	FTraceDelegate TraceDelegate;
@@ -322,6 +325,11 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		
 		EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
 	}
+}
+
+void AHama::OnRep_Health()
+{
+
 }
 
 // -----------------------------------------------------------------------------
