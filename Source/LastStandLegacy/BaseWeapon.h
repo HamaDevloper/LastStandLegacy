@@ -72,11 +72,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseWeapon|Stats")
 	int32 MaxZombiePenetration = 1;
 
-	// گۆڕاوی ڕیلۆد 
+	// بە SkipOwner دەکرێت بۆ ئەوەی خاوەن چەک خۆی کۆنترۆڵی بکات بێ وەستان (High Ping fix)
 	UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	bool bIsReloading = false;
 
-	// بژمێری تەقەکردن لەبری Multicast (بۆ یاریزانەکانی تر بۆ ئەوەی بزانن چەکەکە تەقەی کردووە)
+	// بژمێری تەقەکردن لەبری Multicast
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
 	uint8 BurstCounter = 0;
 
@@ -89,6 +89,9 @@ public:
 
 	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	int32 ReserveAmmo = 220;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
+	float DefaultReloadTime = 2.0f; // ئەگەر مۆنتاژ نەبوو پشت بەمە دەبەسترێت
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Stat|Ammo")
 	FName MuzzleLocationName;
@@ -105,22 +108,13 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerHandleFire(FVector StartLocation, FVector EndLocation);
 
-	// پێویستت بە Multicast نامێنێت بۆ فیشەکەکەکان، گۆڕدرا بۆ ئەمە
 	UFUNCTION()
 	void OnRep_BurstCounter();
 
 	void Reload();
 
 	UFUNCTION(Server, Reliable)
-	void ServerReload();
-
-	// BlueprintCallable کراوە بۆ ئەوەی لە ناو Anim Notify ی مۆنتاژەکە بتوانێت بانگ بکرێت
-	UFUNCTION(BlueprintCallable, Category = "Weapon Stat|Ammo")
-	void ReloadFinish();
-
-	// ڕەسەنی سەلماندنی خێراکەری سێرڤەر بۆ ڕیلۆد
-	UFUNCTION(Server, Reliable)
-	void Server_FinishReloadValidation();
+	void ServerReload(float InReloadTime);
 
 	void CancelReload();
 
@@ -130,9 +124,17 @@ public:
 	UFUNCTION()
 	void OnRep_Reload();
 
-private:
+protected:
 	FTimerHandle FireTimerHandle;
+	FTimerHandle ReloadTimerHandle; // بۆ بەڕێوەبردنی کاتی پڕکردنەوە لای سێرڤەر و کڵایەنت
+
 	float LastFireTime;
+
+	// ڕووداوەکەی پڕکردنەوە کاتێک کاتەکەی تەواو دەبێت بۆ یاریزان
+	void Local_ReloadComplete();
+
+	// ڕووداوەکەی پڕکردنەوە بۆ سێرڤەر کە ڕاستییەکەی بەدەستەوەیە
+	void Server_ReloadComplete();
 
 	void PlayWeaponEffects();
 
