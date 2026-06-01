@@ -6,7 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "BaseWeapon.generated.h"
 
-#define ECC_Zombie ECC_GameTraceChannel1
+#define ECC_Bullet ECC_GameTraceChannel1
 
 class AHama;
 class UHamaComponent;

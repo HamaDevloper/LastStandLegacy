@@ -52,6 +52,7 @@ void ABaseWeapon::Tick(float DeltaTime)
 
 void ABaseWeapon::StartFire()
 {
+	if (CurrentAmmo <= 0 && ReserveAmmo <= 0) return;
 	if (bIsReloading)
 	{
 		if (CurrentAmmo > 0) CancelReload();
@@ -74,6 +75,11 @@ void ABaseWeapon::StartFire()
 void ABaseWeapon::StopFire()
 {
 	GetWorldTimerManager().ClearTimer(FireTimerHandle);
+
+	if (HamaComponent && HamaComponent->IsFiring())
+	{
+		HamaComponent->SetFiring(false);
+	}
 }
 
 float ABaseWeapon::CalculateBulletSpread()
@@ -106,13 +112,10 @@ void ABaseWeapon::HandleFireLocal()
 {
 	if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
+	// ١. پشکنینی فیشەک لە سەرەتای فەنکشنەکە (گرنگە!)
 	if (CurrentAmmo <= 0)
 	{
 		StopFire();
-		if (HamaComponent)
-		{
-			HamaComponent->SetFiring(false);
-		}
 		Reload();
 		return;
 	}
@@ -123,14 +126,14 @@ void ABaseWeapon::HandleFireLocal()
 		if (!OwnerController) return;
 	}
 
+	CurrentAmmo--;
 	LastFireTime = GetWorld()->GetTimeSeconds();
 
-	// پێشبینی تەقەی لۆکاڵ بەمە ناتگێڕێتەوە دواوە گەر پینگ زۆریش بێت
-	CurrentAmmo--;
-
+	// ڕاگرتنی ڕاکردن و دەستپێکردنی ئەنیمەیشنی تەقە
 	if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
 	if (!HamaComponent->IsFiring()) HamaComponent->SetFiring(true);
 
+	// حیسابکردنی ئاڕاستەی فیشەک و بڵاوبوونەوە (Spread)
 	FVector Start;
 	FRotator Rotation;
 	OwnerController->GetPlayerViewPoint(Start, Rotation);
@@ -141,9 +144,18 @@ void ABaseWeapon::HandleFireLocal()
 	FVector SpreadDirection = FMath::VRandCone(Rotation.Vector(), SpreadInRadians);
 	FVector FinalEnd = Start + (SpreadDirection * MaxRange);
 
+	// کایکردنی دەنگ و افێکت کڵایەنت
 	PlayWeaponEffects();
 
+	// ناردنی زانیاری بۆ سێرڤەر بۆ دروستکردنی هێڵی پێکان (Trace)
 	ServerHandleFire(Start, FinalEnd);
+
+	// ٣. ئەگەر ئەمە کۆتا فیشەک بوو کە تەقێندرا، یەکسەر لێرەدا ڕیلۆد بکە بۆ فیشەکی داهاتوو
+	if (CurrentAmmo <= 0)
+	{
+		StopFire();
+		Reload();
+	}
 }
 
 void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector EndLocation)
@@ -173,7 +185,7 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 	if (MaxZombiePenetration <= 1)
 	{
 		FHitResult Hit;
-		bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, StartLocation, EndLocation, ECC_Zombie, Params);
+		bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, StartLocation, EndLocation, ECC_Bullet, Params);
 		if (bHit)
 		{
 			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), Damage, Hit.ImpactNormal, Hit, DamageInstigator, this, UDamageType::StaticClass());
@@ -182,7 +194,7 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 	else
 	{
 		TArray<FHitResult> Hits;
-		GetWorld()->LineTraceMultiByChannel(Hits, StartLocation, EndLocation, ECC_Zombie, Params);
+		GetWorld()->LineTraceMultiByChannel(Hits, StartLocation, EndLocation, ECC_Bullet, Params);
 
 		int32 PenetrationCount = 0;
 		TSet<AActor*> HitActors;
@@ -261,28 +273,30 @@ void ABaseWeapon::Local_ReloadComplete()
 
 void ABaseWeapon::ServerReload_Implementation(float InReloadTime)
 {
-	// دڵنیایی کە خێرایی نەگەڕێنێتەوە، و ئەگەر خۆی هۆست نەبوو دووبارەی نەکاتەوە 
-	if (bIsReloading && HasAuthority() && OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-		return;
-
+	// چاککردنی مەرجەکە: ئەگەر هۆست بوو، با لێرە نەیگەڕێنێتەوە، تەنها دڵنیابە لەوەی bIsReloading چالاکە
 	bIsReloading = true;
 
-	// ناردنی سیگناڵ بۆ کەسانی ناو سێرڤەر کە من ئەنیمەیشن لێئەدەم!
+	// ناردنی سیگناڵ بۆ کڵایەنتەکانی تر (Simulated Proxies) بۆ ئەوەی ئەنیمەیشنەکە بببینن
 	if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
 	{
+		// ئەگەر bIsReloading ڕیپلیکەیت کرابێت، OnRep_Reload خۆکارانە لای کڵایەنتەکان بانگ دەبێت،
+		// بەڵام بۆ دڵنیایی زیاتر لێرە بە دەستی بانگی دەکەین بۆ کڵایەنتەکانی تر
 		OnRep_Reload();
 	}
 
-	// پارێزگارییەکە با هاککەر خێرایی کەم نەگەیەنێت
+	// پارێزگاری دژە هاک (Anti-Cheat)
 	float ExactReloadTime = ReloadMontage ? ReloadMontage->GetPlayLength() : InReloadTime;
-	float BufferTolerance = FMath::Max(ExactReloadTime - 0.2f, 0.1f); // ڕێگە دان بە کەمێ جیاوازی لاگ (Anti-Cheat Validation)
 
-	// دانانی کات بۆ کۆتایی ڕیلۆد
+	// ئەگەر خۆمان هۆست بووین (Locally Controlled)، با کاتەکە ڕێک وەک خۆی بێت و کەم نەبێتەوە
+	float BufferTolerance = (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) ? ExactReloadTime : FMath::Max(ExactReloadTime - 0.2f, 0.1f);
+
+	// دانانی کات بۆ کۆتایی ڕیلۆدی سێرڤەر (ئەمە لای هۆست و لای سێرڤەریش ڕەن دەبێت)
 	GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Server_ReloadComplete, BufferTolerance, false);
 }
 
 void ABaseWeapon::Server_ReloadComplete()
 {
+	// لای هۆست یان کڵایەنت، لۆژیکی پڕکردنەوەی فیشەکەکە لێرە جێبەجێ دەبێت
 	int32 AmmoNeeded = MaxAmmoInClip - CurrentAmmo;
 	int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
 
@@ -290,6 +304,13 @@ void ABaseWeapon::Server_ReloadComplete()
 	ReserveAmmo -= AmmoToMove;
 	bIsReloading = false;
 
+	// کاتێک ڕیلۆد تەواو دەبێت، دڵنیابوونەوە لە ناردنی نوێکاری بۆ هەمووان (ئەگەر پێویست بکات)
+	if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
+	{
+		OnRep_Reload(); // بۆ ڕاگرتنی ئەنیمەیشن لای کەسانی تر
+	}
+
+	// ئەگەر یاریزانەکە (چ هۆست چ کڵایەنت) هێشتا دەستی لەسەر کلیکی تەقە بوو، با دیسان دەست بە تەقە بکاتەوە
 	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled() && OwnerCharacter->bIsFireButtonHold)
 	{
 		StartFire();

@@ -6,7 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Hama.generated.h"
 
-#define ECC_Zombie ECC_GameTraceChannel1
+#define ECC_CrossHair ECC_GameTraceChannel2
 
 // -----------------------------------------------------------------------------
 // Forward Declarations

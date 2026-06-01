@@ -144,13 +144,7 @@ void AHama::StartCrossHairTimer()
 	if (!IsLocallyControlled())
 		return;
 
-	if (!OwnerController)
-	{
-		OwnerController = Cast<APlayerController>(GetController());
-	}
-
-	if (!OwnerController)
-		return;
+	// REMOVED OwnerController check from here so the timer always starts!
 
 	if (GetWorldTimerManager().IsTimerActive(CrossHairTimerHandle))
 		return;
@@ -167,48 +161,57 @@ void AHama::StartCrossHairTimer()
 void AHama::CrossHairTrace()
 {
 	if (!CurrentWeapon) return;
+
 	if (!OwnerController)
 	{
 		OwnerController = Cast<APlayerController>(GetController());
-		if (!OwnerController) return;
+		if (!OwnerController) return; // Safely exit if controller still isn't ready
 	}
 
 	FVector TraceStart;
 	FRotator TraceRotation;
-
 	OwnerController->GetPlayerViewPoint(TraceStart, TraceRotation);
 
-	const FVector TraceEnd =
-		TraceStart + (TraceRotation.Vector() * CurrentWeapon->MaxRange);
+	// Fallback range just in case MaxRange is 0 in your Blueprint
+	const float TraceDistance = CurrentWeapon->MaxRange;
+	const FVector TraceEnd = TraceStart + (TraceRotation.Vector() * TraceDistance);
 
 	FTraceDelegate TraceDelegate;
 	TraceDelegate.BindUObject(this, &AHama::OnCrossHairTraceCompleted);
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(CrossHairTrace), false);
-	Params.AddIgnoredActor(this);
+	Params.AddIgnoredActor(this); // Ignore Hama
+	Params.AddIgnoredActor(CurrentWeapon); // CRITICAL: Ignore the weapon so we don't shoot our own gun!
 
 	GetWorld()->AsyncLineTraceByChannel(
 		EAsyncTraceType::Single,
 		TraceStart,
 		TraceEnd,
-		ECC_Zombie,
+		ECC_CrossHair,
 		Params,
 		FCollisionResponseParams::DefaultResponseParam,
 		&TraceDelegate
 	);
 }
 
-void AHama::OnCrossHairTraceCompleted(
-	const FTraceHandle& TraceHandle,
-	FTraceDatum& TraceDatum)
+void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum)
 {
-	const bool bHit = TraceDatum.OutHits.IsValidIndex(0) &&
-		IsValid(TraceDatum.OutHits[0].GetActor());
+	bool bHit = false;
+
+	// Check if we hit anything valid
+	if (TraceDatum.OutHits.IsValidIndex(0))
+	{
+		AActor* HitActor = TraceDatum.OutHits[0].GetActor();
+		if (IsValid(HitActor))
+		{
+			bHit = true;
+		}
+	}
 
 	if (bHit != bLastCrossHairState)
 	{
 		bLastCrossHairState = bHit;
-		CrossHairUpdate(bHit);
+		CrossHairUpdate(bHit); // Fires the Blueprint event
 	}
 }
 
