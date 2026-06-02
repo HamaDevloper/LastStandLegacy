@@ -352,19 +352,45 @@ void AHama::FireActionReleased()
 
 void AHama::AimActionPressed()
 {
-	if (!HamaComponent) return;
+	if (!HamaComponent || !CurrentWeapon) return;
 	bIsAimButtonHold = true;
-	if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
+
+	if (HamaComponent->bIsSprinting)
+	{
+		HamaComponent->StopSprinting();
+	}
+
 	HamaComponent->SetAiming(true);
 	OnAim(true);
+
+	// ---- لێدانی ئەنیمەیشن بە شێوازی کورت و سادە ----
+	if (IsLocallyControlled())
+	{
+		UAnimMontage* WeaponAimMontage = CurrentWeapon->GetAimMontage();
+		if (WeaponAimMontage)
+		{
+			PlayAnimMontage(WeaponAimMontage);
+		}
+	}
 }
 
 void AHama::AimActionReleased()
 {
-	if (!HamaComponent) return;
+	if (!HamaComponent || !CurrentWeapon) return;
 	bIsAimButtonHold = false;
+
 	HamaComponent->SetAiming(false);
 	OnAim(false);
+
+	// ---- وەستاندنی ئەنیمەیشن بە شێوازی کورت و سادە ----
+	if (IsLocallyControlled())
+	{
+		UAnimMontage* WeaponAimMontage = CurrentWeapon->GetAimMontage();
+		if (WeaponAimMontage)
+		{
+			StopAnimMontage(WeaponAimMontage);
+		}
+	}
 }
 
 void AHama::ReloadActionPressed()

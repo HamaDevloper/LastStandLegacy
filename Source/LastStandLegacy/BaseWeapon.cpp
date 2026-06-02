@@ -174,18 +174,30 @@ void ABaseWeapon::HandleFireLocal()
 	if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
 	if (!HamaComponent->IsFiring()) HamaComponent->SetFiring(true);
 
-	FVector Start;
-	FRotator Rotation;
-	OwnerController->GetPlayerViewPoint(Start, Rotation);
+	// دیاریکردنی جێگای کامێرا بۆ ئەوەی بزانین یاریزان سەردێڕی خستووەتە کوێ
+	FVector CameraLoc;
+	FRotator CameraRot;
+	OwnerController->GetPlayerViewPoint(CameraLoc, CameraRot);
 
+	// دانانی ڕێژەی بڵاوبوونەوەی گولەکان (Spread)
 	float Spread = CalculateBulletSpread();
 	float SpreadInRadians = FMath::DegreesToRadians(Spread);
 
-	FVector SpreadDirection = FMath::VRandCone(Rotation.Vector(), SpreadInRadians);
-	FVector FinalEnd = Start + (SpreadDirection * CurrentWeaponData.MaxRange);
+	// ئاڕاستەی تەقەکردن لە ناوەندی شاشەکە + سپرێد
+	FVector TraceDir = FMath::VRandCone(CameraRot.Vector(), SpreadInRadians);
+	FVector TraceEnd = CameraLoc + (TraceDir * CurrentWeaponData.MaxRange);
+
+	// ــ ستانداردی تەقەکردنی پڕۆفیشناڵ ــ
+	// یەکەم جار لاین ترەیس بکە لەلای لۆکاڵ بۆ بینینی ئەوەی چی هیت کراوە بە گوێرەی ناوەندی کامێرا
+	FHitResult CameraHit;
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+	Params.AddIgnoredActor(OwnerCharacter);
 
 	PlayWeaponEffects();
-	ServerHandleFire(Start, FinalEnd);
+
+	// داتای پاک درا بە سێرڤەر!
+	ServerHandleFire(CameraLoc, TraceEnd);
 
 	if (CurrentAmmo <= 0 || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
 	{
@@ -196,11 +208,11 @@ void ABaseWeapon::HandleFireLocal()
 
 void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector EndLocation)
 {
-	if (CurrentAmmo <= 0 || bIsReloading) return;
-
-	float DistanceSquared = FVector::DistSquared(StartLocation, EndLocation);
-	float MaxRangeWithBuffer = CurrentWeaponData.MaxRange + 100.f;
-	if (DistanceSquared >= FMath::Square(MaxRangeWithBuffer)) return;
+	// پشکنینی فیشەک و ڕیلۆد بە شێوازی سەلامەت
+	if (CurrentAmmo <= 0 || bIsReloading)
+	{
+		return;
+	}
 
 	AController* DamageInstigator = OwnerCharacter ? OwnerCharacter->GetController() : nullptr;
 
@@ -209,19 +221,31 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 		CurrentAmmo--;
 	}
 
-	BurstCounter++;
+	BurstCounter++; // بۆ ڕیپڵیکەیتبوونی ئەفێکت لای یاریزانانی تر
+
+	// سکیوریتی چێک
+	float DistanceSquared = FVector::DistSquared(StartLocation, EndLocation);
+	float MaxRangeWithBuffer = CurrentWeaponData.MaxRange + 500.f;
+
+	if (DistanceSquared > (MaxRangeWithBuffer * MaxRangeWithBuffer))
+	{
+		return;
+	}
 
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
 	Params.AddIgnoredActor(GetOwner());
 
+	FVector FireDir = (EndLocation - StartLocation).GetSafeNormal();
+
 	if (CurrentWeaponData.MaxZombiePenetration <= 1)
 	{
 		FHitResult Hit;
-		bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, StartLocation, EndLocation, ECC_Bullet, Params);
-		if (bHit)
+		bool bHasHit = GetWorld()->LineTraceSingleByChannel(Hit, StartLocation, EndLocation, ECC_Bullet, Params);
+
+		if (bHasHit && Hit.GetActor())
 		{
-			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), CurrentWeaponData.Damage, Hit.ImpactNormal, Hit, DamageInstigator, this, UDamageType::StaticClass());
+			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), CurrentWeaponData.Damage, FireDir, Hit, DamageInstigator, this, UDamageType::StaticClass());
 		}
 	}
 	else
@@ -229,24 +253,31 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 		TArray<FHitResult> Hits;
 		GetWorld()->LineTraceMultiByChannel(Hits, StartLocation, EndLocation, ECC_Bullet, Params);
 
-		int32 PenetrationCount = 0;
-		TSet<AActor*> HitActors;
+		int32 PenetratedZombiesCount = 0;
+		TSet<AActor*> HitActorsAlready;
 
-		for (const FHitResult& Hit : Hits)
+		for (const FHitResult& SingleHit : Hits)
 		{
-			if (Hit.GetActor() && !HitActors.Contains(Hit.GetActor()))
+			if (SingleHit.GetActor() && !HitActorsAlready.Contains(SingleHit.GetActor()))
 			{
-				UGameplayStatics::ApplyPointDamage(Hit.GetActor(), CurrentWeaponData.Damage, Hit.ImpactNormal, Hit, DamageInstigator, this, UDamageType::StaticClass());
-				HitActors.Add(Hit.GetActor());
-				PenetrationCount++;
+				UGameplayStatics::ApplyPointDamage(SingleHit.GetActor(), CurrentWeaponData.Damage, FireDir, SingleHit, DamageInstigator, this, UDamageType::StaticClass());
 
-				if (PenetrationCount >= CurrentWeaponData.MaxZombiePenetration) break;
+				HitActorsAlready.Add(SingleHit.GetActor());
+				PenetratedZombiesCount++;
+
+				if (PenetratedZombiesCount >= CurrentWeaponData.MaxZombiePenetration)
+				{
+					break;
+				}
+
+				if (SingleHit.bBlockingHit) break;
 			}
 		}
 	}
 
-	FVector MuzzleLocation = WeaponMesh->GetSocketLocation(CurrentWeaponData.MuzzleLocationName);
-	DrawDebugLine(GetWorld(), MuzzleLocation, EndLocation, FColor::Red, false, 2.f, 0.f, 1.f);
+#if !UE_BUILD_SHIPPING 
+	DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Red, false, 2.f, 0, 1.0f);
+#endif
 }
 
 void ABaseWeapon::OnRep_BurstCounter()

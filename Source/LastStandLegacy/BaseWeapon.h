@@ -76,6 +76,9 @@ struct FWeaponData : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Visuals")
 	FName MuzzleLocationName = FName("Muzzle");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
+	UAnimMontage* AimMontage;
 };
 
 UCLASS()
@@ -175,4 +178,5 @@ protected:
 
 public:
 	FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }
+	FORCEINLINE UAnimMontage* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
 };

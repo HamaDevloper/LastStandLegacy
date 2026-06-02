@@ -4,6 +4,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Hama.h"
 #include "HamaMovementComponent.h"
+#include "BaseWeapon.h"
 
 UHamaComponent::UHamaComponent()
 {
@@ -193,10 +194,41 @@ void UHamaComponent::OnRep_Sprinting()
 
 void UHamaComponent::OnRep_Aiming()
 {
+	// لۆکاڵ کڵایەنت پێویستی بەمە نییە چونکە خۆی پێشتر لۆجیکەکەی جێبەجێ کردووە
 	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
+
 	if (MoveComp)
 	{
 		MoveComp->bAiming = bIsAiming;
+	}
+
+	if (!OwnerCharacter || !OwnerCharacter->GetMesh()) return;
+
+	UAnimInstance* AnimInstance = OwnerCharacter->GetMesh()->GetAnimInstance();
+	if (!AnimInstance) return;
+
+	// ١. دۆزینەوەی ئەو چەکەی کە ئێستا لە دەستی یاریزانەکەدایە
+	// (لێرەدا وادادەنێین فەنکشنێک یان گۆڕاوێک هەیە لە ناو AHama کە چەکەکە دەگەڕێنێتەوە، بۆ نموونە CurrentWeapon)
+	// ئەگەر ناوی گۆڕاوەکەت جیاوازە، لێرەدا بیگۆڕە
+	ABaseWeapon* ActiveWeapon = OwnerCharacter->CurrentWeapon;
+
+	if (ActiveWeapon)
+	{
+		// ٢. ڕاستەوخۆ ئەنیمەیشنەکە لەناو داتاتەیبڵی چەکەکە خۆیەوە دەهێنین
+		UAnimMontage* WeaponAimMontage = ActiveWeapon->GetAimMontage();
+
+		if (WeaponAimMontage)
+		{
+			if (bIsAiming)
+			{
+				AnimInstance->Montage_Play(WeaponAimMontage);
+			}
+			else
+			{
+				// لێرەدا بە نەرمی (Blend Out) ئەنیمەیشنەکە دەوەستێنین
+				AnimInstance->Montage_Stop(0.2f, WeaponAimMontage);
+			}
+		}
 	}
 }
 
