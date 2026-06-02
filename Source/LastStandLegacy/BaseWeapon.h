@@ -136,6 +136,9 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
 	int32 ReserveAmmo;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Effects")
+	UForceFeedbackEffect* ShootForceFeedback;
+
 public:
 	void StartFire();
 	void StopFire();

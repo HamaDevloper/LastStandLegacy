@@ -207,9 +207,6 @@ void UHamaComponent::OnRep_Aiming()
 	UAnimInstance* AnimInstance = OwnerCharacter->GetMesh()->GetAnimInstance();
 	if (!AnimInstance) return;
 
-	// ١. دۆزینەوەی ئەو چەکەی کە ئێستا لە دەستی یاریزانەکەدایە
-	// (لێرەدا وادادەنێین فەنکشنێک یان گۆڕاوێک هەیە لە ناو AHama کە چەکەکە دەگەڕێنێتەوە، بۆ نموونە CurrentWeapon)
-	// ئەگەر ناوی گۆڕاوەکەت جیاوازە، لێرەدا بیگۆڕە
 	ABaseWeapon* ActiveWeapon = OwnerCharacter->CurrentWeapon;
 
 	if (ActiveWeapon)
@@ -225,7 +222,6 @@ void UHamaComponent::OnRep_Aiming()
 			}
 			else
 			{
-				// لێرەدا بە نەرمی (Blend Out) ئەنیمەیشنەکە دەوەستێنین
 				AnimInstance->Montage_Stop(0.2f, WeaponAimMontage);
 			}
 		}

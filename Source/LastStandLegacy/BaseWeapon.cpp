@@ -171,8 +171,22 @@ void ABaseWeapon::HandleFireLocal()
 	CurrentAmmo--;
 	LastFireTime = GetWorld()->GetTimeSeconds();
 
-	if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
-	if (!HamaComponent->IsFiring()) HamaComponent->SetFiring(true);
+	if (HamaComponent)
+	{
+		if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
+		if (!HamaComponent->IsFiring()) HamaComponent->SetFiring(true);
+	}
+	if (ShootForceFeedback)
+	{
+		// ١. دروستکردنی پارامیتەرەکان بە شێوازی نوێی UE 5.7
+		FForceFeedbackParameters FeedbackParams;
+		FeedbackParams.bLooping = false;
+		FeedbackParams.bIgnoreTimeDilation = false;
+		FeedbackParams.Tag = FName("WeaponFire");
+
+		// ٢. تەنها ئەم دوو گۆڕاوە دەنێرین بۆ فەنکشنەکە
+		OwnerController->ClientPlayForceFeedback(ShootForceFeedback, FeedbackParams);
+	}
 
 	// دیاریکردنی جێگای کامێرا بۆ ئەوەی بزانین یاریزان سەردێڕی خستووەتە کوێ
 	FVector CameraLoc;
