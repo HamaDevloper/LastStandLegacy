@@ -144,21 +144,11 @@ void AHama::Tick(float DeltaTime)
 
 void AHama::StartCrossHairTimer()
 {
-	if (!IsLocallyControlled())
-		return;
-
-	// REMOVED OwnerController check from here so the timer always starts!
-
-	if (GetWorldTimerManager().IsTimerActive(CrossHairTimerHandle))
-		return;
-
-	GetWorldTimerManager().SetTimer(
-		CrossHairTimerHandle,
-		this,
-		&AHama::CrossHairTrace,
-		CrossHairTimer,
-		true
-	);
+	if (!IsLocallyControlled()) return;
+	
+	if (GetWorldTimerManager().IsTimerActive(CrossHairTimerHandle)) return;
+		
+	GetWorldTimerManager().SetTimer(CrossHairTimerHandle,this,&AHama::CrossHairTrace,CrossHairTimer,true);
 }
 
 void AHama::CrossHairTrace()
@@ -214,7 +204,7 @@ void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDat
 	if (bHit != bLastCrossHairState)
 	{
 		bLastCrossHairState = bHit;
-		CrossHairUpdate(bHit); // Fires the Blueprint event
+		CrossHairUpdate(bHit);
 	}
 }
 

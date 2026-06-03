@@ -132,9 +132,9 @@ protected:
 	FTimerHandle FireTimerHandle;
 	FTimerHandle ReloadTimerHandle;
 
-	float LastFireTime;
 	int32 CurrentBurstShotsLeft = 0;
-	int32 ShotsFiredInBurst = 0; // ژمارەی فیشەکی بەردەوام
+	int32 ShotsFiredInBurst = 0;
+	float NextAllowedFireTime;
 
 public:
 	UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon|LiveStats")
@@ -152,8 +152,9 @@ public:
 	void HandleFireLocal();
 	float CalculateBulletSpread();
 
+	// لە ناو فایلی BaseWeapon.h بیدۆزەرەوە و گۆڕانکاری بکە:
 	UFUNCTION(Server, Reliable)
-	void ServerHandleFire(FVector StartLocation, FVector EndLocation);
+	void ServerHandleFire(FVector StartLocation, FVector CameraDirection, int32 RandomSeed, float SpreadInRadians);
 
 	UFUNCTION()
 	void OnRep_BurstCounter();

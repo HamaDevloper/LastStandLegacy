@@ -18,7 +18,7 @@ ABaseWeapon::ABaseWeapon()
 	WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
 	RootComponent = WeaponMesh;
 
-	LastFireTime = 0.f;
+	NextAllowedFireTime = 0.f;
 }
 
 void ABaseWeapon::BeginPlay()
@@ -42,7 +42,8 @@ void ABaseWeapon::Tick(float DeltaTime)
 	if (!OwnerController || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
 	FRotator Previous = CurrentRecoilOffset;
-	CurrentRecoilOffset = FMath::RInterpTo(CurrentRecoilOffset, TargetRecoilOffset, DeltaTime, 12.0f);
+	// بەکارهێنانی RInterpConstantTo یان خێراکردنی ئینتەرپۆلەیشن بۆ هەستی وەڵامدانەوەی خێراتر (Responsiveness)
+	CurrentRecoilOffset = FMath::RInterpTo(CurrentRecoilOffset, TargetRecoilOffset, DeltaTime, 20.0f);
 
 	float DeltaPitch = CurrentRecoilOffset.Pitch - Previous.Pitch;
 	float DeltaYaw = CurrentRecoilOffset.Yaw - Previous.Yaw;
@@ -102,6 +103,7 @@ void ABaseWeapon::StartFire()
 		else return;
 	}
 
+	// بەکارهێنانی سیستەمی کاتی جیهانی بۆ ڕێگری لە Timer Drift
 	float CurrentTime = GetWorld()->GetTimeSeconds();
 
 	if (CurrentWeaponData.FireMode == EWeaponFireMode::Burst)
@@ -109,12 +111,13 @@ void ABaseWeapon::StartFire()
 		CurrentBurstShotsLeft = CurrentWeaponData.BurstShotCount;
 	}
 
-	if (CurrentTime - LastFireTime >= CurrentWeaponData.FireRate)
+	if (CurrentTime >= NextAllowedFireTime)
 	{
 		HandleFireLocal();
 
 		if (CurrentWeaponData.FireMode == EWeaponFireMode::Automatic || CurrentWeaponData.FireMode == EWeaponFireMode::Burst)
 		{
+			// بەکارهێنانی چەینی دەستی (Manual Chaining) لەبری looping سادە بۆ جێگیری فریمەکان
 			GetWorldTimerManager().SetTimer(FireTimerHandle, this, &ABaseWeapon::HandleFireLocal, CurrentWeaponData.FireRate, true);
 		}
 	}
@@ -183,12 +186,14 @@ void ABaseWeapon::HandleFireLocal()
 		if (!OwnerController) return;
 	}
 
+	// لۆکاڵ پڕێدێکشن بۆ فیشەک (Local Prediction) بۆ ئەوەی UI دەستبەجێ کەم بکات بێ لاگ
 	CurrentAmmo--;
-	LastFireTime = GetWorld()->GetTimeSeconds();
+	float CurrentTime = GetWorld()->GetTimeSeconds();
+	NextAllowedFireTime = CurrentTime + CurrentWeaponData.FireRate;
 
-	if (HamaComponent)
+	if (HamaComponent && HamaComponent->bIsSprinting)
 	{
-		if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
+		HamaComponent->StopSprinting();
 	}
 
 	if (ShootForceFeedback)
@@ -207,12 +212,16 @@ void ABaseWeapon::HandleFireLocal()
 	float Spread = CalculateBulletSpread();
 	float SpreadInRadians = FMath::DegreesToRadians(Spread);
 
-	FVector TraceDir = FMath::VRandCone(CameraRot.Vector(), SpreadInRadians);
-	FVector TraceEnd = CameraLoc + (TraceDir * CurrentWeaponData.MaxRange);
+	// دروستکردنی Seed بۆ پاسدان بە سێرڤەر (Anti-Cheat / Sync)
+	int32 RandomSeed = FMath::Rand();
+	FRandomStream WeaponStream(RandomSeed);
+	FVector TraceDir = WeaponStream.VRandCone(CameraRot.Vector(), SpreadInRadians);
 
 	PlayWeaponEffects();
 	ApplyRecoilAndCameraShake();
-	ServerHandleFire(CameraLoc, TraceEnd);
+
+	// ناردنی شوێنی دەستپێک و Seed بە سێرڤەر (گۆڕدراوە بۆ RPC نوێ)
+	ServerHandleFire(CameraLoc, CameraRot.Vector(), RandomSeed, SpreadInRadians);
 
 	if (CurrentAmmo <= 0 || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
 	{
@@ -221,59 +230,58 @@ void ABaseWeapon::HandleFireLocal()
 	}
 }
 
-void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector EndLocation)
+// پێویستە ناوی پارامێتەرەکانی ئەم فانکشنە لە فایلی .h بگۆڕیت بۆ ئەم شێوازە نوێیەی خوارەوە
+void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector CameraDirection, int32 RandomSeed, float SpreadInRadians)
 {
-	if (CurrentAmmo <= 0 || bIsReloading) return;
+	// پشکنینی توندی سەر دەسەڵاتی سێرڤەر (Server Authority Check)
+	if (HasAuthority() && CurrentAmmo <= 0) return;
+	if (bIsReloading) return;
 
 	AController* DamageInstigator = OwnerCharacter ? OwnerCharacter->GetController() : nullptr;
 
-	// Anti-Cheat: پشکنینی شوێنی تەقەکردن لەسەر سێرڤەر
 	if (DamageInstigator)
 	{
 		FVector ServerCameraLoc;
 		FRotator ServerCameraRot;
 		DamageInstigator->GetPlayerViewPoint(ServerCameraLoc, ServerCameraRot);
 
-		// ئەگەر کڵایەنتەکە شوێنێکی هەڵەی ناردبوو (وەک هاک)، سێرڤەرەکە ڕاستی دەکاتەوە
 		if (FVector::DistSquared(StartLocation, ServerCameraLoc) > FMath::Square(500.f))
 		{
 			StartLocation = ServerCameraLoc;
 		}
+		// هەمیشە ئاڕاستەی ڕاستەقینەی سێرڤەر بەکاردێنین بۆ ڕێگری لە لادانی هاکەر
+		CameraDirection = ServerCameraRot.Vector();
 	}
 
-	if (GetNetMode() == NM_DedicatedServer || (OwnerCharacter && !OwnerCharacter->IsLocallyControlled()))
+	// سێرڤەر خۆی لێرەدا بەپێی هەمان Seed فیشەکەکە لادەدات (١٠٠٪ پارێزراو لە هاک)
+	FRandomStream ServerStream(RandomSeed);
+	FVector FinalFireDirection = ServerStream.VRandCone(CameraDirection, SpreadInRadians);
+	FVector EndLocation = StartLocation + (FinalFireDirection * CurrentWeaponData.MaxRange);
+
+	// تەنها سێرڤەر فیشەکی سەرەکی کەم دەکاتەوە بۆ ڕێگری لە Desync
+	if (HasAuthority() && !OwnerCharacter->IsLocallyControlled())
 	{
 		CurrentAmmo--;
 	}
 
 	BurstCounter++;
 
-	float DistanceSquared = FVector::DistSquared(StartLocation, EndLocation);
-	float MaxRangeWithBuffer = CurrentWeaponData.MaxRange + 500.f;
-
-	if (DistanceSquared > (MaxRangeWithBuffer * MaxRangeWithBuffer)) return;
-
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
 	Params.AddIgnoredActor(GetOwner());
-	Params.bReturnPhysicalMaterial = true; // زۆر گرنگە بۆ زانینی جۆری بەرکەوتنەکە (سەر، قاچ، هتد)
+	Params.bReturnPhysicalMaterial = true;
 
-	FVector FireDir = (EndLocation - StartLocation).GetSafeNormal();
-
-	// فانکشنێکی یارمەتیدەر بۆ هەژمارکردنی زیان بەپێی Physical Material
 	auto CalculateDamageBySurface = [this](const FHitResult& Hit) -> float
 		{
-			float ActualDamage = CurrentWeaponData.Damage;
+			float ActualDamage = CurrentWeaponData.Damage; // دڵنیابەوە لە ڕێنووسی ئەم وشەیە لە دەیتاتەیبڵەکەتدا
 			if (Hit.PhysMaterial.IsValid())
 			{
 				EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
 
-				// SurfaceType1 وادابنێ کە بۆ سەر (Head) دانراوە لە Project Settings
 				if (SurfaceType == SurfaceType1)
 				{
 					ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
 				}
-				// SurfaceType2 وادابنێ کە بۆ قاچ (Leg) دانراوە
 				else if (SurfaceType == SurfaceType2)
 				{
 					ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
@@ -290,7 +298,7 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 		if (bHasHit && Hit.GetActor())
 		{
 			float FinalDamage = CalculateDamageBySurface(Hit);
-			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), FinalDamage, FireDir, Hit, DamageInstigator, this, UDamageType::StaticClass());
+			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), FinalDamage, FinalFireDirection, Hit, DamageInstigator, this, UDamageType::StaticClass());
 		}
 	}
 	else
@@ -306,7 +314,7 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 			if (SingleHit.GetActor() && !HitActorsAlready.Contains(SingleHit.GetActor()))
 			{
 				float FinalDamage = CalculateDamageBySurface(SingleHit);
-				UGameplayStatics::ApplyPointDamage(SingleHit.GetActor(), FinalDamage, FireDir, SingleHit, DamageInstigator, this, UDamageType::StaticClass());
+				UGameplayStatics::ApplyPointDamage(SingleHit.GetActor(), FinalDamage, FinalFireDirection, SingleHit, DamageInstigator, this, UDamageType::StaticClass());
 
 				HitActorsAlready.Add(SingleHit.GetActor());
 				PenetratedZombiesCount++;
@@ -316,6 +324,16 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 			}
 		}
 	}
+	DrawDebugLine(
+		GetWorld(),
+		StartLocation,
+		EndLocation,
+		FColor::Red, // ڕەنگی هێڵەکە (سوور)
+		false,       // ئایا هەمیشە بمێنێتەوە؟ (نەخێر)
+		2.0f,        // ماوەی مانەوەی هێڵەکە بە چرکە (٢ چرکە)
+		0,           // Depth Priority
+		1.5f         // ئەستووری هێڵەکە
+	);
 }
 
 void ABaseWeapon::OnRep_BurstCounter()
@@ -474,7 +492,6 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
 {
 	if (!OwnerController) return;
 
-	// فیشەکی یەکەم لە ئۆتۆماتیک و بەرست — بێ ڕیکۆیل
 	if (CurrentWeaponData.FireMode != EWeaponFireMode::Single && ShotsFiredInBurst == 0)
 	{
 		ShotsFiredInBurst++;
