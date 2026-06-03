@@ -29,10 +29,8 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// کڵایەنتی خۆی ئەمەی پێویست نییە چونکە بە SavedMoves پێشبینی دەکرێت، تەنها بۆ خەڵکی ترە
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsSprinting, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsAiming, COND_SkipOwner);
-	DOREPLIFETIME_CONDITION(UHamaComponent, bIsFiring, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsSlide, COND_SkipOwner);
 }
 
@@ -42,14 +40,6 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 	bIsAiming = bNewAiming;
 
 	if (MoveComp) MoveComp->bAiming = bIsAiming;
-}
-
-void UHamaComponent::SetFiring(bool bNewFiring)
-{
-	if (bIsFiring == bNewFiring) return;
-	bIsFiring = bNewFiring;
-
-	if (MoveComp) MoveComp->bFiring = bIsFiring;
 }
 
 void UHamaComponent::StartSlide()
@@ -225,15 +215,6 @@ void UHamaComponent::OnRep_Aiming()
 				AnimInstance->Montage_Stop(0.2f, WeaponAimMontage);
 			}
 		}
-	}
-}
-
-void UHamaComponent::OnRep_Firing()
-{
-	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
-	if (MoveComp)
-	{
-		MoveComp->bFiring = bIsFiring;
 	}
 }
 

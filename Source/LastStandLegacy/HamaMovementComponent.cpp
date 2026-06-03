@@ -9,7 +9,6 @@ UHamaMovementComponent::UHamaMovementComponent()
 {
 	bSprinting = false;
 	bAiming = false;
-	bFiring = false;
 }
 
 float UHamaMovementComponent::GetMaxSpeed() const
@@ -17,7 +16,6 @@ float UHamaMovementComponent::GetMaxSpeed() const
 	float MaxSpeed = Super::GetMaxSpeed();
 
 	if (bAiming) return AimSpeed;
-	if (IsCrouching() || bFiring) return 300.f;
 	if (bSprinting) return SprintSpeed;
 
 	return MaxSpeed;
@@ -32,18 +30,13 @@ void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 	// سێرڤەر فڵاگەکان دەخوێنێتەوە کە یاریزانەکە بۆی ناردووە
 	bSprinting = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
 	bAiming = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
-	bFiring = (Flags & FSavedMove_Character::FLAG_Custom_2) != 0;
 
-	// ✅ لێرەدا پردی پەیوەندییەکە دروست دەکەین:
-	// ئەگەر ئێمە سێرڤەرین، با ڤاریابڵە Replicatedـەکانی ناو HamaComponent ئەپدەیت بکەین
-	// بۆ ئەوەی بە ئۆتۆماتیکی بنێردرێن بۆ یاریزانەکانی تر (Simulated Proxies)
 	if (CharacterOwner && CharacterOwner->HasAuthority())
 	{
 		if (UHamaComponent* HamaComp = CharacterOwner->FindComponentByClass<UHamaComponent>())
 		{
 			HamaComp->bIsSprinting = bSprinting;
 			HamaComp->bIsAiming = bAiming;
-			HamaComp->bIsFiring = bFiring;
 		}
 	}
 }
@@ -55,7 +48,6 @@ void UHamaMovementComponent::FSavedMove_Hama::Clear()
 	Super::Clear();
 	bSavedWantsToSprint = false;
 	bSavedWantsToAim = false;
-	bSavedWantsToFire = false;
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT, FVector const& Accel, FNetworkPredictionData_Client_Character& Data)
@@ -64,7 +56,6 @@ void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT
 	if (UHamaMovementComponent* Comp = Cast<UHamaMovementComponent>(C->GetCharacterMovement()))
 	{
 		bSavedWantsToAim = Comp->bAiming;
-		bSavedWantsToFire = Comp->bFiring;
 		bSavedWantsToSprint = Comp->bSprinting;
 	}
 }
@@ -76,7 +67,6 @@ void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 	{
 		Comp->bSprinting = bSavedWantsToSprint;
 		Comp->bAiming = bSavedWantsToAim;
-		Comp->bFiring = bSavedWantsToFire;
 	}
 }
 
@@ -86,7 +76,6 @@ bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr
 
 	if (bSavedWantsToSprint != Other->bSavedWantsToSprint) return false;
 	if (bSavedWantsToAim != Other->bSavedWantsToAim) return false;
-	if (bSavedWantsToFire != Other->bSavedWantsToFire) return false;
 
 	return Super::CanCombineWith(NewMove, C, MaxDelta);
 }
@@ -97,7 +86,6 @@ uint8 UHamaMovementComponent::FSavedMove_Hama::GetCompressedFlags() const
 
 	if (bSavedWantsToSprint) Result |= FSavedMove_Character::FLAG_Custom_0;
 	if (bSavedWantsToAim) Result |= FSavedMove_Character::FLAG_Custom_1;
-	if (bSavedWantsToFire) Result |= FSavedMove_Character::FLAG_Custom_2;
 
 	return Result;
 }

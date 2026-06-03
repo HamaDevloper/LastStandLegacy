@@ -1,10 +1,8 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Engine/DataTable.h" // پێویستە بۆ Data Table
+#include "Engine/DataTable.h"
 #include "BaseWeapon.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
@@ -14,7 +12,6 @@ class UHamaComponent;
 class USkeletalMeshComponent;
 class UAnimMontage;
 
-/** دیاریکردنی شێوازی تەقەکردنی چەکەکە */
 UENUM(BlueprintType)
 enum class EWeaponFireMode : uint8
 {
@@ -23,7 +20,6 @@ enum class EWeaponFireMode : uint8
 	Automatic  UMETA(DisplayName = "Full Automatic")
 };
 
-/** پێکهاتەی زانیارییەکانی چەک بۆ ناو Data Table */
 USTRUCT(BlueprintType)
 struct FWeaponData : public FTableRowBase
 {
@@ -49,6 +45,18 @@ struct FWeaponData : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
 	int32 BurstShotCount = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
+	float RecoilPitch = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
+	float RecoilYaw = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
+	float RecoilRandomness = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
+	float AimRecoilMultiplier = 0.55f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
 	float BulletSpread = 2.0f;
@@ -94,25 +102,21 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
-	// -----------------------------------------------------------------------------
-	// Data Table Setup
-	// -----------------------------------------------------------------------------
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Data")
 	UDataTable* WeaponDataTable;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Data")
 	FName WeaponRowName;
 
-	// فەنکشن بۆ خوێندنەوەی زانیارییەکان لە داتاتەیبڵەوە
 	void InitializeWeaponData();
 
 protected:
-	// زانیارییە ناوخۆییەکانی ئەم چەکە کاتێک لە داتابەیسەکەوە دەیخوێنێتەوە
 	FWeaponData CurrentWeaponData;
-	// ئەو گۆڕاوانەی کە پێویستە بەردەوام نوێ ببنەوە یان ڕیپڵیکەیت بن
+
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
 	int32 CurrentAmmo;
 
@@ -129,7 +133,6 @@ protected:
 	int32 CurrentBurstShotsLeft = 0;
 
 public:
-
 	UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon|LiveStats")
 	bool bIsReloading = false;
 
@@ -165,6 +168,12 @@ public:
 	void OnRep_Reload();
 
 protected:
+	void ApplyRecoilAndCameraShake();
+	void ResetRecoil();
+
+	FRotator TargetRecoilOffset = FRotator::ZeroRotator;
+	FRotator CurrentRecoilOffset = FRotator::ZeroRotator;
+
 	void Local_ReloadComplete();
 	void Server_ReloadComplete();
 	void PlayWeaponEffects();
@@ -177,7 +186,6 @@ protected:
 
 	UPROPERTY()
 	APlayerController* OwnerController;
-
 
 public:
 	FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }

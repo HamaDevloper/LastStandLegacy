@@ -1,6 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#include "BaseWeapon.h"
+﻿#include "BaseWeapon.h"
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -12,7 +10,8 @@
 
 ABaseWeapon::ABaseWeapon()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	bReplicates = true;
 
 	WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
@@ -25,7 +24,6 @@ void ABaseWeapon::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// یەکەم هەنگاو: هێنانی زانیاری چەکەکە لە داتاتەیبڵەوە
 	InitializeWeaponData();
 
 	OwnerCharacter = Cast<AHama>(GetOwner());
@@ -33,6 +31,27 @@ void ABaseWeapon::BeginPlay()
 	{
 		HamaComponent = OwnerCharacter->FindComponentByClass<UHamaComponent>();
 		OwnerController = Cast<APlayerController>(OwnerCharacter->GetController());
+	}
+}
+
+void ABaseWeapon::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (!OwnerController || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
+
+	FRotator Previous = CurrentRecoilOffset;
+	CurrentRecoilOffset = FMath::RInterpTo(CurrentRecoilOffset, TargetRecoilOffset, DeltaTime, 12.0f);
+
+	float DeltaPitch = CurrentRecoilOffset.Pitch - Previous.Pitch;
+	float DeltaYaw = CurrentRecoilOffset.Yaw - Previous.Yaw;
+
+	OwnerController->AddPitchInput(-DeltaPitch);
+	OwnerController->AddYawInput(DeltaYaw);
+
+	if (CurrentRecoilOffset.Equals(TargetRecoilOffset, 0.01f))
+	{
+		SetActorTickEnabled(false);
 	}
 }
 
@@ -45,12 +64,10 @@ void ABaseWeapon::InitializeWeaponData()
 		{
 			CurrentWeaponData = *Row;
 
-			// دانانی بەها سەرەتاییەکان لە داتاتەیبڵەکەوە
 			MaxAmmoInClip = CurrentWeaponData.MaxAmmoInClip;
 			CurrentAmmo = MaxAmmoInClip;
 			ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
 
-			// چارەسەری هەڵەکە: لێرەدا بە Cast فۆرماتەکەی بۆ ڕێکدەخەینەوە
 			if (WeaponMesh && !CurrentWeaponData.WeaponMeshAsset.IsNull())
 			{
 				USkeletalMesh* LoadedMesh = Cast<USkeletalMesh>(CurrentWeaponData.WeaponMeshAsset.LoadSynchronous());
@@ -107,12 +124,9 @@ void ABaseWeapon::StopFire()
 	if (CurrentWeaponData.FireMode != EWeaponFireMode::Burst || CurrentBurstShotsLeft <= 0)
 	{
 		GetWorldTimerManager().ClearTimer(FireTimerHandle);
-
-		if (HamaComponent && HamaComponent->IsFiring())
-		{
-			HamaComponent->SetFiring(false);
-		}
 	}
+
+	ResetRecoil();
 }
 
 float ABaseWeapon::CalculateBulletSpread()
@@ -174,43 +188,29 @@ void ABaseWeapon::HandleFireLocal()
 	if (HamaComponent)
 	{
 		if (HamaComponent->bIsSprinting) HamaComponent->StopSprinting();
-		if (!HamaComponent->IsFiring()) HamaComponent->SetFiring(true);
 	}
+
 	if (ShootForceFeedback)
 	{
-		// ١. دروستکردنی پارامیتەرەکان بە شێوازی نوێی UE 5.7
 		FForceFeedbackParameters FeedbackParams;
 		FeedbackParams.bLooping = false;
 		FeedbackParams.bIgnoreTimeDilation = false;
 		FeedbackParams.Tag = FName("WeaponFire");
-
-		// ٢. تەنها ئەم دوو گۆڕاوە دەنێرین بۆ فەنکشنەکە
 		OwnerController->ClientPlayForceFeedback(ShootForceFeedback, FeedbackParams);
 	}
 
-	// دیاریکردنی جێگای کامێرا بۆ ئەوەی بزانین یاریزان سەردێڕی خستووەتە کوێ
 	FVector CameraLoc;
 	FRotator CameraRot;
 	OwnerController->GetPlayerViewPoint(CameraLoc, CameraRot);
 
-	// دانانی ڕێژەی بڵاوبوونەوەی گولەکان (Spread)
 	float Spread = CalculateBulletSpread();
 	float SpreadInRadians = FMath::DegreesToRadians(Spread);
 
-	// ئاڕاستەی تەقەکردن لە ناوەندی شاشەکە + سپرێد
 	FVector TraceDir = FMath::VRandCone(CameraRot.Vector(), SpreadInRadians);
 	FVector TraceEnd = CameraLoc + (TraceDir * CurrentWeaponData.MaxRange);
 
-	// ــ ستانداردی تەقەکردنی پڕۆفیشناڵ ــ
-	// یەکەم جار لاین ترەیس بکە لەلای لۆکاڵ بۆ بینینی ئەوەی چی هیت کراوە بە گوێرەی ناوەندی کامێرا
-	FHitResult CameraHit;
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(this);
-	Params.AddIgnoredActor(OwnerCharacter);
-
 	PlayWeaponEffects();
-
-	// داتای پاک درا بە سێرڤەر!
+	ApplyRecoilAndCameraShake();
 	ServerHandleFire(CameraLoc, TraceEnd);
 
 	if (CurrentAmmo <= 0 || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
@@ -222,11 +222,7 @@ void ABaseWeapon::HandleFireLocal()
 
 void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector EndLocation)
 {
-	// پشکنینی فیشەک و ڕیلۆد بە شێوازی سەلامەت
-	if (CurrentAmmo <= 0 || bIsReloading)
-	{
-		return;
-	}
+	if (CurrentAmmo <= 0 || bIsReloading) return;
 
 	AController* DamageInstigator = OwnerCharacter ? OwnerCharacter->GetController() : nullptr;
 
@@ -235,16 +231,12 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 		CurrentAmmo--;
 	}
 
-	BurstCounter++; // بۆ ڕیپڵیکەیتبوونی ئەفێکت لای یاریزانانی تر
+	BurstCounter++;
 
-	// سکیوریتی چێک
 	float DistanceSquared = FVector::DistSquared(StartLocation, EndLocation);
 	float MaxRangeWithBuffer = CurrentWeaponData.MaxRange + 500.f;
 
-	if (DistanceSquared > (MaxRangeWithBuffer * MaxRangeWithBuffer))
-	{
-		return;
-	}
+	if (DistanceSquared > (MaxRangeWithBuffer * MaxRangeWithBuffer)) return;
 
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
@@ -279,19 +271,11 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 				HitActorsAlready.Add(SingleHit.GetActor());
 				PenetratedZombiesCount++;
 
-				if (PenetratedZombiesCount >= CurrentWeaponData.MaxZombiePenetration)
-				{
-					break;
-				}
-
+				if (PenetratedZombiesCount >= CurrentWeaponData.MaxZombiePenetration) break;
 				if (SingleHit.bBlockingHit) break;
 			}
 		}
 	}
-
-#if !UE_BUILD_SHIPPING 
-	DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Red, false, 2.f, 0, 1.0f);
-#endif
 }
 
 void ABaseWeapon::OnRep_BurstCounter()
@@ -301,7 +285,6 @@ void ABaseWeapon::OnRep_BurstCounter()
 
 void ABaseWeapon::PlayWeaponEffects()
 {
-	// لێرەدا ئەفێکتەکان لێدەدرێن
 }
 
 void ABaseWeapon::Reload()
@@ -319,14 +302,8 @@ void ABaseWeapon::Reload()
 
 	GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete, ReloadTimeToUse, false);
 
-	if (HasAuthority())
-	{
-		ServerReload_Implementation(ReloadTimeToUse);
-	}
-	else
-	{
-		ServerReload(ReloadTimeToUse);
-	}
+	if (HasAuthority()) ServerReload_Implementation(ReloadTimeToUse);
+	else                ServerReload(ReloadTimeToUse);
 }
 
 void ABaseWeapon::Local_ReloadComplete()
@@ -394,10 +371,7 @@ void ABaseWeapon::CancelReload()
 			MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
 		}
 
-		if (!HasAuthority())
-		{
-			Server_CancelReload();
-		}
+		if (!HasAuthority()) Server_CancelReload();
 	}
 
 	if (HasAuthority())
@@ -448,4 +422,33 @@ void ABaseWeapon::OnRep_Reload()
 	{
 		if (CurrentWeaponData.ReloadMontage) AnimInstance->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
 	}
+}
+
+void ABaseWeapon::ApplyRecoilAndCameraShake()
+{
+	if (!OwnerController) return;
+
+	float RandomPitch = FMath::RandRange(-CurrentWeaponData.RecoilRandomness, CurrentWeaponData.RecoilRandomness);
+	float RandomYaw = FMath::RandRange(-CurrentWeaponData.RecoilRandomness, CurrentWeaponData.RecoilRandomness);
+
+	float FinalPitch = CurrentWeaponData.RecoilPitch + RandomPitch;
+	float FinalYaw = CurrentWeaponData.RecoilYaw + RandomYaw;
+
+	if (HamaComponent && HamaComponent->bIsAiming)
+	{
+		FinalPitch *= CurrentWeaponData.AimRecoilMultiplier;
+		FinalYaw *= CurrentWeaponData.AimRecoilMultiplier;
+	}
+
+	TargetRecoilOffset.Pitch += FinalPitch;
+	TargetRecoilOffset.Yaw += FinalYaw;
+
+	SetActorTickEnabled(true);
+}
+
+void ABaseWeapon::ResetRecoil()
+{
+	TargetRecoilOffset = FRotator::ZeroRotator;
+	CurrentRecoilOffset = FRotator::ZeroRotator;
+	SetActorTickEnabled(false);
 }

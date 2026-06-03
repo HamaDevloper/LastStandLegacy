@@ -62,7 +62,6 @@ protected:
 	
 public:
 	void SetAiming(bool bNewAiming);
-	void SetFiring(bool bNewFiring);
 
 public:
 	// ✅ ڤاریابڵەکان وەک خۆیان پارێزراون بەڵام ReplicatedUsing مان لابردووە چونکە Saved Moves خۆی کارەکە دەکات
@@ -72,14 +71,10 @@ public:
 	UPROPERTY(ReplicatedUsing = OnRep_Aiming, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	bool bIsAiming = false;
 
-	UPROPERTY(ReplicatedUsing = OnRep_Firing, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
-	bool bIsFiring = false;
-
 	UPROPERTY(ReplicatedUsing = OnRep_Slide, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	bool bIsSlide = false;
 
 	bool IsSprinting() const { return bIsSprinting; }
-	bool IsFiring() const { return bIsFiring; }
 private:
 	FTimerHandle StaminaDrainTimerHandle;
 	FTimerHandle StaminaRegenTimerHandle;
@@ -92,9 +87,6 @@ private:
 
 	UFUNCTION()
 	void OnRep_Aiming();
-
-	UFUNCTION()
-	void OnRep_Firing();
 
 	UFUNCTION()
 	void OnRep_Slide();

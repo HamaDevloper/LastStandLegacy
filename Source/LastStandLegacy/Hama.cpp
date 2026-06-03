@@ -346,7 +346,6 @@ void AHama::FireActionReleased()
 {
 	if (!HamaComponent || !CurrentWeapon) return;
 	bIsFireButtonHold = false;
-	HamaComponent->SetFiring(false);
 	CurrentWeapon->StopFire();
 }
 
@@ -399,10 +398,6 @@ void AHama::ReloadActionPressed()
 	if (CurrentWeapon->ReserveAmmo <= 0) return;
 	if (HamaComponent)
 	{
-		if (HamaComponent->IsFiring())
-		{
-			HamaComponent->SetFiring(false);
-		}
 		if (HamaComponent->IsSprinting())
 		{
 			HamaComponent->StopSprinting();
@@ -583,7 +578,6 @@ void AHama::SprintActionPressed()
 	}
 	if (bIsFireButtonHold)
 	{
-		HamaComponent->SetFiring(false);
 		if (CurrentWeapon) CurrentWeapon->StopFire();
 	}
 	if (CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
