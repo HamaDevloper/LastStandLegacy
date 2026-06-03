@@ -7,6 +7,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Animation/AnimInstance.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 
 ABaseWeapon::ABaseWeapon()
 {
@@ -226,6 +227,20 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 
 	AController* DamageInstigator = OwnerCharacter ? OwnerCharacter->GetController() : nullptr;
 
+	// Anti-Cheat: پشکنینی شوێنی تەقەکردن لەسەر سێرڤەر
+	if (DamageInstigator)
+	{
+		FVector ServerCameraLoc;
+		FRotator ServerCameraRot;
+		DamageInstigator->GetPlayerViewPoint(ServerCameraLoc, ServerCameraRot);
+
+		// ئەگەر کڵایەنتەکە شوێنێکی هەڵەی ناردبوو (وەک هاک)، سێرڤەرەکە ڕاستی دەکاتەوە
+		if (FVector::DistSquared(StartLocation, ServerCameraLoc) > FMath::Square(500.f))
+		{
+			StartLocation = ServerCameraLoc;
+		}
+	}
+
 	if (GetNetMode() == NM_DedicatedServer || (OwnerCharacter && !OwnerCharacter->IsLocallyControlled()))
 	{
 		CurrentAmmo--;
@@ -241,8 +256,31 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
 	Params.AddIgnoredActor(GetOwner());
+	Params.bReturnPhysicalMaterial = true; // زۆر گرنگە بۆ زانینی جۆری بەرکەوتنەکە (سەر، قاچ، هتد)
 
 	FVector FireDir = (EndLocation - StartLocation).GetSafeNormal();
+
+	// فانکشنێکی یارمەتیدەر بۆ هەژمارکردنی زیان بەپێی Physical Material
+	auto CalculateDamageBySurface = [this](const FHitResult& Hit) -> float
+		{
+			float ActualDamage = CurrentWeaponData.Damage;
+			if (Hit.PhysMaterial.IsValid())
+			{
+				EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
+
+				// SurfaceType1 وادابنێ کە بۆ سەر (Head) دانراوە لە Project Settings
+				if (SurfaceType == SurfaceType1)
+				{
+					ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
+				}
+				// SurfaceType2 وادابنێ کە بۆ قاچ (Leg) دانراوە
+				else if (SurfaceType == SurfaceType2)
+				{
+					ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
+				}
+			}
+			return ActualDamage;
+		};
 
 	if (CurrentWeaponData.MaxZombiePenetration <= 1)
 	{
@@ -251,7 +289,8 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 
 		if (bHasHit && Hit.GetActor())
 		{
-			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), CurrentWeaponData.Damage, FireDir, Hit, DamageInstigator, this, UDamageType::StaticClass());
+			float FinalDamage = CalculateDamageBySurface(Hit);
+			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), FinalDamage, FireDir, Hit, DamageInstigator, this, UDamageType::StaticClass());
 		}
 	}
 	else
@@ -266,7 +305,8 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 		{
 			if (SingleHit.GetActor() && !HitActorsAlready.Contains(SingleHit.GetActor()))
 			{
-				UGameplayStatics::ApplyPointDamage(SingleHit.GetActor(), CurrentWeaponData.Damage, FireDir, SingleHit, DamageInstigator, this, UDamageType::StaticClass());
+				float FinalDamage = CalculateDamageBySurface(SingleHit);
+				UGameplayStatics::ApplyPointDamage(SingleHit.GetActor(), FinalDamage, FireDir, SingleHit, DamageInstigator, this, UDamageType::StaticClass());
 
 				HitActorsAlready.Add(SingleHit.GetActor());
 				PenetratedZombiesCount++;
@@ -302,8 +342,14 @@ void ABaseWeapon::Reload()
 
 	GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete, ReloadTimeToUse, false);
 
-	if (HasAuthority()) ServerReload_Implementation(ReloadTimeToUse);
-	else                ServerReload(ReloadTimeToUse);
+	if (HasAuthority())
+	{
+		ServerReload_Implementation(ReloadTimeToUse);
+	}
+	else
+	{
+		ServerReload(ReloadTimeToUse);
+	}
 }
 
 void ABaseWeapon::Local_ReloadComplete()
@@ -428,6 +474,13 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
 {
 	if (!OwnerController) return;
 
+	// فیشەکی یەکەم لە ئۆتۆماتیک و بەرست — بێ ڕیکۆیل
+	if (CurrentWeaponData.FireMode != EWeaponFireMode::Single && ShotsFiredInBurst == 0)
+	{
+		ShotsFiredInBurst++;
+		return;
+	}
+
 	float RandomPitch = FMath::RandRange(-CurrentWeaponData.RecoilRandomness, CurrentWeaponData.RecoilRandomness);
 	float RandomYaw = FMath::RandRange(-CurrentWeaponData.RecoilRandomness, CurrentWeaponData.RecoilRandomness);
 
@@ -442,12 +495,14 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
 
 	TargetRecoilOffset.Pitch += FinalPitch;
 	TargetRecoilOffset.Yaw += FinalYaw;
+	ShotsFiredInBurst++;
 
 	SetActorTickEnabled(true);
 }
 
 void ABaseWeapon::ResetRecoil()
 {
+	ShotsFiredInBurst = 0;
 	TargetRecoilOffset = FRotator::ZeroRotator;
 	CurrentRecoilOffset = FRotator::ZeroRotator;
 	SetActorTickEnabled(false);

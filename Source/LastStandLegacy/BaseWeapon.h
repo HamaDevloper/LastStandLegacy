@@ -35,6 +35,9 @@ struct FWeaponData : public FTableRowBase
 	float HeadshotMultiplier = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
+	float LegDamageMultiplier = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
 	float FireRate = 0.1f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
@@ -131,6 +134,7 @@ protected:
 
 	float LastFireTime;
 	int32 CurrentBurstShotsLeft = 0;
+	int32 ShotsFiredInBurst = 0; // ژمارەی فیشەکی بەردەوام
 
 public:
 	UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon|LiveStats")
