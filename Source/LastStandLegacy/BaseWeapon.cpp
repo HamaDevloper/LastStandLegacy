@@ -186,7 +186,6 @@ void ABaseWeapon::HandleFireLocal()
 		if (!OwnerController) return;
 	}
 
-	// لۆکاڵ پڕێدێکشن بۆ فیشەک (Local Prediction) بۆ ئەوەی UI دەستبەجێ کەم بکات بێ لاگ
 	CurrentAmmo--;
 	float CurrentTime = GetWorld()->GetTimeSeconds();
 	NextAllowedFireTime = CurrentTime + CurrentWeaponData.FireRate;
@@ -233,8 +232,7 @@ void ABaseWeapon::HandleFireLocal()
 // پێویستە ناوی پارامێتەرەکانی ئەم فانکشنە لە فایلی .h بگۆڕیت بۆ ئەم شێوازە نوێیەی خوارەوە
 void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector CameraDirection, int32 RandomSeed, float SpreadInRadians)
 {
-	// پشکنینی توندی سەر دەسەڵاتی سێرڤەر (Server Authority Check)
-	if (HasAuthority() && CurrentAmmo <= 0) return;
+	if (CurrentAmmo <= 0) return;
 	if (bIsReloading) return;
 
 	AController* DamageInstigator = OwnerCharacter ? OwnerCharacter->GetController() : nullptr;
@@ -257,9 +255,9 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 	FRandomStream ServerStream(RandomSeed);
 	FVector FinalFireDirection = ServerStream.VRandCone(CameraDirection, SpreadInRadians);
 	FVector EndLocation = StartLocation + (FinalFireDirection * CurrentWeaponData.MaxRange);
-
+	
 	// تەنها سێرڤەر فیشەکی سەرەکی کەم دەکاتەوە بۆ ڕێگری لە Desync
-	if (HasAuthority() && !OwnerCharacter->IsLocallyControlled())
+	if (!OwnerCharacter->IsLocallyControlled())
 	{
 		CurrentAmmo--;
 	}
@@ -332,7 +330,7 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 		false,       // ئایا هەمیشە بمێنێتەوە؟ (نەخێر)
 		2.0f,        // ماوەی مانەوەی هێڵەکە بە چرکە (٢ چرکە)
 		0,           // Depth Priority
-		1.5f         // ئەستووری هێڵەکە
+		1.f         // ئەستووری هێڵەکە
 	);
 }
 
@@ -373,6 +371,7 @@ void ABaseWeapon::Reload()
 void ABaseWeapon::Local_ReloadComplete()
 {
 	if (HasAuthority()) return;
+	if (!OwnerCharacter) return;
 
 	int32 AmmoNeeded = CurrentWeaponData.MaxAmmoInClip - CurrentAmmo;
 	int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
@@ -381,7 +380,16 @@ void ABaseWeapon::Local_ReloadComplete()
 	ReserveAmmo -= AmmoToMove;
 	bIsReloading = false;
 
-	if (OwnerCharacter && OwnerCharacter->bIsFireButtonHold)
+	if (OwnerCharacter->IsAimButtonHold())
+	{
+		UAnimInstance* AnimInstance = OwnerCharacter->GetMesh()->GetAnimInstance();
+		if (AnimInstance)
+		{
+			AnimInstance->Montage_Play(CurrentWeaponData.AimMontage);
+		}
+	}
+
+	if (OwnerCharacter->bIsFireButtonHold)
 	{
 		StartFire();
 	}
@@ -433,6 +441,7 @@ void ABaseWeapon::CancelReload()
 		if (MeshComp && MeshComp->GetAnimInstance())
 		{
 			MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
+			if (OwnerCharacter->IsAimButtonHold()) MeshComp->GetAnimInstance()->Montage_Play(CurrentWeaponData.AimMontage);
 		}
 
 		if (!HasAuthority()) Server_CancelReload();
@@ -485,12 +494,13 @@ void ABaseWeapon::OnRep_Reload()
 	else
 	{
 		if (CurrentWeaponData.ReloadMontage) AnimInstance->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
+		if (OwnerCharacter->IsAimButtonHold()) AnimInstance->Montage_Play(CurrentWeaponData.AimMontage);
 	}
 }
 
 void ABaseWeapon::ApplyRecoilAndCameraShake()
 {
-	if (!OwnerController) return;
+	if (!OwnerController || !OwnerCharacter || !OwnerCharacter->IsAimButtonHold()) return;
 
 	if (CurrentWeaponData.FireMode != EWeaponFireMode::Single && ShotsFiredInBurst == 0)
 	{
@@ -504,7 +514,7 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
 	float FinalPitch = CurrentWeaponData.RecoilPitch + RandomPitch;
 	float FinalYaw = CurrentWeaponData.RecoilYaw + RandomYaw;
 
-	if (HamaComponent && HamaComponent->bIsAiming)
+	if (OwnerCharacter->IsAimButtonHold())
 	{
 		FinalPitch *= CurrentWeaponData.AimRecoilMultiplier;
 		FinalYaw *= CurrentWeaponData.AimRecoilMultiplier;

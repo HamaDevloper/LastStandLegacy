@@ -7,6 +7,7 @@
 
 UHamaMovementComponent::UHamaMovementComponent()
 {
+
 	bSprinting = false;
 	bAiming = false;
 }

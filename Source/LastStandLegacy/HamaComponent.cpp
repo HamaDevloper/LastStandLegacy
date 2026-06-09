@@ -105,7 +105,7 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 	}
 	else
 	{
-		if (OwnerCharacter && OwnerCharacter->IsAimButtonHeld())
+		if (OwnerCharacter && OwnerCharacter->IsAimButtonHold())
 		{
 			SetAiming(true);
 			OwnerCharacter->OnAim(true);

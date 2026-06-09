@@ -132,7 +132,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
 	bool bCanJumpSlide = false;
 
-	bool IsAimButtonHeld() const { return bIsAimButtonHold; }
+	bool IsAimButtonHold() const { return bIsAimButtonHold; }
 	bool IsFireButtonHolded() const { return bIsFireButtonHold; }
 
 public:
