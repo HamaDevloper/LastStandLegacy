@@ -32,6 +32,7 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsSprinting, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsAiming, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsSlide, COND_SkipOwner);
+    DOREPLIFETIME_CONDITION(UHamaComponent, bIsDowned, COND_SkipOwner);
 }
 
 void UHamaComponent::SetAiming(bool bNewAiming)
@@ -175,7 +176,7 @@ void UHamaComponent::RegenerateStamina()
 
 void UHamaComponent::OnRep_Sprinting()
 {
-	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
+	if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
 	if (MoveComp)
 	{
 		MoveComp->bSprinting = bIsSprinting;
@@ -185,36 +186,11 @@ void UHamaComponent::OnRep_Sprinting()
 void UHamaComponent::OnRep_Aiming()
 {
 	// لۆکاڵ کڵایەنت پێویستی بەمە نییە چونکە خۆی پێشتر لۆجیکەکەی جێبەجێ کردووە
-	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
+    if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
 
 	if (MoveComp)
 	{
 		MoveComp->bAiming = bIsAiming;
-	}
-
-	if (!OwnerCharacter || !OwnerCharacter->GetMesh()) return;
-
-	UAnimInstance* AnimInstance = OwnerCharacter->GetMesh()->GetAnimInstance();
-	if (!AnimInstance) return;
-
-	ABaseWeapon* ActiveWeapon = OwnerCharacter->CurrentWeapon;
-
-	if (ActiveWeapon)
-	{
-		// ٢. ڕاستەوخۆ ئەنیمەیشنەکە لەناو داتاتەیبڵی چەکەکە خۆیەوە دەهێنین
-		UAnimMontage* WeaponAimMontage = ActiveWeapon->GetAimMontage();
-
-		if (WeaponAimMontage)
-		{
-			if (bIsAiming)
-			{
-				AnimInstance->Montage_Play(WeaponAimMontage);
-			}
-			else
-			{
-				AnimInstance->Montage_Stop(0.2f, WeaponAimMontage);
-			}
-		}
 	}
 }
 
@@ -233,4 +209,13 @@ void UHamaComponent::OnRep_Slide()
 	{
 		AnimInstance->Montage_Stop(0.2f, OwnerCharacter->SlideMontage);
 	}
+}
+
+void UHamaComponent::OnRep_Down()
+{
+    if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
+    if (MoveComp)
+    {
+        MoveComp->bDowned = bIsDowned;
+    }
 }

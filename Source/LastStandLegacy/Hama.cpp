@@ -103,6 +103,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 
 	DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(AHama, Points, COND_OwnerOnly);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -351,16 +352,6 @@ void AHama::AimActionPressed()
 
 	HamaComponent->SetAiming(true);
 	OnAim(true);
-
-	// ---- لێدانی ئەنیمەیشن بە شێوازی کورت و سادە ----
-	if (IsLocallyControlled())
-	{
-		UAnimMontage* WeaponAimMontage = CurrentWeapon->GetAimMontage();
-		if (WeaponAimMontage)
-		{
-			PlayAnimMontage(WeaponAimMontage);
-		}
-	}
 }
 
 void AHama::AimActionReleased()
@@ -370,16 +361,6 @@ void AHama::AimActionReleased()
 
 	HamaComponent->SetAiming(false);
 	OnAim(false);
-
-	// ---- وەستاندنی ئەنیمەیشن بە شێوازی کورت و سادە ----
-	if (IsLocallyControlled())
-	{
-		UAnimMontage* WeaponAimMontage = CurrentWeapon->GetAimMontage();
-		if (WeaponAimMontage)
-		{
-			StopAnimMontage(WeaponAimMontage);
-		}
-	}
 }
 
 void AHama::ReloadActionPressed()
@@ -581,4 +562,8 @@ void AHama::SprintActionPressed()
 bool AHama::IsSprinting() const
 {
 	return HamaComponent && HamaComponent->IsSprinting();
+}
+
+void AHama::OnRep_Points()
+{
 }

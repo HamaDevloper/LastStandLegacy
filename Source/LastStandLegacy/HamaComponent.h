@@ -74,6 +74,9 @@ public:
 	UPROPERTY(ReplicatedUsing = OnRep_Slide, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	bool bIsSlide = false;
 
+    UPROPERTY(ReplicatedUsing = OnRep_Down, BlueprintReadOnly, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
+    bool bIsDowned = false;
+
 	bool IsSprinting() const { return bIsSprinting; }
 private:
 	FTimerHandle StaminaDrainTimerHandle;
@@ -90,4 +93,7 @@ private:
 
 	UFUNCTION()
 	void OnRep_Slide();
+
+    UFUNCTION()
+    void OnRep_Down();
 };

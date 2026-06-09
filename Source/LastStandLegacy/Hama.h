@@ -187,8 +187,23 @@ public:
 	UPROPERTY(ReplicatedUsing = OnRep_Health, EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
 	float MaxHealth = 100.f;
 
+
 	UFUNCTION()
 	void OnRep_Health();
+
+
+
+    // -----------------------------------------------------------------------------
+    // Points
+    // -----------------------------------------------------------------------------
+public:
+
+    UPROPERTY(ReplicatedUsing = OnRep_Points, BlueprintReadOnly, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
+    int32 Points = 500;
+
+
+    UFUNCTION()
+    void OnRep_Points();
 
 	// -----------------------------------------------------------------------------
 	// Input Callbacks & Network RPCs
@@ -230,7 +245,6 @@ private:
 	bool bLastCrossHairState = false;
 
 	bool IsSprinting() const;
-
 
 protected:
 	// CameraSensitivity

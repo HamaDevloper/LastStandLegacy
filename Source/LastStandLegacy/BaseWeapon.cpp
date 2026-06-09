@@ -11,9 +11,12 @@
 
 ABaseWeapon::ABaseWeapon()
 {
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	bReplicates = true;
+
+    SetNetUpdateFrequency(40.f);
+    SetMinNetUpdateFrequency(10.f);
 
 	WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
 	RootComponent = WeaponMesh;
@@ -86,11 +89,11 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME_CONDITION(ABaseWeapon, bIsReloading, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ABaseWeapon, ReserveAmmo, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ABaseWeapon, MaxAmmoInClip, COND_OwnerOnly);
-	DOREPLIFETIME_CONDITION(ABaseWeapon, BurstCounter, COND_SkipOwner);
+    DOREPLIFETIME_CONDITION(ABaseWeapon, bIsReloading, COND_SkipOwner);
+    DOREPLIFETIME_CONDITION(ABaseWeapon, BurstCounter, COND_SkipOwner);
 }
 
 void ABaseWeapon::StartFire()
@@ -322,16 +325,6 @@ void ABaseWeapon::ServerHandleFire_Implementation(FVector StartLocation, FVector
 			}
 		}
 	}
-	DrawDebugLine(
-		GetWorld(),
-		StartLocation,
-		EndLocation,
-		FColor::Red, // ڕەنگی هێڵەکە (سوور)
-		false,       // ئایا هەمیشە بمێنێتەوە؟ (نەخێر)
-		2.0f,        // ماوەی مانەوەی هێڵەکە بە چرکە (٢ چرکە)
-		0,           // Depth Priority
-		1.f         // ئەستووری هێڵەکە
-	);
 }
 
 void ABaseWeapon::OnRep_BurstCounter()
@@ -379,15 +372,6 @@ void ABaseWeapon::Local_ReloadComplete()
 	CurrentAmmo += AmmoToMove;
 	ReserveAmmo -= AmmoToMove;
 	bIsReloading = false;
-
-	if (OwnerCharacter->IsAimButtonHold())
-	{
-		UAnimInstance* AnimInstance = OwnerCharacter->GetMesh()->GetAnimInstance();
-		if (AnimInstance)
-		{
-			AnimInstance->Montage_Play(CurrentWeaponData.AimMontage);
-		}
-	}
 
 	if (OwnerCharacter->bIsFireButtonHold)
 	{
@@ -441,7 +425,6 @@ void ABaseWeapon::CancelReload()
 		if (MeshComp && MeshComp->GetAnimInstance())
 		{
 			MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
-			if (OwnerCharacter->IsAimButtonHold()) MeshComp->GetAnimInstance()->Montage_Play(CurrentWeaponData.AimMontage);
 		}
 
 		if (!HasAuthority()) Server_CancelReload();
@@ -494,7 +477,6 @@ void ABaseWeapon::OnRep_Reload()
 	else
 	{
 		if (CurrentWeaponData.ReloadMontage) AnimInstance->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
-		if (OwnerCharacter->IsAimButtonHold()) AnimInstance->Montage_Play(CurrentWeaponData.AimMontage);
 	}
 }
 

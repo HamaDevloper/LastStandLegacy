@@ -20,6 +20,7 @@ protected:
 
 	float SprintSpeed = 800.f;
 	float AimSpeed = 300.f;
+    float DownSpeed = 100.f;
 
 public:
 	UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
@@ -28,6 +29,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	uint8 bAiming : 1;
 
+    UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
+    uint8 bDowned : 1;
+
 	// ================= SAVED MOVE =================
 	class FSavedMove_Hama : public FSavedMove_Character
 	{
@@ -35,6 +39,7 @@ public:
 	public:
 		uint8 bSavedWantsToSprint : 1;
 		uint8 bSavedWantsToAim : 1;
+        uint8 bSavedIsDowned : 1;
 
 		FSavedMove_Hama() : bSavedWantsToSprint(0), bSavedWantsToAim(0) {}
 

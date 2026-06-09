@@ -10,6 +10,7 @@ UHamaMovementComponent::UHamaMovementComponent()
 
 	bSprinting = false;
 	bAiming = false;
+    bDowned = false;
 }
 
 float UHamaMovementComponent::GetMaxSpeed() const
@@ -31,6 +32,7 @@ void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 	// سێرڤەر فڵاگەکان دەخوێنێتەوە کە یاریزانەکە بۆی ناردووە
 	bSprinting = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
 	bAiming = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
+    bDowned = (Flags & FSavedMove_Character::FLAG_Custom_2) != 0;
 
 	if (CharacterOwner && CharacterOwner->HasAuthority())
 	{
@@ -38,6 +40,7 @@ void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 		{
 			HamaComp->bIsSprinting = bSprinting;
 			HamaComp->bIsAiming = bAiming;
+            HamaComp->bIsDowned = bDowned;
 		}
 	}
 }
@@ -49,6 +52,7 @@ void UHamaMovementComponent::FSavedMove_Hama::Clear()
 	Super::Clear();
 	bSavedWantsToSprint = false;
 	bSavedWantsToAim = false;
+    bSavedIsDowned = false;
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT, FVector const& Accel, FNetworkPredictionData_Client_Character& Data)
@@ -58,6 +62,7 @@ void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT
 	{
 		bSavedWantsToAim = Comp->bAiming;
 		bSavedWantsToSprint = Comp->bSprinting;
+        bSavedIsDowned = Comp->bDowned;
 	}
 }
 
@@ -68,6 +73,7 @@ void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 	{
 		Comp->bSprinting = bSavedWantsToSprint;
 		Comp->bAiming = bSavedWantsToAim;
+        Comp->bDowned = bSavedIsDowned;
 	}
 }
 
@@ -77,6 +83,7 @@ bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr
 
 	if (bSavedWantsToSprint != Other->bSavedWantsToSprint) return false;
 	if (bSavedWantsToAim != Other->bSavedWantsToAim) return false;
+    if (bSavedIsDowned != Other->bSavedIsDowned) return false;
 
 	return Super::CanCombineWith(NewMove, C, MaxDelta);
 }
@@ -87,7 +94,7 @@ uint8 UHamaMovementComponent::FSavedMove_Hama::GetCompressedFlags() const
 
 	if (bSavedWantsToSprint) Result |= FSavedMove_Character::FLAG_Custom_0;
 	if (bSavedWantsToAim) Result |= FSavedMove_Character::FLAG_Custom_1;
-
+    if (bSavedIsDowned) Result |= FSavedMove_Character::FLAG_Custom_2;
 	return Result;
 }
 

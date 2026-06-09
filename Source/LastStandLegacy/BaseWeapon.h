@@ -11,6 +11,7 @@ class AHama;
 class UHamaComponent;
 class USkeletalMeshComponent;
 class UAnimMontage;
+class UAnimSequence;
 
 UENUM(BlueprintType)
 enum class EWeaponFireMode : uint8
@@ -89,7 +90,13 @@ struct FWeaponData : public FTableRowBase
 	FName MuzzleLocationName = FName("Muzzle");
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
-	UAnimMontage* AimMontage;
+    UAnimSequence* AimMontage;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
+    UAnimSequence* WeaponIdle;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
+    UAnimSequence* WeaponSprint;
 };
 
 UCLASS()
@@ -194,5 +201,13 @@ protected:
 
 public:
 	FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }
-	FORCEINLINE UAnimMontage* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
+
+    UFUNCTION(BlueprintCallable)
+	FORCEINLINE UAnimSequence* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
+
+    UFUNCTION(BlueprintCallable)
+    FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
+
+    UFUNCTION(BlueprintCallable)
+    FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
 };
