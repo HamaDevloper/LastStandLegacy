@@ -32,8 +32,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
     float MinSafeDistance = 500.f;
 
-    UFUNCTION()
-    void ZombieDied();
+
 
 protected:
     virtual void BeginPlay() override;
@@ -42,4 +41,9 @@ private:
     void StartNextRound();
     void SpawnZombiesForRound();
     AActor* PickWeightedSpawnPoint();
+
+    // لە بەشی public یان protected
+protected:
+    UFUNCTION()
+    void HandleZombieDeath(AZombie* DeadZombie); // زیادکردنی ئەمە
 };

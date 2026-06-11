@@ -82,8 +82,12 @@ private:
 	FTimerHandle StaminaDrainTimerHandle;
 	FTimerHandle StaminaRegenTimerHandle;
 	FTimerHandle StaminaPenaltyTimerHandle;
-	AHama* OwnerCharacter;
-	UHamaMovementComponent* MoveComp;
+
+    UPROPERTY()
+    TObjectPtr<AHama> OwnerCharacter;
+
+    UPROPERTY()
+    TObjectPtr<UHamaMovementComponent> MoveComp;
 
 	UFUNCTION()
 	void OnRep_Sprinting();

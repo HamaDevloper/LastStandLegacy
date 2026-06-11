@@ -3,9 +3,10 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "Hama.h" 
-#include "LastStandLegacyGameMode.h" // بۆ پەیوەندی بە GameMode
+#include "Hama.h"
+#include "LastStandLegacyGameMode.h"
 #include "Net/UnrealNetwork.h"
+#include "EngineUtils.h"
 
 AZombie::AZombie()
 {
@@ -15,6 +16,7 @@ AZombie::AZombie()
 
     SetNetUpdateFrequency(10.f);
     SetMinNetUpdateFrequency(3.f);
+
     MaxHealth = BaseHealth;
     Health = MaxHealth;
 }
@@ -25,9 +27,26 @@ void AZombie::BeginPlay()
 
     if (HasAuthority())
     {
-        GetWorld()->GetTimerManager().SetTimer(ChaseTimerHandle, this, &AZombie::UpdateNearestTarget, 1.0f, true);
-        GetWorld()->GetTimerManager().SetTimer(AttackTimerHandle, this, &AZombie::CheckAttackRange, 0.5f, true);
+        GetWorld()->GetTimerManager().SetTimer(
+            ChaseTimerHandle, this, &AZombie::UpdateNearestTarget, 1.0f, true);
+        GetWorld()->GetTimerManager().SetTimer(
+            AttackTimerHandle, this, &AZombie::CheckAttackRange, 0.5f, true);
     }
+}
+
+void AZombie::GetLifetimeReplicatedProps(
+    TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    // bIsDead — هەموو کلاینت پێویستیانە بۆ Ragdoll
+    DOREPLIFETIME(AZombie, bIsDead);
+
+    // Health — بۆ HealthBar UI
+    DOREPLIFETIME(AZombie, Health);
+
+    // MaxHealth — تەنها جارێک لە سەرەتا
+    DOREPLIFETIME_CONDITION(AZombie, MaxHealth, COND_InitialOnly);
 }
 
 void AZombie::SetStatsForRound(int32 CurrentRound)
@@ -39,13 +58,10 @@ void AZombie::SetStatsForRound(int32 CurrentRound)
     MaxHealth = FMath::Clamp(NewHealth, BaseHealth, 60000.f);
     Health = MaxHealth;
 
-    // ── خێرایی ────────────────────────────────────────
-    // بنەمای خێرایی بەپێی ڕاوند (Lerp)
+    // ── خێرایی: Lerp + Tier ───────────────────────────
     float Alpha = FMath::Clamp((CurrentRound - 1) / 49.f, 0.f, 1.f);
     float BaseSpeed = FMath::Lerp(180.f, 550.f, Alpha);
 
-    // Tier جیاوازی زیاد دەکات
-    // هەرچی ڕاوند زیاتر → Tier زیاتر بەردەست دەبن
     const float TierOffsets[] = { -30.f, 0.f, 0.f, +30.f, +70.f };
     int32 MaxTier = FMath::Clamp(CurrentRound, 1, 5);
     int32 RandTier = FMath::RandRange(0, MaxTier - 1);
@@ -63,14 +79,19 @@ void AZombie::UpdateNearestTarget()
     if (!AICont) return;
 
     APawn* NearestPlayer = nullptr;
-    float ClosestDistanceSq = UE_BIG_NUMBER;
+    float   ClosestDistanceSq = UE_BIG_NUMBER;
     FVector ZombieLocation = GetActorLocation();
 
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
     {
+        // چاک کرا: Iterator چێک کراوە پێش بەکارهێنان
+        if (!It->IsValid()) continue;
+
         if (APawn* PlayerPawn = It->Get()->GetPawn())
         {
-            float DistanceSq = FVector::DistSquared(ZombieLocation, PlayerPawn->GetActorLocation());
+            float DistanceSq = FVector::DistSquared(
+                ZombieLocation, PlayerPawn->GetActorLocation());
+
             if (DistanceSq < ClosestDistanceSq)
             {
                 ClosestDistanceSq = DistanceSq;
@@ -90,26 +111,37 @@ void AZombie::CheckAttackRange()
 {
     if (!CurrentTarget || bIsDead) return;
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), CurrentTarget->GetActorLocation());
+    float DistSq = FVector::DistSquared(
+        GetActorLocation(), CurrentTarget->GetActorLocation());
+
     if (DistSq < FMath::Square(AttackDistance))
     {
-        UGameplayStatics::ApplyDamage(CurrentTarget, AttackDamage, GetController(), this, UDamageType::StaticClass());
+        UGameplayStatics::ApplyDamage(
+            CurrentTarget, AttackDamage,
+            GetController(), this, UDamageType::StaticClass());
     }
 }
 
-float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+float AZombie::TakeDamage(
+    float DamageAmount,
+    FDamageEvent const& DamageEvent,
+    AController* EventInstigator,
+    AActor* DamageCauser)
 {
     if (!HasAuthority() || bIsDead) return 0.f;
 
-    float DamageApplied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    float DamageApplied = Super::TakeDamage(
+        DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     Health -= DamageApplied;
 
     if (Health <= 0.f)
     {
         Die(EventInstigator);
     }
-    else if (AHama* Attacker = Cast<AHama>(EventInstigator ? EventInstigator->GetPawn() : nullptr))
+    else if (AHama* Attacker = Cast<AHama>(
+        EventInstigator ? EventInstigator->GetPawn() : nullptr))
     {
+        // Points لە Hama.h پێویستە Replicated بێت
         Attacker->Points += 10;
     }
 
@@ -119,8 +151,10 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 void AZombie::Die(AController* KillerController)
 {
     if (bIsDead || !HasAuthority()) return;
+
     bIsDead = true;
 
+    // وەستاندنی تایمەرەکان
     GetWorld()->GetTimerManager().ClearTimer(ChaseTimerHandle);
     GetWorld()->GetTimerManager().ClearTimer(AttackTimerHandle);
 
@@ -130,24 +164,25 @@ void AZombie::Die(AController* KillerController)
         AICont->UnPossess();
     }
 
+    // ئەگەر قاتیلەکە یاریزان بوو خاڵی پێ بدە
     if (AHama* KillerChar = Cast<AHama>(KillerController ? KillerController->GetPawn() : nullptr))
     {
         KillerChar->Points += KillPointsValue;
     }
 
-    // ئاگادارکردنەوەی GameMode بۆ هەژمارکردنی مردنەکە
-    if (ALastStandLegacyGameMode* GM = Cast<ALastStandLegacyGameMode>(GetWorld()->GetAuthGameMode()))
-    {
-        GM->ZombieDied();
-    }
-    OnRep_IsDead();
+    // لێرەدا تەنها ڕایدەگەیەنین کە زۆمبییەکە مرد، ئیتر نازانین کێ گوێی لێ دەگرێت!
+    OnZombieDeath.Broadcast(this);
 }
 
 void AZombie::OnRep_IsDead()
 {
-    GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    GetMesh()->SetSimulatePhysics(true);
-    GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
+    // چاک کرا: GetMesh() چێک کراوە پێش بەکارهێنان
+    USkeletalMeshComponent* Mesh = GetMesh();
+    if (!Mesh) return;
+
+    Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    Mesh->SetSimulatePhysics(true);
+    Mesh->SetCollisionProfileName(TEXT("Ragdoll"));
 
     if (UCapsuleComponent* Caps = GetCapsuleComponent())
     {
@@ -155,10 +190,4 @@ void AZombie::OnRep_IsDead()
     }
 
     SetLifeSpan(8.0f);
-}
-
-void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME(AZombie, bIsDead);
 }

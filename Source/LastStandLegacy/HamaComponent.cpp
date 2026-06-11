@@ -18,11 +18,8 @@ void UHamaComponent::BeginPlay()
 
 	Stamina = MaxStamina;
 	OwnerCharacter = Cast<AHama>(GetOwner());
-
-	if (OwnerCharacter)
-	{
-		MoveComp = OwnerCharacter->FindComponentByClass<UHamaMovementComponent>();
-	}
+    if (!OwnerCharacter) return;
+	MoveComp = OwnerCharacter->FindComponentByClass<UHamaMovementComponent>();
 }
 
 void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -45,7 +42,7 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 
 void UHamaComponent::StartSlide()
 {
-	if (bIsSlide) return;
+	if (bIsSlide || !OwnerCharacter) return;
 
 	bIsSlide = true;
 	if (!OwnerCharacter->HasAuthority())
@@ -56,7 +53,7 @@ void UHamaComponent::StartSlide()
 
 void UHamaComponent::StopSlide()
 {
-	if (!bIsSlide) return;
+    if (!bIsSlide || !OwnerCharacter) return;
 
 	bIsSlide = false;
 	if (!OwnerCharacter->HasAuthority())
@@ -196,19 +193,16 @@ void UHamaComponent::OnRep_Aiming()
 
 void UHamaComponent::OnRep_Slide()
 {
-	if (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) return;
+    if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
 
-	UAnimInstance* AnimInstance = OwnerCharacter->GetMesh()->GetAnimInstance();
-	if (!AnimInstance || !OwnerCharacter->SlideMontage) return;
+    USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
+    if (!Mesh) return;
 
-	if (bIsSlide)
-	{
-		AnimInstance->Montage_Play(OwnerCharacter->SlideMontage);
-	}
-	else
-	{
-		AnimInstance->Montage_Stop(0.2f, OwnerCharacter->SlideMontage);
-	}
+    UAnimInstance* AnimInstance = Mesh->GetAnimInstance();
+    if (!AnimInstance || !OwnerCharacter->SlideMontage) return;
+
+    if (bIsSlide) AnimInstance->Montage_Play(OwnerCharacter->SlideMontage);
+    else          AnimInstance->Montage_Stop(0.2f, OwnerCharacter->SlideMontage);
 }
 
 void UHamaComponent::OnRep_Down()
