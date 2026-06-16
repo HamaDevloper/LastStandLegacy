@@ -18,7 +18,7 @@ public:
     int32 CurrentRound = 1;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game Round")
-    int32 ZombiesToKill = 10;
+    int32 ZombiesToKill = 1;
 
     int32 DeadZombiesCount = 0;
 
@@ -42,8 +42,8 @@ private:
     void SpawnZombiesForRound();
     AActor* PickWeightedSpawnPoint();
 
-    // لە بەشی public یان protected
+   
 protected:
     UFUNCTION()
-    void HandleZombieDeath(AZombie* DeadZombie); // زیادکردنی ئەمە
+    void HandleZombieDeath(AZombie* DeadZombie);
 };

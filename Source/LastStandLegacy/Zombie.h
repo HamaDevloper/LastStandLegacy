@@ -14,7 +14,6 @@ class LASTSTANDLEGACY_API AZombie : public ACharacter
 public:
     AZombie();
 
-    UPROPERTY(BlueprintAssignable, Category = "Events")
     FOnZombieDeath OnZombieDeath;
 
     UFUNCTION(BlueprintCallable, Category = "Zombie | Stats")

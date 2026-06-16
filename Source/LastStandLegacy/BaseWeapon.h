@@ -135,6 +135,9 @@ protected:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
     int32 MaxAmmoInClip;
 
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
+    float Damge;
+
     UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
     uint8 BurstCounter = 0;
 

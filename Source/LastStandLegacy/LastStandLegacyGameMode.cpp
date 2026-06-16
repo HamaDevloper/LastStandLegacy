@@ -12,6 +12,27 @@ ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 void ALastStandLegacyGameMode::BeginPlay()
 {
     Super::BeginPlay();
+
+    // پاککردنەوەی پێشوەختەی لیستەکە
+    SpawnPoints.Empty();
+
+    // گەڕان بەدوای هەموو ئەکتەرەکان لە مێپەکەدا
+    for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+    {
+        AActor* Actor = *It;
+
+        // تەنها ئەوانە زیاد بکە کە تەیگی "ZombieSpawn"ـیان هەیە
+        if (Actor && Actor->ActorHasTag(FName("ZombieSpawn")))
+        {
+            SpawnPoints.Add(Actor);
+        }
+    }
+
+    if (SpawnPoints.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("هیچ SpawnPointـێک نەدۆزرایەوە! تەیگی 'ZombieSpawn' زیاد بکە."));
+    }
+
     SpawnZombiesForRound();
 }
 
@@ -125,7 +146,7 @@ void ALastStandLegacyGameMode::SpawnZombiesForRound()
             Zombie->SetStatsForRound(CurrentRound);
 
             // ئەم بەشە زۆر گرنگە: لێرەدا زۆمبییەکە گرێ دەدەین بە HandleZombieDeath
-            Zombie->OnZombieDeath.AddDynamic(this, &ALastStandLegacyGameMode::HandleZombieDeath);
+            Zombie->OnZombieDeath.AddUObject(this, &ALastStandLegacyGameMode::HandleZombieDeath);
         }
     }
 }

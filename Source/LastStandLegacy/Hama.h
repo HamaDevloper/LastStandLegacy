@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Hama.generated.h"
 
+#define ECC_Bullet ECC_GameTraceChannel1
 #define ECC_CrossHair ECC_GameTraceChannel2
 
 // -----------------------------------------------------------------------------
@@ -19,6 +20,7 @@ class UCameraComponent;
 class UInputMappingContext;
 class UInputAction;
 class APlayerController;
+class AZombie;
 
 struct FInputActionValue;
 struct FInputActionInstance;
@@ -26,231 +28,236 @@ struct FInputActionInstance;
 UCLASS()
 class LASTSTANDLEGACY_API AHama : public ACharacter
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
 public:
-	AHama(const FObjectInitializer& ObjectInitializer);
-	virtual void Tick(float DeltaTime) override;
-	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+    AHama(const FObjectInitializer& ObjectInitializer);
+    virtual void Tick(float DeltaTime) override;
+    virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 public:
-	// -----------------------------------------------------------------------------
-	// Components & References
-	// -----------------------------------------------------------------------------
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
-	TObjectPtr<UHamaComponent> HamaComponent;
+    // -----------------------------------------------------------------------------
+    // Components & References
+    // -----------------------------------------------------------------------------
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UHamaComponent> HamaComponent;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
-	TObjectPtr<UHamaMovementComponent> HamaMovementComponent;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UHamaMovementComponent> HamaMovementComponent;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
-	TObjectPtr<USpringArmComponent> SpringArm;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<USpringArmComponent> SpringArm;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
-	TObjectPtr<UCameraComponent> TPCamera;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UCameraComponent> TPCamera;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
-	TObjectPtr<UCameraComponent> FPCamera;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UCameraComponent> FPCamera;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|References")
-	TObjectPtr<APlayerController> OwnerController;
-
-public:
-	// -----------------------------------------------------------------------------
-	// Weapons & Inventory
-	// -----------------------------------------------------------------------------
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
-	TSubclassOf<ABaseWeapon> DefaultWeapon;
-
-	// لادانی COND_SkipOwner بۆ ئەوەی کڵایەنتی خاوەنیش چەکەکەی پێبگات
-	UPROPERTY(ReplicatedUsing = OnRep_CurrentWeapon, BlueprintReadOnly, Category = "Hama|Weapons")
-	TObjectPtr<ABaseWeapon> CurrentWeapon;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
-	TObjectPtr<ABaseWeapon> PrimaryWeapon;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
-	TObjectPtr<ABaseWeapon> SecondaryWeapon;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
-	TObjectPtr<ABaseWeapon> ThirdWeapon;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
-	FName SocketName;
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|References")
+    TObjectPtr<APlayerController> OwnerController;
 
 public:
-	// -----------------------------------------------------------------------------
-	// Input Mapping & Actions
-	// -----------------------------------------------------------------------------
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputMappingContext> DefaultMappingContext;
+    // -----------------------------------------------------------------------------
+    // Weapons & Inventory
+    // -----------------------------------------------------------------------------
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
+    TSubclassOf<ABaseWeapon> DefaultWeapon;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> MoveAction;
+    UPROPERTY(ReplicatedUsing = OnRep_CurrentWeapon, BlueprintReadOnly, Category = "Hama|Weapons")
+    TObjectPtr<ABaseWeapon> CurrentWeapon;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> LookAction;
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
+    TObjectPtr<ABaseWeapon> PrimaryWeapon;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> JumpAction;
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
+    TObjectPtr<ABaseWeapon> SecondaryWeapon;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> SwitchCameraAction;
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
+    TObjectPtr<ABaseWeapon> ThirdWeapon;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> SprintAction;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> CrouchAction;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> AimAction;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> FireAction;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-	TObjectPtr<UInputAction> ReloadAction;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
+    FName SocketName;
 
 public:
-	// -----------------------------------------------------------------------------
-	// UI & HUD
-	// -----------------------------------------------------------------------------
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
-	TSubclassOf<UUserWidget> PlayerCrossHairClass;
+    // -----------------------------------------------------------------------------
+    // Input Mapping & Actions
+    // -----------------------------------------------------------------------------
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputMappingContext> DefaultMappingContext;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|UI")
-	TObjectPtr<UUserWidget> CrossHairRef;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> MoveAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> LookAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> JumpAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> SwitchCameraAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> SprintAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> CrouchAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> AimAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> FireAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> ReloadAction;
 
 public:
-	// -----------------------------------------------------------------------------
-	// State Checking & Logic Functions
-	// -----------------------------------------------------------------------------
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
-	bool bIsCrouchButtonHold = false;
+    // -----------------------------------------------------------------------------
+    // UI & HUD
+    // -----------------------------------------------------------------------------
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
+    TSubclassOf<UUserWidget> PlayerCrossHairClass;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
-	bool bCanJumpSlide = false;
-
-	bool IsAimButtonHold() const { return bIsAimButtonHold; }
-	bool IsFireButtonHolded() const { return bIsFireButtonHold; }
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|UI")
+    TObjectPtr<UUserWidget> CrossHairRef;
 
 public:
-	// -----------------------------------------------------------------------------
-	// Animations
-	// -----------------------------------------------------------------------------
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
-	UAnimMontage* SlideMontage;
+    // -----------------------------------------------------------------------------
+    // State Checking & Logic Functions
+    // -----------------------------------------------------------------------------
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
+    bool bIsCrouchButtonHold = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|State")
+    bool bCanJumpSlide = false;
+
+    bool IsAimButtonHold() const { return bIsAimButtonHold; }
+    bool IsFireButtonHolded() const { return bIsFireButtonHold; }
 
 public:
-	// -----------------------------------------------------------------------------
-	// Blueprint Events
-	// -----------------------------------------------------------------------------
-	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
-	void CrossHairUpdate(bool bInRange);
+    // -----------------------------------------------------------------------------
+    // Animations
+    // -----------------------------------------------------------------------------
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
+    UAnimMontage* SlideMontage;
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
-	void OnAim(bool InAiming);
+public:
+    // -----------------------------------------------------------------------------
+    // Blueprint Events
+    // -----------------------------------------------------------------------------
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
+    void CrossHairUpdate(bool bInRange);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
+    void OnAim(bool InAiming);
 
 protected:
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	virtual void Landed(const FHitResult& Hit) override;
-	virtual void PossessedBy(AController* NewController) override;
-	virtual void OnRep_Controller() override;
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void Landed(const FHitResult& Hit) override;
+    virtual void PossessedBy(AController* NewController) override;
+    virtual void OnRep_Controller() override;
 
-	// فەنکشن بۆ کاتێک چەکەکە لە سێرڤەرەوە دەگاتە کڵایەنت بۆ ئەوەی Attach بێت
-	UFUNCTION()
-	void OnRep_CurrentWeapon();
+    UFUNCTION()
+    void OnRep_CurrentWeapon();
 
 protected:
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
-	bool bIsInFirstPerson = false;
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
+    bool bIsInFirstPerson = false;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
-	bool bIsInRightShoulderView = false;
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
+    bool bIsInRightShoulderView = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
-	UAnimMontage* DrinkPerkMontage;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
+    UAnimMontage* DrinkPerkMontage;
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
-	void Switchcamera(bool bIsRightShoulderViewChanged);
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
+    void Switchcamera(bool bIsRightShoulderViewChanged);
 
-	// -----------------------------------------------------------------------------
-	// Health
-	// -----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
+    // Health
+    // -----------------------------------------------------------------------------
 public:
-	UPROPERTY(ReplicatedUsing = OnRep_Health,EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
-	float CurrentHealth;
+    UPROPERTY(ReplicatedUsing = OnRep_Health, EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
+    float CurrentHealth;
 
-	UPROPERTY(ReplicatedUsing = OnRep_Health, EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
-	float MaxHealth = 100.f;
+    UPROPERTY(ReplicatedUsing = OnRep_Health, EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
+    float MaxHealth = 100.f;
 
-
-	UFUNCTION()
-	void OnRep_Health();
-
-
+    UFUNCTION()
+    void OnRep_Health();
 
     // -----------------------------------------------------------------------------
     // Points
     // -----------------------------------------------------------------------------
 public:
-
     UPROPERTY(ReplicatedUsing = OnRep_Points, BlueprintReadOnly, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
     int32 Points = 500;
-
 
     UFUNCTION()
     void OnRep_Points();
 
-	// -----------------------------------------------------------------------------
-	// Input Callbacks & Network RPCs
-	// -----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
+    // Input Callbacks & Network RPCs
+    // -----------------------------------------------------------------------------
 public:
-	void FireActionPressed();
+    void FireActionPressed();
 protected:
-	void FireActionReleased();
-	void AimActionPressed();
-	void AimActionReleased();
-	void Move(const FInputActionValue& Value);
-	void Look(const FInputActionValue& Value);
-	void JumpActionPressed();
-	void CrouchActionPressed();
-	void CrouchActionReleased();
-	void StartSlideRoutine();
-	void StopSlideRoutine();
-	void SwitchCameraPressed(const FInputActionInstance& Instance);
-	void SwitchCameraReleased();
-	void SprintActionPressed();
-	void StartCrossHairTimer();
-	void CrossHairTrace();
-	void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
-	void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
-	void CreateDefaultWeapon();
-	void AttachWeaponToMesh(ABaseWeapon* WeaponToAttach);
-	void ReloadActionPressed();
+    void FireActionReleased();
+    void AimActionPressed();
+    void AimActionReleased();
+    void Move(const FInputActionValue& Value);
+    void Look(const FInputActionValue& Value);
+    void JumpActionPressed();
+    void CrouchActionPressed();
+    void CrouchActionReleased();
+    void StartSlideRoutine();
+    void StopSlideRoutine();
+    void SwitchCameraPressed(const FInputActionInstance& Instance);
+    void SwitchCameraReleased();
+    void SprintActionPressed();
+    void StartCrossHairTimer();
+    void CrossHairTrace();
+    void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
+    void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+    void CreateDefaultWeapon();
+    void AttachWeaponToMesh(ABaseWeapon* WeaponToAttach);
+    void ReloadActionPressed();
+    void AimPressedSitck();
 
 protected:
-	static const float CrossHairTimer;
+    static const float CrossHairTimer;
 
-	bool bIsHoldedTrigger = false;
-	bool bIsAimButtonHold = false;
+    bool bIsHoldedTrigger = false;
+    bool bIsAimButtonHold = false;
+
+    // --- Aim Assist Settings ---
+    UPROPERTY()
+    TWeakObjectPtr<AZombie> LockedTarget;
+
+    bool bIsStickyAiming = false;
+
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Targeting")
+    float StickySlowdownMultiplier = 0.5f; // خاوبوونەوەی سێنسەتیڤیتی کاتی قوفڵبوون
+
 public:
-	bool bIsFireButtonHold = false;
+    bool bIsFireButtonHold = false;
 
 private:
-	FTimerHandle CrossHairTimerHandle;
-	bool bLastCrossHairState = false;
+    FTimerHandle CrossHairTimerHandle;
+    bool bLastCrossHairState = false;
 
-	bool IsSprinting() const;
+    bool IsSprinting() const;
 
 protected:
-	// CameraSensitivity
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
-	float NormalSensitivity = 1.f;
+    // CameraSensitivity
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
+    float NormalSensitivity = 1.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
-	float AimingSensitivity = 0.5f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
+    float AimingSensitivity = 0.5f;
 };

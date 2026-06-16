@@ -58,16 +58,18 @@ void AZombie::SetStatsForRound(int32 CurrentRound)
     MaxHealth = FMath::Clamp(NewHealth, BaseHealth, 60000.f);
     Health = MaxHealth;
 
-    // ── خێرایی: Lerp + Tier ───────────────────────────
-    float Alpha = FMath::Clamp((CurrentRound - 1) / 49.f, 0.f, 1.f);
-    float BaseSpeed = FMath::Lerp(180.f, 550.f, Alpha);
+    // ── خێرایی: ──────────────────────────────────────
+    float Alpha = FMath::Clamp((CurrentRound - 1) / 19.f, 0.f, 1.f);
+    float BaseSpeed = FMath::Lerp(200.f, 550.f, Alpha);
 
+    // زیادکردنی Tier (بۆ ئەوەی هەمیشە هەموویان یەک خێرایی نەبن)
     const float TierOffsets[] = { -30.f, 0.f, 0.f, +30.f, +70.f };
     int32 MaxTier = FMath::Clamp(CurrentRound, 1, 5);
     int32 RandTier = FMath::RandRange(0, MaxTier - 1);
     float TierBonus = TierOffsets[RandTier];
 
-    float FinalSpeed = FMath::Clamp(BaseSpeed + TierBonus, 180.f, 550.f);
+    // خێرایی کۆتایی
+    float FinalSpeed = FMath::Clamp(BaseSpeed + TierBonus, 200.f, 550.f);
     GetCharacterMovement()->MaxWalkSpeed = FinalSpeed;
 }
 
@@ -133,16 +135,20 @@ float AZombie::TakeDamage(
     float DamageApplied = Super::TakeDamage(
         DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     Health -= DamageApplied;
-
+   
+      AHama* Attacker = Cast<AHama>(
+          EventInstigator ? EventInstigator->GetPawn() : nullptr);  
     if (Health <= 0.f)
     {
         Die(EventInstigator);
+        if(Attacker)
+        {
+            Attacker->Points += 100;
+        }
     }
-    else if (AHama* Attacker = Cast<AHama>(
-        EventInstigator ? EventInstigator->GetPawn() : nullptr))
+    else
     {
-        // Points لە Hama.h پێویستە Replicated بێت
-        Attacker->Points += 10;
+        if(Attacker)  Attacker->Points += 10;
     }
 
     return DamageApplied;
@@ -169,25 +175,25 @@ void AZombie::Die(AController* KillerController)
     {
         KillerChar->Points += KillPointsValue;
     }
+    OnRep_IsDead();
 
-    // لێرەدا تەنها ڕایدەگەیەنین کە زۆمبییەکە مرد، ئیتر نازانین کێ گوێی لێ دەگرێت!
     OnZombieDeath.Broadcast(this);
 }
 
 void AZombie::OnRep_IsDead()
 {
     // چاک کرا: GetMesh() چێک کراوە پێش بەکارهێنان
-    USkeletalMeshComponent* Mesh = GetMesh();
-    if (!Mesh) return;
+    USkeletalMeshComponent* SkeletalMesh = GetMesh();
+    if (!SkeletalMesh) return;
 
-    Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    Mesh->SetSimulatePhysics(true);
-    Mesh->SetCollisionProfileName(TEXT("Ragdoll"));
+    SkeletalMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    SkeletalMesh->SetSimulatePhysics(true);
+    SkeletalMesh->SetCollisionProfileName(TEXT("Ragdoll"));
 
     if (UCapsuleComponent* Caps = GetCapsuleComponent())
     {
         Caps->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     }
 
-    SetLifeSpan(8.0f);
+    SetLifeSpan(2.0f);
 }

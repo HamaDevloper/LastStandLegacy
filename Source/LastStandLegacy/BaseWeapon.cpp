@@ -32,7 +32,7 @@ ABaseWeapon::ABaseWeapon()
 void ABaseWeapon::BeginPlay()
 {
     Super::BeginPlay();
-
+   
     InitializeWeaponData();
     UpdateCachedReferences();
 }
@@ -69,6 +69,7 @@ void ABaseWeapon::InitializeWeaponData()
     MaxAmmoInClip = CurrentWeaponData.MaxAmmoInClip;
     CurrentAmmo = MaxAmmoInClip;
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+    Damge = CurrentWeaponData.Damage;
 
     // Async Load — LoadSynchronous() کراش کردنەوەی BeginPlay
     if (WeaponMesh && !CurrentWeaponData.WeaponMeshAsset.IsNull())
@@ -108,6 +109,7 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
     DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, ReserveAmmo, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(ABaseWeapon, Damge, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, MaxAmmoInClip, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, bIsReloading, COND_SkipOwner);
     DOREPLIFETIME_CONDITION(ABaseWeapon, BurstCounter, COND_SkipOwner);
@@ -255,31 +257,31 @@ void ABaseWeapon::ServerHandleFire_Implementation(
     FVector StartLocation, FVector CameraDirection,
     int32 RandomSeed, float SpreadInRadians)
 {
+    // ١. دڵنیابوونەوە لەوەی دەتوانێت تەقە بکات
     if (CurrentAmmo <= 0 || bIsReloading) return;
 
     AController* DamageInstigator = OwnerCharacter ? OwnerCharacter->GetController() : nullptr;
-
-    if (DamageInstigator)
-    {
-        FVector  ServerCameraLoc;
-        FRotator ServerCameraRot;
-        DamageInstigator->GetPlayerViewPoint(ServerCameraLoc, ServerCameraRot);
-
-        if (FVector::DistSquared(StartLocation, ServerCameraLoc) > FMath::Square(500.f))
-        {
-            StartLocation = ServerCameraLoc;
-        }
-        CameraDirection = ServerCameraRot.Vector();
-    }
 
     if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
     {
         CurrentAmmo--;
     }
 
-    // چاک کرا: Overflow ڕێگری کرا — هەرگیز سفر نابێت
+    if (DamageInstigator)
+    {
+        FVector  ServerViewLoc;
+        FRotator ServerViewRot;
+        DamageInstigator->GetPlayerViewPoint(ServerViewLoc, ServerViewRot);
+        if (FVector::DistSquared(StartLocation, ServerViewLoc) > FMath::Square(600.f))
+        {
+            StartLocation = ServerViewLoc;
+        }
+    }
+
+
     BurstCounter = (BurstCounter >= 255) ? 1 : BurstCounter + 1;
 
+    // ٥. بەکارهێنانی هەمان Seed بۆ ئەوەی سێرڤەر و کڵایەنت هەمان بڵاوبوونەوە (Spread) دروست بکەن
     FRandomStream ServerStream(RandomSeed);
     FVector FinalFireDirection = ServerStream.VRandCone(CameraDirection, SpreadInRadians);
     FVector EndLocation = StartLocation + (FinalFireDirection * CurrentWeaponData.MaxRange);
@@ -289,19 +291,19 @@ void ABaseWeapon::ServerHandleFire_Implementation(
     Params.AddIgnoredActor(GetOwner());
     Params.bReturnPhysicalMaterial = true;
 
+    // ٧. فەنکشنی ناوخۆیی بۆ حیسابکردنی دیمەیج بەپێی جۆری ڕووی بەرکەوتن
     auto CalculateDamageBySurface = [this](const FHitResult& Hit) -> float
         {
-            float ActualDamage = CurrentWeaponData.Damage;
+            float ActualDamage = Damge; // دیمەیجی بنەڕەتی بەکاردێت بۆ جەستە (Body)
             if (Hit.PhysMaterial.IsValid())
             {
-                EPhysicalSurface SurfaceType =
-                    UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
+                EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
 
-                if (SurfaceType == EPhysicalSurface::SurfaceType1)
+                if (SurfaceType == EPhysicalSurface::SurfaceType1) // زۆرجار ئەمە سەرە (Head)
                 {
                     ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
                 }
-                else if (SurfaceType == EPhysicalSurface::SurfaceType2)
+                else if (SurfaceType == EPhysicalSurface::SurfaceType2) // زۆرجار ئەمە قاچە (Leg)
                 {
                     ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
                 }
@@ -309,12 +311,12 @@ void ABaseWeapon::ServerHandleFire_Implementation(
             return ActualDamage;
         };
 
+    // ٨. لۆژیکی دیمەیجدان
+    // ئەگەر چەکەکە توانای بڕینی زۆمبی نەبێت (فیشەکەکە بە ناو یەک زۆمبیدا تێپەڕ نەبێت بۆ ئەوەی دواتر)
     if (CurrentWeaponData.MaxZombiePenetration <= 1)
     {
         FHitResult Hit;
-        bool bHasHit = GetWorld()->LineTraceSingleByChannel(
-            Hit, StartLocation, EndLocation, ECC_Bullet, Params
-        );
+        bool bHasHit = GetWorld()->LineTraceSingleByChannel(Hit, StartLocation, EndLocation, ECC_Bullet, Params);
 
         if (bHasHit && Hit.GetActor())
         {
@@ -325,12 +327,10 @@ void ABaseWeapon::ServerHandleFire_Implementation(
             );
         }
     }
-    else
+    else // ئەگەر چەکەکە وەک سنایپەر بێت و بتوانێت بەناو چەند زۆمبییەکدا تێپەڕێت
     {
         TArray<FHitResult> Hits;
-        GetWorld()->LineTraceMultiByChannel(
-            Hits, StartLocation, EndLocation, ECC_Bullet, Params
-        );
+        GetWorld()->LineTraceMultiByChannel(Hits, StartLocation, EndLocation, ECC_Bullet, Params);
 
         int32       PenetratedCount = 0;
         TSet<AActor*> HitActors;
@@ -349,7 +349,7 @@ void ABaseWeapon::ServerHandleFire_Implementation(
             PenetratedCount++;
 
             if (PenetratedCount >= CurrentWeaponData.MaxZombiePenetration) break;
-            if (SingleHit.bBlockingHit) break;
+            if (SingleHit.bBlockingHit) break; // ئەگەر بەر دیوارێک کەوت، فیشەکەکە دەوەستێت
         }
     }
 }

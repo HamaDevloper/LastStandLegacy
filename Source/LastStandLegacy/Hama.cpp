@@ -1,4 +1,5 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
+
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "HamaMovementComponent.h"
@@ -10,560 +11,574 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Blueprint/UserWidget.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "EngineUtils.h"
+#include "Zombie.h"
 
 // -----------------------------------------------------------------------------
-// Constructor (سازێنەری ئەکتەرەکە)
+// Constructor
 // -----------------------------------------------------------------------------
 AHama::AHama(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer.SetDefaultSubobjectClass<UHamaMovementComponent>(ACharacter::CharacterMovementComponentName))
+    : Super(ObjectInitializer.SetDefaultSubobjectClass<UHamaMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
-	// ناچالاککردنی Tick بۆ زیادکردنی خێرایی پڕۆژەکە
-	PrimaryActorTick.bCanEverTick = false;
+    // گرنگ: Tick لێرەدا دەکوژێنینەوە؛ لۆژیکی قورسی کۆنمان تێدا نەهێشتووە
+    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bStartWithTickEnabled = false;
 
-	// ڕێکخستنەکانی نێتوۆرک و ڕێپلیکەیشن (Networking & Replication)
-	bReplicates = true;
-	SetReplicateMovement(true);
-	SetNetUpdateFrequency(66.f);
-	SetMinNetUpdateFrequency(33.f);
+    bReplicates = true;
+    SetReplicateMovement(true);
+    SetNetUpdateFrequency(66.f);
+    SetMinNetUpdateFrequency(33.f);
 
-	if (GetCharacterMovement())
-	{
-		GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
-	}
+    if (GetCharacterMovement())
+    {
+        GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
+    }
 
-	// -----------------------------------------------------------------------------
-	// Create & Bind Components (دروستکردن و بەستنەوەی پێکهاتەکان)
-	// -----------------------------------------------------------------------------
+    HamaComponent = CreateDefaultSubobject<UHamaComponent>(TEXT("HamaComponent"));
+    HamaMovementComponent = Cast<UHamaMovementComponent>(GetCharacterMovement());
 
-	// دروستکردنی پێکهاتەی تایبەتی Hama
-	HamaComponent = CreateDefaultSubobject<UHamaComponent>(TEXT("HamaComponent"));
+    SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+    SpringArm->SetupAttachment(RootComponent);
+    SpringArm->TargetArmLength = 300.f;
+    SpringArm->bUsePawnControlRotation = true;
 
-	// بەستنەوەی گۆڕاوەکە بەو بزوێنەری جوڵەیەی کە لە سەرەوە (SetDefaultSubobjectClass) دیاریمان کردووە
-	HamaMovementComponent = Cast<UHamaMovementComponent>(GetCharacterMovement());
+    TPCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TPCamera"));
+    TPCamera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+    TPCamera->bUsePawnControlRotation = false;
 
-	// دروستکردنی SpringArm (قۆڵی کامێرا)
-	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
-	SpringArm->SetupAttachment(RootComponent);
-	SpringArm->TargetArmLength = 300.f;
-	SpringArm->bUsePawnControlRotation = true;
+    FPCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FPCamera"));
+    FPCamera->SetupAttachment(GetMesh(), FName("head"));
+    FPCamera->bUsePawnControlRotation = true;
 
-	// دروستکردنی کامێرای کەسی سێیەم (Third Person Camera)
-	TPCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TPCamera"));
-	TPCamera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
-	TPCamera->bUsePawnControlRotation = false;
-
-	// دروستکردنی کامێرای کەسی یەکەم (First Person Camera)
-	FPCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FPCamera"));
-	FPCamera->SetupAttachment(GetMesh(), FName("head"));
-	FPCamera->bUsePawnControlRotation = true;
+    // بەهای سەرەتایی بۆ خێرایی ڕیلۆدکردن (1.0 ئاساییە، 1.5 واتە ٥٠٪ خێراتر)
+    ReloadSpeedMultiplier = 1.0f;
+    bIsStickyAiming = false;
 }
 
 const float AHama::CrossHairTimer = 0.1f;
+
 // -----------------------------------------------------------------------------
-// Gameplay Lifecycle (دەستپێکی کایەکە)
+// Gameplay Lifecycle
 // -----------------------------------------------------------------------------
 void AHama::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 
-	OwnerController = Cast<APlayerController>(GetController());
+    OwnerController = Cast<APlayerController>(GetController());
 
-	if (IsLocallyControlled() && PlayerCrossHairClass)
-	{
-		CrossHairRef = CreateWidget<UUserWidget>(GetWorld(), PlayerCrossHairClass);
+    if (IsLocallyControlled() && PlayerCrossHairClass)
+    {
+        CrossHairRef = CreateWidget<UUserWidget>(GetWorld(), PlayerCrossHairClass);
 
-		if (CrossHairRef)
-		{
-			CrossHairRef->AddToViewport();
-		}
-	}
-
-	if (HasAuthority()) CreateDefaultWeapon();
-	StartCrossHairTimer();
+        if (CrossHairRef)
+        {
+            CrossHairRef->AddToViewport();
+        }
+    }
+    if (HasAuthority()) CreateDefaultWeapon();
+    StartCrossHairTimer();
 }
 
 void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	Super::EndPlay(EndPlayReason);
+    Super::EndPlay(EndPlayReason);
+    GetWorldTimerManager().ClearTimer(CrossHairTimerHandle);
 
-	GetWorldTimerManager().ClearTimer(CrossHairTimerHandle);
-
-	if (CrossHairRef)
-	{
-		CrossHairRef->RemoveFromParent();
-		CrossHairRef = nullptr;
-	}
+    if (CrossHairRef)
+    {
+        CrossHairRef->RemoveFromParent();
+        CrossHairRef = nullptr;
+    }
 }
 
 void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME(AHama, CurrentWeapon);
-
-	DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
-	DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
-	DOREPLIFETIME_CONDITION(AHama, Points, COND_OwnerOnly);
+    DOREPLIFETIME(AHama, CurrentWeapon);
+    DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, Points, COND_OwnerOnly);
 }
 
 void AHama::Landed(const FHitResult& Hit)
 {
-	Super::Landed(Hit);
+    Super::Landed(Hit);
 
-	if (HamaComponent)
-	{
-		// بەکارهێنانی StartSlideRoutine بۆ ئەوەی دڵنیا بین کە Delegateـەکە دەبەسترێتەوە
-		if (bIsCrouchButtonHold && bCanJumpSlide)
-		{
-			StartSlideRoutine();
-		}
-	}
-	bCanJumpSlide = false;
+    if (HamaComponent)
+    {
+        if (bIsCrouchButtonHold && bCanJumpSlide)
+        {
+            StartSlideRoutine();
+        }
+    }
+    bCanJumpSlide = false;
 }
 
 void AHama::PossessedBy(AController* NewController)
 {
-	Super::PossessedBy(NewController);
-
-	// سێرڤەر کۆنترۆڵەرەکەی وەرگرت
-	StartCrossHairTimer();
+    Super::PossessedBy(NewController);
+    StartCrossHairTimer();
 }
 
 void AHama::OnRep_Controller()
 {
-	Super::OnRep_Controller();
-
-	// کڵایەنت کۆنترۆڵەرەکەی وەرگرت
-	StartCrossHairTimer();
+    Super::OnRep_Controller();
+    StartCrossHairTimer();
 }
 
-// Called every frame
 void AHama::Tick(float DeltaTime)
 {
-	Super::Tick(DeltaTime);
+    Super::Tick(DeltaTime);
+
+    // لەبەر ئەوەی پۆست-پڕۆسێس و خاوکردنەوەمان بردووەتە ناو لۆژیکی Look، ئۆتۆماتیکی دەیبڕینەوە بۆ نزمکردنی لۆد
+    SetActorTickEnabled(false);
 }
 
+// -----------------------------------------------------------------------------
+// Crosshair & Weapon Logic
+// -----------------------------------------------------------------------------
 void AHama::StartCrossHairTimer()
 {
-	if (!IsLocallyControlled()) return;
-	
-	if (GetWorldTimerManager().IsTimerActive(CrossHairTimerHandle)) return;
-		
-	GetWorldTimerManager().SetTimer(CrossHairTimerHandle,this,&AHama::CrossHairTrace,CrossHairTimer,true);
+    if (!IsLocallyControlled()) return;
+    if (GetWorldTimerManager().IsTimerActive(CrossHairTimerHandle)) return;
+    GetWorldTimerManager().SetTimer(CrossHairTimerHandle, this, &AHama::CrossHairTrace, CrossHairTimer, true);
 }
 
 void AHama::CrossHairTrace()
 {
-	if (!CurrentWeapon) return;
+    if (!CurrentWeapon || !OwnerController) return;
 
-	if (!OwnerController)
-	{
-		OwnerController = Cast<APlayerController>(GetController());
-		if (!OwnerController) return; // Safely exit if controller still isn't ready
-	}
+    FVector TraceStart;
+    FRotator TraceRotation;
+    OwnerController->GetPlayerViewPoint(TraceStart, TraceRotation);
 
-	FVector TraceStart;
-	FRotator TraceRotation;
-	OwnerController->GetPlayerViewPoint(TraceStart, TraceRotation);
+    const float TraceDistance = CurrentWeapon->GetWeaponMaxRange();
+    const FVector TraceEnd = TraceStart + (TraceRotation.Vector() * TraceDistance);
 
-	// Fallback range just in case MaxRange is 0 in your Blueprint
-	const float TraceDistance = CurrentWeapon->GetWeaponMaxRange();
-	const FVector TraceEnd = TraceStart + (TraceRotation.Vector() * TraceDistance);
+    FTraceDelegate TraceDelegate;
+    TraceDelegate.BindUObject(this, &AHama::OnCrossHairTraceCompleted);
 
-	FTraceDelegate TraceDelegate;
-	TraceDelegate.BindUObject(this, &AHama::OnCrossHairTraceCompleted);
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(CrossHairTrace), false);
+    Params.AddIgnoredActor(this);
+    Params.AddIgnoredActor(CurrentWeapon);
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(CrossHairTrace), false);
-	Params.AddIgnoredActor(this); // Ignore Hama
-	Params.AddIgnoredActor(CurrentWeapon); // CRITICAL: Ignore the weapon so we don't shoot our own gun!
-
-	GetWorld()->AsyncLineTraceByChannel(
-		EAsyncTraceType::Single,
-		TraceStart,
-		TraceEnd,
-		ECC_CrossHair,
-		Params,
-		FCollisionResponseParams::DefaultResponseParam,
-		&TraceDelegate
-	);
+    GetWorld()->AsyncLineTraceByChannel(EAsyncTraceType::Single, TraceStart, TraceEnd, ECC_CrossHair, Params, FCollisionResponseParams::DefaultResponseParam, &TraceDelegate);
 }
 
 void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum)
 {
-	bool bHit = false;
+    bool bHit = false;
 
-	// Check if we hit anything valid
-	if (TraceDatum.OutHits.IsValidIndex(0))
-	{
-		AActor* HitActor = TraceDatum.OutHits[0].GetActor();
-		if (IsValid(HitActor))
-		{
-			bHit = true;
-		}
-	}
+    if (TraceDatum.OutHits.IsValidIndex(0))
+    {
+        AActor* HitActor = TraceDatum.OutHits[0].GetActor();
+        if (IsValid(HitActor))
+        {
+            bHit = true;
+        }
+    }
 
-	if (bHit != bLastCrossHairState)
-	{
-		bLastCrossHairState = bHit;
-		CrossHairUpdate(bHit);
-	}
+    if (bHit != bLastCrossHairState)
+    {
+        bLastCrossHairState = bHit;
+        CrossHairUpdate(bHit);
+    }
 }
 
 void AHama::CreateDefaultWeapon()
 {
-	// ١. پشکنین بۆ ئەوەی دڵنیا بینەوە جۆری چەکی سەرەتایی دیاری کراوە
-	if (!DefaultWeapon) return;
-	// ٢. ڕێکخستنی پارامیتەرەکانی سپۆنکردن بۆ سێرڤەر
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = this;
-	SpawnParams.Instigator = this;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    if (!DefaultWeapon) return;
 
-	FVector SpawnLocation = GetActorLocation();
-	FRotator SpawnRotation = GetActorRotation();
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.Instigator = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	// ٣. سپۆنکردنی چەکەکە
-	ABaseWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ABaseWeapon>(DefaultWeapon, SpawnLocation, SpawnRotation, SpawnParams);
+    ABaseWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ABaseWeapon>(DefaultWeapon, GetActorLocation(), GetActorRotation(), SpawnParams);
 
-	if (SpawnedWeapon)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("چەکەکە بە سەرکەوتوویی سپۆن کرا!"));
-		// ٤. لۆجیکی دابەشکردنی چەکەکە بەسەر خانەکانی ئینڤێنتۆری (١، ٢، ٣)
-		if (!PrimaryWeapon)
-		{
-			PrimaryWeapon = SpawnedWeapon;
-			UE_LOG(LogTemp, Log, TEXT("چەکی یەکەم پڕکرایەوە (PrimaryWeapon)"));
-		}
-		else if (!SecondaryWeapon)
-		{
-			SecondaryWeapon = SpawnedWeapon;
-			UE_LOG(LogTemp, Log, TEXT("چەکی دووەم پڕکرایەوە (SecondaryWeapon)"));
-		}
-		else if (!ThirdWeapon)
-		{
-			ThirdWeapon = SpawnedWeapon;
-			UE_LOG(LogTemp, Log, TEXT("چەکی سێیەم پڕکرایەوە (ThirdWeapon)"));
-		}
-		else
-		{
-			// ئەگەر هەموو خانەکان پڕ بوون، چەکە کۆنەکە دەسڕێتەوە و ئەمە جێگەی دەگرێتەوە (یان دەتوانیت لۆجیکی فڕێدان دابنێیت)
-			if (CurrentWeapon)
-			{
-				CurrentWeapon->Destroy();
-			}
-			PrimaryWeapon = SpawnedWeapon;
-		}
+    if (SpawnedWeapon)
+    {
+        if (!PrimaryWeapon) PrimaryWeapon = SpawnedWeapon;
+        else if (!SecondaryWeapon) SecondaryWeapon = SpawnedWeapon;
+        else if (!ThirdWeapon) ThirdWeapon = SpawnedWeapon;
+        else
+        {
+            if (CurrentWeapon) CurrentWeapon->Destroy();
+            PrimaryWeapon = SpawnedWeapon;
+        }
 
-		// ٥. دیاریکردنی چەکی دەستی ئێستای یاریزانەکە
-		CurrentWeapon = SpawnedWeapon;
-
-		FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
-		CurrentWeapon->AttachToComponent(GetMesh(), AttachRules, SocketName);
-	}
+        CurrentWeapon = SpawnedWeapon;
+        AttachWeaponToMesh(CurrentWeapon);
+    }
 }
 
 void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 {
-	if (WeaponToAttach && GetMesh())
-	{
-		FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
-		WeaponToAttach->AttachToComponent(GetMesh(), AttachRules, SocketName);
-	}
+    if (WeaponToAttach && GetMesh())
+    {
+        FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
+        WeaponToAttach->AttachToComponent(GetMesh(), AttachRules, SocketName);
+    }
 }
 
 void AHama::OnRep_CurrentWeapon()
 {
-	AttachWeaponToMesh(CurrentWeapon);
+    AttachWeaponToMesh(CurrentWeapon);
 }
 
-
 // -----------------------------------------------------------------------------
-// Input Binding (بەستنەوەی فەنکشنەکان بە ئینپوتەکانەوە)
+// Input Binding
 // -----------------------------------------------------------------------------
 void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
-	Super::SetupPlayerInputComponent(PlayerInputComponent);
+    Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-		{
-			Subsystem->AddMappingContext(DefaultMappingContext, 0);
-		}
-	}
+    if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+    {
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
+        {
+            Subsystem->AddMappingContext(DefaultMappingContext, 0);
+        }
+    }
 
-	if (UEnhancedInputComponent* EnhancedInput = CastChecked<UEnhancedInputComponent>(PlayerInputComponent))
-	{
-		// بەستنەوەی جوڵە و تەماشاکردن
-		EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AHama::Move);
-		EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &AHama::Look);
-
-		// بەستنەوەی بازدان
-		EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &AHama::JumpActionPressed);
-		EnhancedInput->BindAction(SprintAction, ETriggerEvent::Started, this, &AHama::SprintActionPressed);
-		// بەستنەوەی گۆڕینی کامێرا (Triggered بۆ هۆڵد و Completed بۆ لادانی دەست)
-		EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Triggered, this, &AHama::SwitchCameraPressed);
-		EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Completed, this, &AHama::SwitchCameraReleased);
-
-		// بەستنەوەی کڕاکردن (Crouch)
-		EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Started, this, &AHama::CrouchActionPressed);
-		EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Completed, this, &AHama::CrouchActionReleased);
-		EnhancedInput->BindAction(AimAction, ETriggerEvent::Started, this, &AHama::AimActionPressed);
-		EnhancedInput->BindAction(AimAction, ETriggerEvent::Completed, this, &AHama::AimActionReleased);
-	
-		EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHama::FireActionPressed);
-		EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHama::FireActionReleased);
-		
-		EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
-	}
+    if (UEnhancedInputComponent* EnhancedInput = CastChecked<UEnhancedInputComponent>(PlayerInputComponent))
+    {
+        EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AHama::Move);
+        EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &AHama::Look);
+        EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &AHama::JumpActionPressed);
+        EnhancedInput->BindAction(SprintAction, ETriggerEvent::Started, this, &AHama::SprintActionPressed);
+        EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Triggered, this, &AHama::SwitchCameraPressed);
+        EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Completed, this, &AHama::SwitchCameraReleased);
+        EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Started, this, &AHama::CrouchActionPressed);
+        EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Completed, this, &AHama::CrouchActionReleased);
+        EnhancedInput->BindAction(AimAction, ETriggerEvent::Started, this, &AHama::AimActionPressed);
+        EnhancedInput->BindAction(AimAction, ETriggerEvent::Completed, this, &AHama::AimActionReleased);
+        EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHama::FireActionPressed);
+        EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHama::FireActionReleased);
+        EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
+    }
 }
 
-void AHama::OnRep_Health()
-{
-
-}
+void AHama::OnRep_Health() {}
+void AHama::OnRep_Points() {}
 
 // -----------------------------------------------------------------------------
-// Input Callback Functions (لۆجیکی کارکردنی ئینپوتەکان)
+// Input Callback Functions
 // -----------------------------------------------------------------------------
 void AHama::FireActionPressed()
 {
-	if (!HamaComponent || !CurrentWeapon) return;
-	bIsFireButtonHold = true;
-	CurrentWeapon->StartFire();
+    if (!HamaComponent || !CurrentWeapon) return;
+    bIsFireButtonHold = true;
+    CurrentWeapon->StartFire();
 }
 
 void AHama::FireActionReleased()
 {
-	if (!HamaComponent || !CurrentWeapon) return;
-	bIsFireButtonHold = false;
-	CurrentWeapon->StopFire();
+    if (!HamaComponent || !CurrentWeapon) return;
+    bIsFireButtonHold = false;
+    CurrentWeapon->StopFire();
 }
 
 void AHama::AimActionPressed()
 {
-	if (!HamaComponent || !CurrentWeapon) return;
-	bIsAimButtonHold = true;
+    if (!HamaComponent || !CurrentWeapon) return;
+    bIsAimButtonHold = true;
 
-	if (HamaComponent->bIsSprinting)
-	{
-		HamaComponent->StopSprinting();
-	}
+    if (HamaComponent->bIsSprinting)
+    {
+        HamaComponent->StopSprinting();
+    }
 
-	HamaComponent->SetAiming(true);
-	OnAim(true);
+    HamaComponent->SetAiming(true);
+    OnAim(true);
+
+    // یەکەم ڕاکێشان (Snap) لە کاتی داگرتنی دوگمەکە بەپێی مەودای ڕاستەقینە
+    AimPressedSitck();
 }
 
 void AHama::AimActionReleased()
 {
-	if (!HamaComponent || !CurrentWeapon) return;
-	bIsAimButtonHold = false;
+    if (!HamaComponent || !CurrentWeapon) return;
+    bIsAimButtonHold = false;
 
-	HamaComponent->SetAiming(false);
-	OnAim(false);
+    bIsStickyAiming = false;
+    LockedTarget = nullptr;
+
+    HamaComponent->SetAiming(false);
+    OnAim(false);
+}
+
+void AHama::AimPressedSitck()
+{
+    if (!OwnerController || !CurrentWeapon) return;
+
+    FVector StartLocation;
+    FRotator StartRotation;
+    OwnerController->GetPlayerViewPoint(StartLocation, StartRotation);
+    FVector CameraForward = StartRotation.Vector();
+
+    float WeaponRange = CurrentWeapon->GetWeaponMaxRange();
+    float BestDotProduct = 0.90f; // سنوری جێگیر بۆ ڕاکێشانی نیشانە
+
+    AZombie* TargetToSnap = nullptr;
+
+    TArray<AActor*> OverlappedZombies;
+    TArray<AActor*> ActorsToIgnore;
+    ActorsToIgnore.Add(this);
+
+    // بەکارهێنانی سستەمی ئۆڤەرلاپ لەبری TActorIterator بۆ کارایی بەرز
+    UKismetSystemLibrary::SphereOverlapActors(
+        this, StartLocation, WeaponRange,
+        TArray<TEnumAsByte<EObjectTypeQuery>>(),
+        AZombie::StaticClass(), ActorsToIgnore, OverlappedZombies
+    );
+
+    for (AActor* Actor : OverlappedZombies)
+    {
+        AZombie* PotentialTarget = Cast<AZombie>(Actor);
+        if (!PotentialTarget || PotentialTarget->bIsDead) continue;
+
+        FVector TargetLocation = PotentialTarget->GetActorLocation();
+        if (PotentialTarget->GetMesh() && PotentialTarget->GetMesh()->DoesSocketExist(FName("spine_04")))
+        {
+            TargetLocation = PotentialTarget->GetMesh()->GetSocketLocation(FName("spine_04"));
+        }
+
+        FVector ToTargetDir = (TargetLocation - StartLocation).GetSafeNormal();
+        float CurrentDot = FVector::DotProduct(CameraForward, ToTargetDir);
+
+        if (CurrentDot > BestDotProduct)
+        {
+            FHitResult LineHit;
+            FCollisionQueryParams QueryParams;
+            QueryParams.AddIgnoredActor(this);
+            QueryParams.AddIgnoredActor(PotentialTarget);
+
+            if (!GetWorld()->LineTraceSingleByChannel(LineHit, StartLocation, TargetLocation, ECC_Visibility, QueryParams))
+            {
+                BestDotProduct = CurrentDot;
+                TargetToSnap = PotentialTarget;
+            }
+        }
+    }
+
+    if (TargetToSnap)
+    {
+        LockedTarget = TargetToSnap;
+        bIsStickyAiming = true;
+
+        FVector TargetLocation = TargetToSnap->GetMesh()->GetSocketLocation(FName("spine_04"));
+        FRotator DesiredRot = (TargetLocation - StartLocation).Rotation();
+
+        OwnerController->SetControlRotation(DesiredRot);
+    }
 }
 
 void AHama::ReloadActionPressed()
 {
-	if (!CurrentWeapon) return;
-	if (CurrentWeapon->ReserveAmmo <= 0) return;
-	if (HamaComponent)
-	{
-		if (HamaComponent->IsSprinting())
-		{
-			HamaComponent->StopSprinting();
-		}
-	}
-	CurrentWeapon->StopFire();
-	CurrentWeapon->Reload();
+    if (!CurrentWeapon || CurrentWeapon->ReserveAmmo <= 0) return;
+
+    if (HamaComponent && HamaComponent->IsSprinting())
+    {
+        HamaComponent->StopSprinting();
+    }
+
+    CurrentWeapon->StopFire();
+    CurrentWeapon->Reload();
 }
 
 void AHama::Move(const FInputActionValue& Value)
 {
-	if (!OwnerController) return;
+    if (!OwnerController) return;
+    FVector2D MovementVector = Value.Get<FVector2D>();
+    FRotator ControllRotation = OwnerController->GetControlRotation();
+    FRotator YawRotation(0.f, ControllRotation.Yaw, 0.f);
 
-	// وەرگرتنی داتای جوڵە (X, Y)
-	FVector2D MovementVector = Value.Get<FVector2D>();
+    FVector MoveForward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+    FVector MoveRight = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
-	// دۆزینەوەی ئاڕاستەی ڕووانینی کامێرا
-	FRotator ControllRotation = OwnerController->GetControlRotation();
-	FRotator YawRotation(0.f, ControllRotation.Yaw, 0.f);
-
-	// حیسابکردنی ئاڕاستەی پێشەوە و تەنیشتەکان
-	FVector MoveForward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	FVector MoveRight = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-
-	// جێبەجێکردنی جوڵەکە
-	AddMovementInput(MoveForward, MovementVector.Y);
-	AddMovementInput(MoveRight, MovementVector.X);
+    AddMovementInput(MoveForward, MovementVector.Y);
+    AddMovementInput(MoveRight, MovementVector.X);
 }
 
 void AHama::Look(const FInputActionValue& Value)
 {
-	if (!OwnerController) return;
+    if (!OwnerController) return;
 
-	FVector2D lookVector = Value.Get<FVector2D>();
+    FVector2D lookVector = Value.Get<FVector2D>();
+    float ApplySensitivity = bIsAimButtonHold ? AimingSensitivity : NormalSensitivity;
 
-	// گۆڕینی هەستیاری (Sensitivity) بەپێی ئەوەی نیشانەی گرتووە یان نا
-	float ApplySensitivity = bIsAimButtonHold ? AimingSensitivity : NormalSensitivity;
+    // پشکنین و بەکارهێنانی TWeakObjectPtr بە شێوەیەکی سەلامەت بۆ ڕێگری لە کڕاش
+    if (bIsStickyAiming && LockedTarget.IsValid())
+    {
+        if (lookVector.Length() > 0.7f)
+        {
+            bIsStickyAiming = false;
+            LockedTarget = nullptr;
+        }
+    }
+    else if (bIsStickyAiming && !LockedTarget.IsValid())
+    {
+        bIsStickyAiming = false;
+        LockedTarget = nullptr;
+    }
 
-	AddControllerYawInput(lookVector.X * ApplySensitivity);
-	AddControllerPitchInput(lookVector.Y * ApplySensitivity);
+    // لۆژیکی BO3 Aim Friction Bubble (خاوکردنەوەی نەرمی نیشانە لە دەوری زۆمبی)
+    if (bIsAimButtonHold && CurrentWeapon)
+    {
+        FVector TraceStart;
+        FRotator TraceRotation;
+        OwnerController->GetPlayerViewPoint(TraceStart, TraceRotation);
+
+        float AssistDistance = CurrentWeapon->GetWeaponMaxRange() * 0.8f;
+        FVector TraceEnd = TraceStart + (TraceRotation.Vector() * AssistDistance);
+
+        FHitResult HitResult;
+        FCollisionQueryParams Params;
+        Params.AddIgnoredActor(this);
+
+        // بڵقێک بە نیوەتیرەی ٤٥ یەکە دروست دەکەین بۆ گرتنەوەی دەوروبەری زۆمبییەکە پێش گەیشتنی فیشەک
+        FCollisionShape SphereShape = FCollisionShape::MakeSphere(45.f);
+
+        if (GetWorld()->SweepSingleByChannel(HitResult, TraceStart, TraceEnd, FQuat::Identity, ECC_Pawn, SphereShape, Params))
+        {
+            if (Cast<AZombie>(HitResult.GetActor()))
+            {
+                ApplySensitivity *= StickySlowdownMultiplier;
+            }
+        }
+    }
+
+    AddControllerYawInput(lookVector.X * ApplySensitivity);
+    AddControllerPitchInput(lookVector.Y * ApplySensitivity);
 }
 
 void AHama::JumpActionPressed()
 {
-	// ئەگەر لە سلایددا بوو، سلایدەکە دەوەستێنین و ڕێگە دەدەین دوای بازدانەکە سلاید بکاتەوە
-	if (HamaComponent && HamaComponent->bIsSlide)
-	{
-		bCanJumpSlide = true;
-		StopSlideRoutine(); // وەستاندنی تەواوەتی سلاید و ئەنیمەیشنەکە
-	}
+    if (HamaComponent && HamaComponent->bIsSlide)
+    {
+        bCanJumpSlide = true;
+        StopSlideRoutine();
+    }
 
-	if (HamaComponent && HamaComponent->IsSprinting())
-	{
-		HamaComponent->StopSprinting();
-	}
+    if (HamaComponent && HamaComponent->IsSprinting())
+    {
+        HamaComponent->StopSprinting();
+    }
 
-	// ئەگەر کارەکتەرەکە کڕنووشی بردبوو، پێش بازدانەکە با هەستێتەوە
-	if (GetCharacterMovement()->IsCrouching()) UnCrouch();
-
-	Jump();
+    if (GetCharacterMovement()->IsCrouching()) UnCrouch();
+    Jump();
 }
 
 void AHama::CrouchActionPressed()
 {
-	bIsCrouchButtonHold = true;
-	if (HamaComponent && HamaComponent->bIsSlide) return;
+    bIsCrouchButtonHold = true;
+    if (HamaComponent && HamaComponent->bIsSlide) return;
 
-	if (HamaComponent && IsSprinting())
-	{
-		StartSlideRoutine();
-		return;
-	}
+    if (HamaComponent && IsSprinting())
+    {
+        StartSlideRoutine();
+        return;
+    }
 
-	if (GetCharacterMovement()->IsFalling()) return;
+    if (GetCharacterMovement()->IsFalling()) return;
 
-	if (HamaMovementComponent)
-	{
-		if(HamaMovementComponent->IsCrouching())
-		{
-			UnCrouch();
-		}
-		else Crouch();
-	}
+    if (HamaMovementComponent)
+    {
+        if (HamaMovementComponent->IsCrouching()) UnCrouch();
+        else Crouch();
+    }
 }
 
 void AHama::CrouchActionReleased()
 {
-	bIsCrouchButtonHold = false;
+    bIsCrouchButtonHold = false;
 }
 
 void AHama::StartSlideRoutine()
 {
-	if (!HamaComponent) return;
+    if (!HamaComponent) return;
+    HamaComponent->StopSprinting();
+    PlayAnimMontage(SlideMontage);
+    HamaComponent->StartSlide();
 
-	HamaComponent->StopSprinting();
-	PlayAnimMontage(SlideMontage);
-	HamaComponent->StartSlide();
-
-	// بەستنەوەی فەنکشنی کۆتایی مۆنتاژ بۆ ئەوەی لە کاتی خۆی سلایدەکە بوەستێت
-	if (GetMesh() && GetMesh()->GetAnimInstance() && SlideMontage)
-	{
-		FOnMontageEnded MontageEndedDelegate;
-		MontageEndedDelegate.BindUObject(this, &AHama::OnMontageEnded);
-		GetMesh()->GetAnimInstance()->Montage_SetEndDelegate(MontageEndedDelegate, SlideMontage);
-	}
+    if (GetMesh() && GetMesh()->GetAnimInstance() && SlideMontage)
+    {
+        FOnMontageEnded MontageEndedDelegate;
+        MontageEndedDelegate.BindUObject(this, &AHama::OnMontageEnded);
+        GetMesh()->GetAnimInstance()->Montage_SetEndDelegate(MontageEndedDelegate, SlideMontage);
+    }
 }
 
 void AHama::StopSlideRoutine()
 {
-	if (!HamaComponent) return;
+    if (!HamaComponent) return;
+    HamaComponent->StopSlide();
 
-	HamaComponent->StopSlide();
-
-	// وەستاندنی ئەنیمەیشنەکە بە زۆر (Force Stop) بۆ Slide Cancel
-	if (SlideMontage)
-	{
-		StopAnimMontage(SlideMontage);
-	}
+    if (SlideMontage)
+    {
+        StopAnimMontage(SlideMontage);
+    }
 }
 
 void AHama::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
-	if (Montage == SlideMontage)
-	{
-		if (HamaComponent)
-		{
-			HamaComponent->StopSlide();
-		}
-	}
+    if (Montage == SlideMontage && HamaComponent)
+    {
+        HamaComponent->StopSlide();
+    }
 }
-
 
 void AHama::SwitchCameraPressed(const FInputActionInstance& Instance)
 {
-	// ئەگەر پلەی hold گەیشتە 0.5 چرکە
-	if (Instance.GetElapsedTime() >= 0.5f)
-	{
-		// تەنها یەک جار switch بکا
-		if (!bIsHoldedTrigger)
-		{
-			bIsHoldedTrigger = true;
+    if (Instance.GetElapsedTime() >= 0.5f)
+    {
+        if (!bIsHoldedTrigger)
+        {
+            bIsHoldedTrigger = true;
+            bIsInFirstPerson = !bIsInFirstPerson;
 
-			bIsInFirstPerson = !bIsInFirstPerson;
-
-			if (TPCamera && FPCamera)
-			{
-				TPCamera->SetActive(!bIsInFirstPerson);
-				FPCamera->SetActive(bIsInFirstPerson);
-			}
-		}
-	}
+            if (TPCamera && FPCamera)
+            {
+                TPCamera->SetActive(!bIsInFirstPerson);
+                FPCamera->SetActive(bIsInFirstPerson);
+            }
+        }
+    }
 }
 
 void AHama::SwitchCameraReleased()
 {
-	// کاتێک دەستی لادەبات: ئەگەر کاتەکەی نەگەیشتبووە 0.5 چرکە (واتە هۆڵد نەبووە، تەنها وەک Tap)
-	if (!bIsHoldedTrigger)
-	{
-		bIsInRightShoulderView = !bIsInRightShoulderView;
-
-		if (!bIsInFirstPerson)
-		{
-			Switchcamera(bIsInRightShoulderView);
-		}
-	}
-	// هەمیشە لە کاتی لادانی دەستدا ئەم گۆڕاوە ڕیست دەبێتەوە بۆ جاری داهاتوو
-	bIsHoldedTrigger = false;
+    if (!bIsHoldedTrigger)
+    {
+        bIsInRightShoulderView = !bIsInRightShoulderView;
+        if (!bIsInFirstPerson)
+        {
+            Switchcamera(bIsInRightShoulderView);
+        }
+    }
+    bIsHoldedTrigger = false;
 }
 
 void AHama::SprintActionPressed()
 {
-	if (!HamaComponent) return;
-	if (HamaComponent->GetStamina() < 15.f) return;
-	if (HamaComponent->bIsAiming)
-	{
-		HamaComponent->SetAiming(false);
-		OnAim(false);
-	}
-	if (bIsFireButtonHold)
-	{
-		if (CurrentWeapon) CurrentWeapon->StopFire();
-	}
-	if (CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
-	if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching())
-	{
-		UnCrouch();
-	}
-	HamaComponent->StartSprinting();
+    if (!HamaComponent || HamaComponent->GetStamina() < 15.f) return;
+
+    if (HamaComponent->bIsAiming)
+    {
+        HamaComponent->SetAiming(false);
+        OnAim(false);
+    }
+    if (bIsFireButtonHold && CurrentWeapon) CurrentWeapon->StopFire();
+    if (CurrentWeapon && CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
+    if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching()) UnCrouch();
+
+    HamaComponent->StartSprinting();
 }
 
 bool AHama::IsSprinting() const
 {
-	return HamaComponent && HamaComponent->IsSprinting();
-}
-
-void AHama::OnRep_Points()
-{
+    return HamaComponent && HamaComponent->IsSprinting();
 }
