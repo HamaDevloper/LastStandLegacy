@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Engine/DataTable.h"
+#include "Camera/CameraShakeBase.h" 
 #include "BaseWeapon.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
@@ -12,7 +13,8 @@ class UHamaComponent;
 class USkeletalMeshComponent;
 class UAnimMontage;
 class UAnimSequence;
-class UForceFeedbackEffect; // ئینکلودکردنی ئەمەش باشە بۆ ڕێگری لە هەڵە
+class UForceFeedbackEffect;
+class UCurveFloat;
 
 UENUM(BlueprintType)
 enum class EWeaponFireMode : uint8
@@ -51,14 +53,15 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
     int32 BurstShotCount = 3;
 
+    // --- سیستەمی نوێی AAA Recoil ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
-    float RecoilPitch = 0.8f;
+    TSubclassOf<UCameraShakeBase> FireCameraShake;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
-    float RecoilYaw = 0.2f;
+    UCurveFloat* RecoilPitchCurve;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
-    float RecoilRandomness = 0.15f;
+    float RecoilRandomness = 0.2f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
     float AimRecoilMultiplier = 0.55f;
@@ -111,10 +114,19 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Mesh")
     TObjectPtr<USkeletalMeshComponent> WeaponMesh;
 
+    void EquipWeapon(AHama* NewOwnerCharacter);
+
+    UFUNCTION(BlueprintCallable, Server, Reliable)
+    void ServerUpgradeWeapon_PackAPunch();
+
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
+    virtual void OnRep_Owner() override;
+    void UpdateCachedReferences();
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+    float CalculateDamageBySurface(const FHitResult& Hit);
 
 public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Data")
@@ -124,7 +136,6 @@ public:
     FName WeaponRowName;
 
     void InitializeWeaponData();
-    void UpdateCachedReferences();
 
 protected:
     FWeaponData CurrentWeaponData;
@@ -136,16 +147,17 @@ protected:
     int32 MaxAmmoInClip;
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
-    float Damge;
+    float Damage;
 
     UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
     uint8 BurstCounter = 0;
 
     FTimerHandle FireTimerHandle;
     FTimerHandle ReloadTimerHandle;
+    FTimerHandle ServerFireTimerHandle;
 
     int32 CurrentBurstShotsLeft = 0;
-    int32 ShotsFiredInBurst = 0;
+    int32 ServerBurstShotsLeft = 0; // لۆجیکی جیاکراوە بۆ سێرڤەر بۆ پاراستن لە هاک
     float NextAllowedFireTime;
 
 public:
@@ -165,7 +177,12 @@ public:
     float CalculateBulletSpread();
 
     UFUNCTION(Server, Reliable)
-    void ServerHandleFire(FVector StartLocation, FVector CameraDirection, int32 RandomSeed, float SpreadInRadians);
+    void Server_StartFire();
+
+    UFUNCTION(Server, Reliable)
+    void Server_StopFire();
+
+    void Server_FireRoutine();
 
     UFUNCTION()
     void OnRep_BurstCounter();
@@ -184,21 +201,24 @@ public:
     void OnRep_Reload();
 
 protected:
-    void ApplyRecoilAndCameraShake();
-    void ResetRecoil();
-
-    FRotator TargetRecoilOffset = FRotator::ZeroRotator;
-    FRotator CurrentRecoilOffset = FRotator::ZeroRotator;
-
     void Local_ReloadComplete();
     void Server_ReloadComplete();
     void PlayWeaponEffects();
+
+    void PlayLocalHitEffects(const FHitResult& LocalHit);
+
+    void ApplyRecoilAndCameraShake();
+    void ResetRecoil();
+    int32 ShotsFiredInBurst = 0;
+
+    FRotator TargetRecoilOffset = FRotator::ZeroRotator;
+    FRotator CurrentRecoilOffset = FRotator::ZeroRotator;
 
     UPROPERTY()
     TObjectPtr<AHama> OwnerCharacter;
 
     UPROPERTY()
-   UHamaComponent* HamaComponent;
+    UHamaComponent* HamaComponent;
 
     UPROPERTY()
     TObjectPtr<APlayerController> OwnerController;

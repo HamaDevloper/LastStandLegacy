@@ -51,8 +51,6 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     FPCamera->SetupAttachment(GetMesh(), FName("head"));
     FPCamera->bUsePawnControlRotation = true;
 
-    // بەهای سەرەتایی بۆ خێرایی ڕیلۆدکردن (1.0 ئاساییە، 1.5 واتە ٥٠٪ خێراتر)
-    ReloadSpeedMultiplier = 1.0f;
     bIsStickyAiming = false;
 }
 
@@ -210,6 +208,7 @@ void AHama::CreateDefaultWeapon()
         }
 
         CurrentWeapon = SpawnedWeapon;
+        CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
     }
 }
