@@ -191,16 +191,6 @@ public:
     void OnRep_Health();
 
     // -----------------------------------------------------------------------------
-    // Points
-    // -----------------------------------------------------------------------------
-public:
-    UPROPERTY(ReplicatedUsing = OnRep_Points, BlueprintReadOnly, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
-    int32 Points = 500;
-
-    UFUNCTION()
-    void OnRep_Points();
-
-    // -----------------------------------------------------------------------------
     // Input Callbacks & Network RPCs
     // -----------------------------------------------------------------------------
 public:

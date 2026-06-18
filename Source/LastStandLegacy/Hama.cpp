@@ -97,7 +97,6 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME(AHama, CurrentWeapon);
     DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, Points, COND_OwnerOnly);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -261,7 +260,6 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 }
 
 void AHama::OnRep_Health() {}
-void AHama::OnRep_Points() {}
 
 // -----------------------------------------------------------------------------
 // Input Callback Functions

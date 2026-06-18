@@ -7,6 +7,7 @@
 #include "LastStandLegacyGameMode.h"
 #include "Net/UnrealNetwork.h"
 #include "EngineUtils.h"
+#include "HamaPlayerState.h"
 
 AZombie::AZombie()
 {
@@ -132,23 +133,20 @@ float AZombie::TakeDamage(
 {
     if (!HasAuthority() || bIsDead) return 0.f;
 
-    float DamageApplied = Super::TakeDamage(
-        DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    float DamageApplied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     Health -= DamageApplied;
-   
-      AHama* Attacker = Cast<AHama>(
-          EventInstigator ? EventInstigator->GetPawn() : nullptr);  
+
+    // ڕاستەوخۆ PlayerState دەهێنین لە کۆنتڕۆڵەرەکەوە، بێ ئەوەی Cast بکەین بۆ AHama
+    AHamaPlayerState* AttackerPS = EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
+
     if (Health <= 0.f)
     {
+        if (AttackerPS) AttackerPS->AddPoints(100);
         Die(EventInstigator);
-        if(Attacker)
-        {
-            Attacker->Points += 100;
-        }
     }
     else
     {
-        if(Attacker)  Attacker->Points += 10;
+        if (AttackerPS)   AttackerPS->AddPoints(10);
     }
 
     return DamageApplied;
@@ -170,11 +168,6 @@ void AZombie::Die(AController* KillerController)
         AICont->UnPossess();
     }
 
-    // ئەگەر قاتیلەکە یاریزان بوو خاڵی پێ بدە
-    if (AHama* KillerChar = Cast<AHama>(KillerController ? KillerController->GetPawn() : nullptr))
-    {
-        KillerChar->Points += KillPointsValue;
-    }
     OnRep_IsDead();
 
     OnZombieDeath.Broadcast(this);
