@@ -3,6 +3,8 @@
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "HamaMovementComponent.h"
+#include "HamaPlayerState.h"
+#include "HamaMainWidget.h"
 #include "BaseWeapon.h"
 #include "Net/UnrealNetwork.h"
 #include "Camera/CameraComponent.h"
@@ -74,6 +76,22 @@ void AHama::BeginPlay()
             CrossHairRef->AddToViewport();
         }
     }
+
+    if (IsLocallyControlled() && MainWidgetClass)
+    {
+        MainWidgetRef = CreateWidget<UHamaMainWidget>(GetWorld(), MainWidgetClass);
+        if (MainWidgetRef)
+        {
+            MainWidgetRef->AddToViewport();
+
+            if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
+            {
+                MainWidgetRef->UpdatePointsText(HamaPS->GetPoints());
+                MainWidgetRef->UpdateKillsText(HamaPS->GetKills());
+            }
+        }
+    }
+
     if (HasAuthority()) CreateDefaultWeapon();
     StartCrossHairTimer();
 }
@@ -181,6 +199,54 @@ void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDat
     {
         bLastCrossHairState = bHit;
         CrossHairUpdate(bHit);
+    }
+}
+
+void AHama::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState)
+{
+    Super::OnPlayerStateChanged(NewPlayerState, OldPlayerState);
+
+    // ئەم فەنکشنە تەنها کاتێک کار دەکات کە PlayerState بە تەواوی گەیشتبێتە کڕایەنت
+    if (NewPlayerState)
+    {
+        BindPlayerStateEvents();
+    }
+}
+
+void AHama::BindPlayerStateEvents()
+{
+    // وەرگرتنی PlayerState بە شێوازی پارێزراو
+    if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
+    {
+        // لادانی بەستنەوەی کۆن ئەگەر هەبێت (بۆ ڕێگری لە دووبارەبوونەوە)
+        HamaPS->OnPointsChanged.RemoveDynamic(this, &AHama::HandlePointsChanged);
+        HamaPS->OnKillsChanged.RemoveDynamic(this, &AHama::HandleKillsChanged);
+
+        // بەستنەوەی دیسپاچەرەکانی C++ بە فەنکشنەکانی کارەکتەرەوە
+        HamaPS->OnPointsChanged.AddDynamic(this, &AHama::HandlePointsChanged);
+        HamaPS->OnKillsChanged.AddDynamic(this, &AHama::HandleKillsChanged);
+
+        if (IsLocallyControlled() && MainWidgetRef)
+        {
+            MainWidgetRef->UpdatePointsText(HamaPS->GetPoints());
+            MainWidgetRef->UpdateKillsText(HamaPS->GetKills());
+        }
+    }
+}
+
+void AHama::HandlePointsChanged(int32 NewPoints)
+{
+    if (IsLocallyControlled() && MainWidgetRef)
+    {
+        MainWidgetRef->UpdatePointsText(NewPoints);
+    }
+}
+
+void AHama::HandleKillsChanged(int32 NewKills)
+{
+    if (IsLocallyControlled() && MainWidgetRef)
+    {
+        MainWidgetRef->UpdateKillsText(NewKills);
     }
 }
 

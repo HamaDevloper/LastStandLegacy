@@ -141,7 +141,12 @@ float AZombie::TakeDamage(
 
     if (Health <= 0.f)
     {
-        if (AttackerPS) AttackerPS->AddPoints(100);
+        if (AttackerPS)
+        {
+            AttackerPS->AddPoints(100);
+            AttackerPS->AddKills(1);
+        }
+
         Die(EventInstigator);
     }
     else

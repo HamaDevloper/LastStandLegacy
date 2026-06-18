@@ -1,18 +1,20 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
-#include "HamaPlayerState.h"
+﻿#include "HamaPlayerState.h"
 #include "Net/UnrealNetwork.h"
 
 AHamaPlayerState::AHamaPlayerState()
 {
-    Points = 0;
+    SetNetUpdateFrequency(2.f);
+    SetMinNetUpdateFrequency(1.f);
+
+    Points = 500;
+    Kills = 0;
 }
 
 void AHamaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(AHamaPlayerState, Points);
+    DOREPLIFETIME(AHamaPlayerState, Kills);
 }
 
 void AHamaPlayerState::AddPoints(int32 Amount)
@@ -20,9 +22,29 @@ void AHamaPlayerState::AddPoints(int32 Amount)
     if (HasAuthority())
     {
         Points += Amount;
+
+        ForceNetUpdate();
     }
+    OnRep_Points();
+}
+
+void AHamaPlayerState::AddKills(int32 Amount)
+{
+    if (HasAuthority())
+    {
+        Kills += Amount;
+
+        ForceNetUpdate();
+    }
+    OnRep_Kills();
 }
 
 void AHamaPlayerState::OnRep_Points()
 {
+    OnPointsChanged.Broadcast(Points);
+}
+
+void AHamaPlayerState::OnRep_Kills()
+{
+    OnKillsChanged.Broadcast(Kills);
 }

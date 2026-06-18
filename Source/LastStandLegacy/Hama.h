@@ -123,6 +123,33 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Hama|UI")
     TObjectPtr<UUserWidget> CrossHairRef;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama | UI")
+    TSubclassOf<class UHamaMainWidget> MainWidgetClass;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Hama | UI")
+    class UHamaMainWidget* MainWidgetRef;
+
+protected:
+    // فەنکشنی بنەڕەتی ئینجین کە خۆی چاوەڕێی گەیشتنی ڕاستەقینەی PlayerState دەکات
+    virtual void OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState) override;
+
+    // لۆجیکی نێوخۆیی بۆ بەستنەوەی دیسپاچەرەکان
+    void BindPlayerStateEvents();
+
+    // فەنکشنەکان کە کاتێک دیسپاچەری C++ لێدەدات، ئەمان بەئاگا دێنەوە
+    UFUNCTION()
+    void HandlePointsChanged(int32 NewPoints);
+
+    UFUNCTION()
+    void HandleKillsChanged(int32 NewKills);
+
+    // ئەمەش ئیڤێنتێکە بۆ ناو بلوپرینت (UI) تا تەنها تێکستەکە ئەپدیت بکاتەوە بێ کاست
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
+    void OnUIUpdatePoints(int32 NewPoints);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
+    void OnUIUpdateKills(int32 NewKills);
+
 public:
     // -----------------------------------------------------------------------------
     // State Checking & Logic Functions
