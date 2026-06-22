@@ -4,15 +4,20 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "HamaComponent.h"
+#include "BaseWeapon.h"
 #include "Hama.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
 #define ECC_CrossHair ECC_GameTraceChannel2
 
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
+
 // -----------------------------------------------------------------------------
 // Forward Declarations
 // -----------------------------------------------------------------------------
-class UHamaComponent;
+
 class UHamaMovementComponent;
 class ABaseWeapon;
 class USpringArmComponent;
@@ -117,6 +122,7 @@ public:
     // -----------------------------------------------------------------------------
     // UI & HUD
     // -----------------------------------------------------------------------------
+   
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
     TSubclassOf<UUserWidget> PlayerCrossHairClass;
 
@@ -143,12 +149,20 @@ protected:
     UFUNCTION()
     void HandleKillsChanged(int32 NewKills);
 
+    UFUNCTION()
+    void UpdatePingUI();
+
+    FTimerHandle PingUpdateTimerHandle;
+
     // ئەمەش ئیڤێنتێکە بۆ ناو بلوپرینت (UI) تا تەنها تێکستەکە ئەپدیت بکاتەوە بێ کاست
     UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
     void OnUIUpdatePoints(int32 NewPoints);
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
     void OnUIUpdateKills(int32 NewKills);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
+    void OnUIUpdatePing(int32 NewKills);
 
 public:
     // -----------------------------------------------------------------------------
@@ -268,7 +282,9 @@ private:
     FTimerHandle CrossHairTimerHandle;
     bool bLastCrossHairState = false;
 
-    bool IsSprinting() const;
+public:
+       FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->bIsSprinting; }
+       FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->bIsAiming; }
 
 protected:
     // CameraSensitivity
@@ -277,4 +293,7 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
     float AimingSensitivity = 0.5f;
+
+public:
+    FOnWeaponChanged OnWeaponChanged;
 };

@@ -92,10 +92,13 @@ void AHama::BeginPlay()
         }
     }
 
+    GetWorldTimerManager().ClearTimer(PingUpdateTimerHandle);
+    GetWorldTimerManager().SetTimer(PingUpdateTimerHandle, this, &AHama::UpdatePingUI, 1.f, true);
+
     if (HasAuthority()) CreateDefaultWeapon();
     StartCrossHairTimer();
 }
-
+ 
 void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     Super::EndPlay(EndPlayReason);
@@ -250,6 +253,15 @@ void AHama::HandleKillsChanged(int32 NewKills)
     }
 }
 
+void AHama::UpdatePingUI()
+{
+    if (APlayerState* PS = GetPlayerState())
+    {
+        float ExactPing = PS->GetPingInMilliseconds();
+        OnUIUpdatePing(FMath::RoundToInt(ExactPing));
+    }
+}
+
 void AHama::CreateDefaultWeapon()
 {
     if (!DefaultWeapon) return;
@@ -275,6 +287,7 @@ void AHama::CreateDefaultWeapon()
         CurrentWeapon = SpawnedWeapon;
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
+        OnWeaponChanged.Broadcast(CurrentWeapon);
     }
 }
 
@@ -290,6 +303,7 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 void AHama::OnRep_CurrentWeapon()
 {
     AttachWeaponToMesh(CurrentWeapon);
+    OnWeaponChanged.Broadcast(CurrentWeapon);
 }
 
 // -----------------------------------------------------------------------------
@@ -627,7 +641,7 @@ void AHama::SwitchCameraReleased()
 
 void AHama::SprintActionPressed()
 {
-    if (!HamaComponent || HamaComponent->GetStamina() < 15.f) return;
+    if (!HamaComponent || HamaComponent->GetStamina() < 15.f || GetCharacterMovement()->IsFalling()) return;
 
     if (HamaComponent->bIsAiming)
     {
@@ -639,9 +653,4 @@ void AHama::SprintActionPressed()
     if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching()) UnCrouch();
 
     HamaComponent->StartSprinting();
-}
-
-bool AHama::IsSprinting() const
-{
-    return HamaComponent && HamaComponent->IsSprinting();
 }

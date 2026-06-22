@@ -14,35 +14,43 @@ class LASTSTANDLEGACY_API ALastStandLegacyGameMode : public AGameModeBase
 public:
     ALastStandLegacyGameMode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game Round")
+    // هەموو متغییرەکان خرانە ژێر یەک کاتێگۆری خاوێن
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     int32 CurrentRound = 1;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game Round")
-    int32 ZombiesToKill = 1;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
+    int32 ZombiesSpawnLimit = 24;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
+    int32 ZombiesToKill = 5;
 
     int32 DeadZombiesCount = 0;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zombie Settings")
+    int32 ActiveZombiesCount = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zombie Settings")
+    int32 ZombiesSpawnedThisRound = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     TSubclassOf<AZombie> ZombieClass;
 
-    // Spawn Points لە Details Panel زیاد دەکرێن
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     TArray<AActor*> SpawnPoints;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     float MinSafeDistance = 500.f;
-
-
 
 protected:
     virtual void BeginPlay() override;
 
 private:
+    FTimerHandle SpawnTimerHandle;
+
     void StartNextRound();
-    void SpawnZombiesForRound();
+    void ProcessSpawning();
     AActor* PickWeightedSpawnPoint();
 
-   
 protected:
     UFUNCTION()
     void HandleZombieDeath(AZombie* DeadZombie);

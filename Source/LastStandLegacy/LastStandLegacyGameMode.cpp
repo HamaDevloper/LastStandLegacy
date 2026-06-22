@@ -4,6 +4,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "TimerManager.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -13,15 +14,11 @@ void ALastStandLegacyGameMode::BeginPlay()
 {
     Super::BeginPlay();
 
-    // پاککردنەوەی پێشوەختەی لیستەکە
     SpawnPoints.Empty();
 
-    // گەڕان بەدوای هەموو ئەکتەرەکان لە مێپەکەدا
     for (TActorIterator<AActor> It(GetWorld()); It; ++It)
     {
         AActor* Actor = *It;
-
-        // تەنها ئەوانە زیاد بکە کە تەیگی "ZombieSpawn"ـیان هەیە
         if (Actor && Actor->ActorHasTag(FName("ZombieSpawn")))
         {
             SpawnPoints.Add(Actor);
@@ -30,16 +27,38 @@ void ALastStandLegacyGameMode::BeginPlay()
 
     if (SpawnPoints.IsEmpty())
     {
-        UE_LOG(LogTemp, Warning, TEXT("هیچ SpawnPointـێک نەدۆزرایەوە! تەیگی 'ZombieSpawn' زیاد بکە."));
+        UE_LOG(LogTemp, Warning, TEXT("No SpawnPoint found! Add 'ZombieSpawn' tag."));
     }
 
-    SpawnZombiesForRound();
+    CurrentRound = 1;
+    DeadZombiesCount = 0;
+    ActiveZombiesCount = 0;
+    ZombiesSpawnedThisRound = 0;
+
+    // نامەی دەستپێکی یاری (ڕاوندی یەکەم) لەگەڵ ژمارەی زۆمبییەکان
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
+            FString::Printf(TEXT("Round %d Started! Zombies this round: %d"), CurrentRound, ZombiesToKill));
+    }
+
+    GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, 1.5f, true);
 }
 
-// ئەمە فەنگسنی نوێیەکە کە وەڵامی مردنی زۆمبی دەداتەوە
 void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie)
 {
     DeadZombiesCount++;
+    ActiveZombiesCount--;
+
+    // هەژمارکردنی ئەو زۆمبیانەی کە ماون بکوژرێن
+    int32 ZombiesRemaining = ZombiesToKill - DeadZombiesCount;
+
+    // پرینتکردنی ژمارەی زۆمبییە ماوەکان لەسەر شاشە (تەنها ئەگەر گەورەتر بوو لە سفڕ)
+    if (GEngine && ZombiesRemaining > 0)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange,
+            FString::Printf(TEXT("Zombies Remaining: %d"), ZombiesRemaining));
+    }
 
     if (DeadZombiesCount >= ZombiesToKill)
     {
@@ -50,13 +69,18 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie)
 void ALastStandLegacyGameMode::StartNextRound()
 {
     CurrentRound++;
+
     DeadZombiesCount = 0;
+    ZombiesSpawnedThisRound = 0;
+    ActiveZombiesCount = 0;
+
     ZombiesToKill += 5;
 
+    // نامەی دەستپێکردنی ڕاوندەکانی تر لەگەڵ ژمارەی زۆمبییەکان
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
-            FString::Printf(TEXT("Round %d Started"), CurrentRound));
+            FString::Printf(TEXT("Round %d Started! Zombies this round: %d"), CurrentRound, ZombiesToKill));
     }
 
     for (TActorIterator<AZombie> It(GetWorld()); It; ++It)
@@ -67,7 +91,41 @@ void ALastStandLegacyGameMode::StartNextRound()
         }
     }
 
-    SpawnZombiesForRound();
+    GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, 1.5f, true);
+}
+
+void ALastStandLegacyGameMode::ProcessSpawning()
+{
+    if (ZombiesSpawnedThisRound >= ZombiesToKill)
+    {
+        GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
+        return;
+    }
+
+    if (ActiveZombiesCount >= ZombiesSpawnLimit)
+    {
+        return;
+    }
+
+    if (!ZombieClass || SpawnPoints.IsEmpty()) return;
+
+    AActor* SpawnPoint = PickWeightedSpawnPoint();
+    if (!SpawnPoint) return;
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+    AZombie* Zombie = GetWorld()->SpawnActor<AZombie>(
+        ZombieClass, SpawnPoint->GetActorLocation(), SpawnPoint->GetActorRotation(), SpawnParams);
+
+    if (Zombie)
+    {
+        ActiveZombiesCount++;
+        ZombiesSpawnedThisRound++;
+
+        Zombie->SetStatsForRound(CurrentRound);
+        Zombie->OnZombieDeath.AddUObject(this, &ALastStandLegacyGameMode::HandleZombieDeath);
+    }
 }
 
 AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
@@ -124,29 +182,4 @@ AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
     }
 
     return ScoredPoints.Last().Point;
-}
-
-void ALastStandLegacyGameMode::SpawnZombiesForRound()
-{
-    if (!ZombieClass || SpawnPoints.IsEmpty()) return;
-
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-    for (int32 i = 0; i < ZombiesToKill; i++)
-    {
-        AActor* SpawnPoint = PickWeightedSpawnPoint();
-        if (!SpawnPoint) continue;
-
-        AZombie* Zombie = GetWorld()->SpawnActor<AZombie>(
-            ZombieClass, SpawnPoint->GetActorLocation(), SpawnPoint->GetActorRotation(), SpawnParams);
-
-        if (Zombie)
-        {
-            Zombie->SetStatsForRound(CurrentRound);
-
-            // ئەم بەشە زۆر گرنگە: لێرەدا زۆمبییەکە گرێ دەدەین بە HandleZombieDeath
-            Zombie->OnZombieDeath.AddUObject(this, &ALastStandLegacyGameMode::HandleZombieDeath);
-        }
-    }
 }

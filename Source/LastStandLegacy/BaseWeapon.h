@@ -226,12 +226,7 @@ protected:
 public:
     FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }
 
-    UFUNCTION(BlueprintCallable)
     FORCEINLINE UAnimSequence* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
-
-    UFUNCTION(BlueprintCallable)
     FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
-
-    UFUNCTION(BlueprintCallable)
     FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
 };
