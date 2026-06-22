@@ -4,7 +4,7 @@
 #include "GameFramework/Character.h"
 #include "Zombie.generated.h"
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnZombieDeath, AZombie*);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnZombieDeath, AZombie*, AController*);
 
 UCLASS()
 class LASTSTANDLEGACY_API AZombie : public ACharacter

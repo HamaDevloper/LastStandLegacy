@@ -118,6 +118,7 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+    DOREPLIFETIME(ABaseWeapon, bInfiniteAmmo);
     DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, ReserveAmmo, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, Damage, COND_OwnerOnly);
@@ -141,7 +142,7 @@ void ABaseWeapon::StartFire()
 {
     if (GetWorldTimerManager().IsTimerActive(FireTimerHandle)) return;
 
-    if (CurrentAmmo <= 0 && ReserveAmmo <= 0) return;
+    if (CurrentAmmo <= 0 && ReserveAmmo <= 0 && !bInfiniteAmmo) return;
 
     if (bIsReloading)
     {
@@ -225,7 +226,7 @@ void ABaseWeapon::HandleFireLocal()
 {
     if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
-    if (CurrentAmmo <= 0)
+    if (CurrentAmmo <= 0 && !bInfiniteAmmo)
     {
         StopFire();
         Reload();
@@ -239,7 +240,7 @@ void ABaseWeapon::HandleFireLocal()
             StopFire();
             return;
         }
-        CurrentBurstShotsLeft--;
+        if(!bInfiniteAmmo) CurrentBurstShotsLeft--;
     }
 
     if (!OwnerController)
@@ -248,7 +249,8 @@ void ABaseWeapon::HandleFireLocal()
         if (!OwnerController) return;
     }
 
-    CurrentAmmo--;
+    if (!bInfiniteAmmo)  CurrentAmmo--;
+   
     float CurrentTime = GetWorld()->GetTimeSeconds();
     NextAllowedFireTime = CurrentTime + CurrentWeaponData.FireRate;
 
@@ -387,13 +389,13 @@ void ABaseWeapon::Server_FireRoutine()
             Server_StopFire_Implementation();
             return;
         }
-        ServerBurstShotsLeft--;
+        if (!bInfiniteAmmo) CurrentBurstShotsLeft--;
     }
 
     float CurrentTime = GetWorld()->GetTimeSeconds();
     NextAllowedFireTime = CurrentTime + CurrentWeaponData.FireRate;
 
-    if (HasAuthority() && !OwnerCharacter->IsLocallyControlled())
+    if (HasAuthority() && !OwnerCharacter->IsLocallyControlled() && !bInfiniteAmmo)
     {
         CurrentAmmo--;
     }
@@ -517,6 +519,10 @@ void ABaseWeapon::ResetRecoil()
 void ABaseWeapon::OnRep_BurstCounter()
 {
     PlayWeaponEffects();
+}
+
+void ABaseWeapon::OnRep_InfiniteAmmo()
+{
 }
 
 void ABaseWeapon::PlayWeaponEffects()

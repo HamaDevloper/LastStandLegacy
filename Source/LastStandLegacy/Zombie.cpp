@@ -175,7 +175,7 @@ void AZombie::Die(AController* KillerController)
 
     OnRep_IsDead();
 
-    OnZombieDeath.Broadcast(this);
+    OnZombieDeath.Broadcast(this, KillerController);
 }
 
 void AZombie::OnRep_IsDead()

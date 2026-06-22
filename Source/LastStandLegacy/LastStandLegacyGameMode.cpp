@@ -1,5 +1,8 @@
-﻿#include "LastStandLegacyGameMode.h"
+﻿// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "LastStandLegacyGameMode.h"
 #include "Zombie.h"
+#include "Hama.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
@@ -12,9 +15,22 @@ ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 
 void ALastStandLegacyGameMode::BeginPlay()
 {
-    Super::BeginPlay();
+    Super::Super::BeginPlay();
 
     SpawnPoints.Empty();
+    ActiveAbilities.Add(EHamaAbilityType::BulletStorm);
+    ActiveAbilities.Add(EHamaAbilityType::MedicalSupport);
+    ActiveAbilities.Add(EHamaAbilityType::GhostMode);
+    ActiveAbilities.Add(EHamaAbilityType::Decoy);
+
+    for (int32 i = 0; i < ActiveAbilities.Num(); ++i)
+    {
+        int32 RandomIndex = FMath::RandRange(i, ActiveAbilities.Num() - 1);
+        if (i != RandomIndex)
+        {
+            ActiveAbilities.Swap(i, RandomIndex);
+        }
+    }
 
     for (TActorIterator<AActor> It(GetWorld()); It; ++It)
     {
@@ -35,7 +51,6 @@ void ALastStandLegacyGameMode::BeginPlay()
     ActiveZombiesCount = 0;
     ZombiesSpawnedThisRound = 0;
 
-    // نامەی دەستپێکی یاری (ڕاوندی یەکەم) لەگەڵ ژمارەی زۆمبییەکان
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
@@ -45,15 +60,59 @@ void ALastStandLegacyGameMode::BeginPlay()
     GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, 1.5f, true);
 }
 
-void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie)
+void ALastStandLegacyGameMode::RestartPlayer(AController* NewPlayer)
 {
+    // زۆر گرنگە: سەرەتا ڕێگە دەدەین کارەکتەرەکە بە دروستی سپۆن بێت
+    Super::RestartPlayer(NewPlayer);
+
+    if (!NewPlayer) return;
+
+    APawn* PlayerPawn = NewPlayer->GetPawn();
+    if (!PlayerPawn) return;
+
+    UHamaAbilityComponent* AbilityComp = PlayerPawn->FindComponentByClass<UHamaAbilityComponent>();
+
+    // پشکنینی پاراستنی مێمۆری لە کڕاش
+    if (AbilityComp && !ActiveAbilities.IsEmpty())
+    {
+        EHamaAbilityType AssignedAbility = ActiveAbilities.Pop();
+
+        AbilityComp->SetAssignedAbility(AssignedAbility);
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 7.f, FColor::Magenta,
+                FString::Printf(TEXT("Successfully assigned ability to %s!"), *NewPlayer->GetName()));
+        }
+    }
+    else if (ActiveAbilities.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("No more abilities left in the ActiveAbilities array for incoming players!"));
+    }
+}
+
+void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AController* KillerController)
+{
+
+    if (KillerController)
+    {
+        APawn* KillerPawn = KillerController->GetPawn();
+        if (KillerPawn)
+        {
+            UHamaAbilityComponent* AbilityComp = KillerPawn->FindComponentByClass<UHamaAbilityComponent>();
+            if (AbilityComp)
+            {
+                float PowerReward = 10.0f / (1.0f + (CurrentRound * 0.2f));
+                AbilityComp->AddPower(PowerReward);
+            }
+        }
+    }
+
     DeadZombiesCount++;
     ActiveZombiesCount--;
 
-    // هەژمارکردنی ئەو زۆمبیانەی کە ماون بکوژرێن
     int32 ZombiesRemaining = ZombiesToKill - DeadZombiesCount;
 
-    // پرینتکردنی ژمارەی زۆمبییە ماوەکان لەسەر شاشە (تەنها ئەگەر گەورەتر بوو لە سفڕ)
     if (GEngine && ZombiesRemaining > 0)
     {
         GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange,
@@ -76,7 +135,6 @@ void ALastStandLegacyGameMode::StartNextRound()
 
     ZombiesToKill += 5;
 
-    // نامەی دەستپێکردنی ڕاوندەکانی تر لەگەڵ ژمارەی زۆمبییەکان
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,

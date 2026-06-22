@@ -185,7 +185,6 @@ void UHamaComponent::OnRep_Sprinting()
 
 void UHamaComponent::OnRep_Aiming()
 {
-	// لۆکاڵ کڵایەنت پێویستی بەمە نییە چونکە خۆی پێشتر لۆجیکەکەی جێبەجێ کردووە
     if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
 
 	if (MoveComp)

@@ -21,7 +21,7 @@ DECLARE_DELEGATE_OneParam(FOnSprintChanged, bool);
 // -----------------------------------------------------------------------------
 
 class UHamaMovementComponent;
-class ABaseWeapon;
+class UHamaAbilityComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputMappingContext;
@@ -51,6 +51,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<UHamaMovementComponent> HamaMovementComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UHamaAbilityComponent> HamaAbilityComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<USpringArmComponent> SpringArm;

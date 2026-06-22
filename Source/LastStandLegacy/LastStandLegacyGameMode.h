@@ -1,7 +1,10 @@
-﻿#pragma once
+﻿// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
+#include "HamaAbilityComponent.h"
 #include "LastStandLegacyGameMode.generated.h"
 
 class AZombie;
@@ -14,7 +17,6 @@ class LASTSTANDLEGACY_API ALastStandLegacyGameMode : public AGameModeBase
 public:
     ALastStandLegacyGameMode();
 
-    // هەموو متغییرەکان خرانە ژێر یەک کاتێگۆری خاوێن
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     int32 CurrentRound = 1;
 
@@ -41,8 +43,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     float MinSafeDistance = 500.f;
 
+    // لیستی تواناکان بۆ دابەشکردن بەسەر یاریزاناندا
+    TArray<EHamaAbilityType> ActiveAbilities;
+
 protected:
     virtual void BeginPlay() override;
+    virtual void RestartPlayer(AController* NewPlayer) override;
 
 private:
     FTimerHandle SpawnTimerHandle;
@@ -53,5 +59,5 @@ private:
 
 protected:
     UFUNCTION()
-    void HandleZombieDeath(AZombie* DeadZombie);
+    void HandleZombieDeath(AZombie* DeadZombie, AController* KillerController);
 };

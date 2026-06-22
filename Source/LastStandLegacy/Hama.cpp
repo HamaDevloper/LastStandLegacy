@@ -5,6 +5,7 @@
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
 #include "HamaMainWidget.h"
+#include "HamaAbilityComponent.h"
 #include "BaseWeapon.h"
 #include "Net/UnrealNetwork.h"
 #include "Camera/CameraComponent.h"
@@ -38,6 +39,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     }
 
     HamaComponent = CreateDefaultSubobject<UHamaComponent>(TEXT("HamaComponent"));
+    HamaAbilityComponent = CreateDefaultSubobject<UHamaAbilityComponent>(TEXT("HamaAbilityComponent"));
     HamaMovementComponent = Cast<UHamaMovementComponent>(GetCharacterMovement());
 
     SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));

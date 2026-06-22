@@ -149,6 +149,9 @@ protected:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
     float Damage;
 
+    UPROPERTY(ReplicatedUsing = OnRep_InfiniteAmmo)
+    bool bInfiniteAmmo = false;
+
     UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
     uint8 BurstCounter = 0;
 
@@ -186,6 +189,9 @@ public:
 
     UFUNCTION()
     void OnRep_BurstCounter();
+
+    UFUNCTION()
+    void OnRep_InfiniteAmmo();
 
     void Reload();
 
