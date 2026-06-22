@@ -47,11 +47,18 @@ public:
     TArray<EHamaAbilityType> ActiveAbilities;
 
 protected:
+    // Core GameMode overrides for setup and connection handling
+    virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+    virtual void PostLogin(APlayerController* NewPlayer) override;
     virtual void BeginPlay() override;
     virtual void RestartPlayer(AController* NewPlayer) override;
 
 private:
     FTimerHandle SpawnTimerHandle;
+
+    // Maps a player controller to their permanent assigned role
+    UPROPERTY()
+    TMap<AController*, EHamaAbilityType> AssignedPlayerRoles;
 
     void StartNextRound();
     void ProcessSpawning();

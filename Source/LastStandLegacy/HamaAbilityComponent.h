@@ -31,12 +31,14 @@ protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Abilities")
+    void OnRoleAssigned_BP(EHamaAbilityType NewRole);
+
     void SetAssignedAbility(EHamaAbilityType NewAbility);
     void AddPower(float Amount);
-protected:
     UFUNCTION(Server, Reliable, BlueprintCallable)
     void Server_ActivateAbility();
-   
+protected:
     UFUNCTION(BlueprintPure, Category = "Hama|Abilities")
     FORCEINLINE EHamaAbilityType GetCurrentAssignedAbility() const { return CurrentAssignedAbility; }
 

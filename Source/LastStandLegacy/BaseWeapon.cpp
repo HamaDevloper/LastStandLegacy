@@ -12,6 +12,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
 #include "Curves/CurveVector.h"
+#include "LastStandLegacyGameState.h"
 #include "DrawDebugHelpers.h"
 
 ABaseWeapon::ABaseWeapon()
@@ -118,7 +119,6 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME(ABaseWeapon, bInfiniteAmmo);
     DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, ReserveAmmo, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, Damage, COND_OwnerOnly);
@@ -142,7 +142,7 @@ void ABaseWeapon::StartFire()
 {
     if (GetWorldTimerManager().IsTimerActive(FireTimerHandle)) return;
 
-    if (CurrentAmmo <= 0 && ReserveAmmo <= 0 && !bInfiniteAmmo) return;
+    if (CurrentAmmo <= 0 && ReserveAmmo <= 0 && IsInfiniteAmmoActive()) return;
 
     if (bIsReloading)
     {
@@ -222,17 +222,28 @@ float ABaseWeapon::CalculateBulletSpread()
     return CurrentSpread;
 }
 
+bool ABaseWeapon::IsInfiniteAmmoActive() const
+{
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    {
+        return GS->bIsGlobalBulletStormActive;
+    }
+    return false;
+}
+
 void ABaseWeapon::HandleFireLocal()
 {
     if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
-    if (CurrentAmmo <= 0 && !bInfiniteAmmo)
+    // ١. پشکنینی سەرەتا: ئەگەر فیشەک سفر بوو وە هێزەکەش چالاک نەبوو، بوەستە و ڕیلۆد بکە
+    if (CurrentAmmo <= 0 && !IsInfiniteAmmoActive())
     {
         StopFire();
         Reload();
         return;
     }
 
+    // ٢. لۆجیکی Burst: پێویست ناکات هێزەکە بپشکنین لێرەدا، دەبێت هەر کەم بکات تا بوەستێت
     if (CurrentWeaponData.FireMode == EWeaponFireMode::Burst)
     {
         if (CurrentBurstShotsLeft <= 0)
@@ -240,25 +251,33 @@ void ABaseWeapon::HandleFireLocal()
             StopFire();
             return;
         }
-        if(!bInfiniteAmmo) CurrentBurstShotsLeft--;
+        CurrentBurstShotsLeft--;
     }
 
+    // ٣. وەرگرتنی کۆنتڕۆڵەر
     if (!OwnerController)
     {
         OwnerController = Cast<APlayerController>(OwnerCharacter->GetController());
         if (!OwnerController) return;
     }
 
-    if (!bInfiniteAmmo)  CurrentAmmo--;
-   
+    // ٤. کەمکردنەوەی فیشەک: تەنها ئەگەر هێزەکە چالاک نەبوو (!) فیشەک کەم دەکەین
+    if (!IsInfiniteAmmoActive())
+    {
+        CurrentAmmo--;
+    }
+
+    // ٥. ڕێکخستنی کاتی تەقەی داهاتوو
     float CurrentTime = GetWorld()->GetTimeSeconds();
     NextAllowedFireTime = CurrentTime + CurrentWeaponData.FireRate;
 
+    // ٦. وەستاندنی ڕاکردن
     if (HamaComponent && HamaComponent->bIsSprinting)
     {
         HamaComponent->StopSprinting();
     }
 
+    // ٧. لەرزینی کۆنتڕۆڵەر (Force Feedback)
     if (ShootForceFeedback)
     {
         FForceFeedbackParameters FeedbackParams;
@@ -267,9 +286,11 @@ void ABaseWeapon::HandleFireLocal()
         OwnerController->ClientPlayForceFeedback(ShootForceFeedback, FeedbackParams);
     }
 
+    // ٨. ڕیکۆیل و ئێفێکتەکان
     ApplyRecoilAndCameraShake();
     PlayWeaponEffects();
 
+    // ٩. ترەیس و ئاڕاستە (وەک خۆی)
     FVector CameraLoc;
     FRotator CameraRot;
     OwnerController->GetPlayerViewPoint(CameraLoc, CameraRot);
@@ -313,10 +334,13 @@ void ABaseWeapon::HandleFireLocal()
         Server_FireRoutine();
     }
 
-    if (CurrentAmmo <= 0 || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
+    if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
     {
         StopFire();
-        if (CurrentAmmo <= 0) Reload();
+        if (CurrentAmmo <= 0 && !IsInfiniteAmmoActive())
+        {
+            Reload();
+        }
     }
 }
 
@@ -376,7 +400,7 @@ void ABaseWeapon::Server_StopFire_Implementation()
 
 void ABaseWeapon::Server_FireRoutine()
 {
-    if (CurrentAmmo <= 0 || bIsReloading || !OwnerCharacter)
+    if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || bIsReloading || !OwnerCharacter)
     {
         Server_StopFire_Implementation();
         return;
@@ -389,13 +413,13 @@ void ABaseWeapon::Server_FireRoutine()
             Server_StopFire_Implementation();
             return;
         }
-        if (!bInfiniteAmmo) CurrentBurstShotsLeft--;
+        ServerBurstShotsLeft--;
     }
 
     float CurrentTime = GetWorld()->GetTimeSeconds();
     NextAllowedFireTime = CurrentTime + CurrentWeaponData.FireRate;
 
-    if (HasAuthority() && !OwnerCharacter->IsLocallyControlled() && !bInfiniteAmmo)
+    if (HasAuthority() && !OwnerCharacter->IsLocallyControlled() && !IsInfiniteAmmoActive())
     {
         CurrentAmmo--;
     }
@@ -519,10 +543,6 @@ void ABaseWeapon::ResetRecoil()
 void ABaseWeapon::OnRep_BurstCounter()
 {
     PlayWeaponEffects();
-}
-
-void ABaseWeapon::OnRep_InfiniteAmmo()
-{
 }
 
 void ABaseWeapon::PlayWeaponEffects()

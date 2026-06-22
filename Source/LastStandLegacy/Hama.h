@@ -123,6 +123,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> ReloadAction;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> AbilityAction;
+
 public:
     // -----------------------------------------------------------------------------
     // UI & HUD
@@ -168,6 +171,10 @@ protected:
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
     void OnUIUpdatePing(int32 NewKills);
+
+public:
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Abilities")
+    void OnRoleAssigned_BP(EHamaAbilityType NewRole);
 
 public:
     // -----------------------------------------------------------------------------
@@ -263,6 +270,7 @@ protected:
     void AttachWeaponToMesh(ABaseWeapon* WeaponToAttach);
     void ReloadActionPressed();
     void AimPressedSitck();
+    void AbilityActionPressed();
 
 protected:
     static const float CrossHairTimer;

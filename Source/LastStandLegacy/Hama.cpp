@@ -1,12 +1,8 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#include "Hama.h"
-#include "HamaComponent.h"
+﻿#include "Hama.h"
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
 #include "HamaMainWidget.h"
 #include "HamaAbilityComponent.h"
-#include "BaseWeapon.h"
 #include "Net/UnrealNetwork.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -338,6 +334,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHama::FireActionPressed);
         EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHama::FireActionReleased);
         EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
+        EnhancedInput->BindAction(AbilityAction, ETriggerEvent::Started, this, &AHama::AbilityActionPressed);
     }
 }
 
@@ -655,4 +652,9 @@ void AHama::SprintActionPressed()
     if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching()) UnCrouch();
 
     HamaComponent->StartSprinting();
+}
+
+void AHama::AbilityActionPressed()
+{
+    if(HamaAbilityComponent) HamaAbilityComponent->Server_ActivateAbility();
 }

@@ -3,6 +3,7 @@
 #include "HamaAbilityComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Hama.h"
+#include "LastStandLegacyGameState.h"
 
 UHamaAbilityComponent::UHamaAbilityComponent()
 {
@@ -19,13 +20,18 @@ void UHamaAbilityComponent::BeginPlay()
 void UHamaAbilityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME_CONDITION(UHamaAbilityComponent, CurrentAssignedAbility, COND_OwnerOnly);
+    DOREPLIFETIME(UHamaAbilityComponent, CurrentAssignedAbility);
     DOREPLIFETIME_CONDITION(UHamaAbilityComponent, CurrentPower, COND_OwnerOnly);
 }
 
 void UHamaAbilityComponent::SetAssignedAbility(EHamaAbilityType NewAbility)
 {
     CurrentAssignedAbility = NewAbility;
+
+    if (AHama* HamaOwner = Cast<AHama>(GetOwner()))
+    {
+        HamaOwner->OnRoleAssigned_BP(CurrentAssignedAbility);
+    }
 }
 
 void UHamaAbilityComponent::AddPower(float Amount)
@@ -34,6 +40,11 @@ void UHamaAbilityComponent::AddPower(float Amount)
     if (!GetOwner()->HasAuthority() || CurrentAssignedAbility == EHamaAbilityType::None) return;
 
     CurrentPower = FMath::Clamp(CurrentPower + Amount, 0.f, MaxPower);
+
+    if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
+    {
+        OnRep_CurrentPower();
+    }
 }
 
 void UHamaAbilityComponent::OnRep_CurrentAssignedAbility()
@@ -47,11 +58,17 @@ void UHamaAbilityComponent::OnRep_CurrentAssignedAbility()
 
 void UHamaAbilityComponent::OnRep_CurrentPower()
 {
+    if (AHama* HamaOwner = Cast<AHama>(GetOwner()))
+    {
+        HamaOwner->OnRoleAssigned_BP(CurrentAssignedAbility);
+    }
     OnPowerChanged.Broadcast(CurrentPower);
 }
 
 void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
 {
+    if (CurrentPower < MaxPower) return;
+
     switch (CurrentAssignedAbility)
     {
     case EHamaAbilityType::BulletStorm:
@@ -70,12 +87,16 @@ void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
         UE_LOG(LogTemp, Warning, TEXT("Player tried to activate ability but has NONE assigned!"));
         break;
     }
-    currentPower = 0.f;
+    CurrentPower = 0.f;
 }
 
 void UHamaAbilityComponent::ActivateBulletStorm()
 {
-    GetWorld()->GetTimerManager().SetTimer(BulletStormTimerHandle, this, &UHamaAbilityComponent::DeactivateBulletStorm, BulletStormDuration, false);
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    if (GS)
+    {
+        GS->StartGlobalBulletStorm(BulletStormDuration);
+    }
 }
 
 void UHamaAbilityComponent::ActivateMedicalSupport()
@@ -91,9 +112,4 @@ void UHamaAbilityComponent::ActivateGhostMode()
 void UHamaAbilityComponent::ActivateDecoy()
 {
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Decoy Activated on Server!"));
-}
-
-void UHamaAbilityComponent::DeactivateBulletStorm()
-{
-    GetWorld()->GetTimerManager().ClearTimer(BulletStormTimerHandle);
 }
