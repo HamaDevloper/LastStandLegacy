@@ -12,9 +12,10 @@ void UHamaAnimInstance::NativeInitializeAnimation()
 
     MovementComponent = HamaCharacter->GetCharacterMovement();
 
-    // لێرەدا AddDynamic بەکارهێنرا لەبری AddUObject بۆ ئەوەی لەگەڵ UFUNCTION و BlueprintAssignable بگونجێت
     HamaCharacter->OnWeaponChanged.AddUObject(this, &UHamaAnimInstance::OnWeaponChanged);
-
+    HamaCharacter->OnAimChanged.BindUObject(this, &UHamaAnimInstance::UpdateAim);
+    HamaCharacter->OnSprintChanged.BindUObject(this, &UHamaAnimInstance::UpdateSprint);
+    
     if (HamaCharacter->CurrentWeapon)
     {
         OnWeaponChanged(HamaCharacter->CurrentWeapon);
@@ -57,9 +58,16 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     float ForwardDot = FVector::DotProduct(Velocity.GetSafeNormal(), Forward);
     float RightDot = FVector::DotProduct(Velocity.GetSafeNormal(), Right);
     Direction = FMath::RadiansToDegrees(FMath::Atan2(RightDot, ForwardDot));
+}
 
-    bIsSprinting = HamaCharacter->IsSprinting();
-    bIsAiming = HamaCharacter->IsAiming();
+void UHamaAnimInstance::UpdateAim(bool bNewAiming)
+{
+    bIsAiming = bNewAiming;
+}
+
+void UHamaAnimInstance::UpdateSprint(bool bNewSprinting)
+{
+    bIsSprinting = bNewSprinting;
 }
 
 void UHamaAnimInstance::OnWeaponChanged(ABaseWeapon* NewWeapon)

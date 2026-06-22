@@ -38,6 +38,8 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 	bIsAiming = bNewAiming;
 
 	if (MoveComp) MoveComp->bAiming = bIsAiming;
+
+    OwnerCharacter->OnAimChanged.ExecuteIfBound(bIsAiming);
 }
 
 void UHamaComponent::StartSlide()
@@ -75,13 +77,11 @@ void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
 
 void UHamaComponent::StartSprinting()
 {
-	if (bIsSprinting) return;
 	SetSprinting(true);
 }
 
 void UHamaComponent::StopSprinting()
 {
-	if (!bIsSprinting) return;
 	SetSprinting(false);
 }
 
@@ -95,6 +95,8 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 	bIsSprinting = bNewSprinting;
 
 	if (MoveComp) MoveComp->bSprinting = bIsSprinting;
+
+    OwnerCharacter->OnSprintChanged.ExecuteIfBound(bIsSprinting);
 
 	if (bIsSprinting)
 	{
@@ -178,6 +180,7 @@ void UHamaComponent::OnRep_Sprinting()
 	{
 		MoveComp->bSprinting = bIsSprinting;
 	}
+    OwnerCharacter->OnSprintChanged.ExecuteIfBound(bIsSprinting);
 }
 
 void UHamaComponent::OnRep_Aiming()
@@ -189,6 +192,7 @@ void UHamaComponent::OnRep_Aiming()
 	{
 		MoveComp->bAiming = bIsAiming;
 	}
+    OwnerCharacter->OnAimChanged.ExecuteIfBound(bIsAiming);
 }
 
 void UHamaComponent::OnRep_Slide()

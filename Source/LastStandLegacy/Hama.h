@@ -13,6 +13,8 @@
 
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
+DECLARE_DELEGATE_OneParam(FOnAimChanged, bool);
+DECLARE_DELEGATE_OneParam(FOnSprintChanged, bool);
 
 // -----------------------------------------------------------------------------
 // Forward Declarations
@@ -296,4 +298,6 @@ protected:
 
 public:
     FOnWeaponChanged OnWeaponChanged;
+    FOnAimChanged OnAimChanged;
+    FOnSprintChanged OnSprintChanged;
 };
