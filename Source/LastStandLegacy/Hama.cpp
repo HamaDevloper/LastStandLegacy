@@ -2,7 +2,6 @@
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
 #include "HamaMainWidget.h"
-#include "HamaAbilityComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -22,7 +21,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 {
     // گرنگ: Tick لێرەدا دەکوژێنینەوە؛ لۆژیکی قورسی کۆنمان تێدا نەهێشتووە
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.bStartWithTickEnabled = false;
+    PrimaryActorTick.bStartWithTickEnabled = true;
 
     bReplicates = true;
     SetReplicateMovement(true);
@@ -207,25 +206,37 @@ void AHama::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* Old
 {
     Super::OnPlayerStateChanged(NewPlayerState, OldPlayerState);
 
-    // ئەم فەنکشنە تەنها کاتێک کار دەکات کە PlayerState بە تەواوی گەیشتبێتە کڕایەنت
     if (NewPlayerState)
     {
         BindPlayerStateEvents();
+
+        if (AHamaPlayerState* HamaPS = Cast<AHamaPlayerState>(NewPlayerState))
+        {
+            EHamaAbilityType MyRole = HamaPS->GetAssignedRole();
+
+            if (MyRole != EHamaAbilityType::None)
+            {
+                if (HamaAbilityComponent)
+                {
+                    HamaAbilityComponent->SetAssignedAbility(MyRole);
+                }
+            }
+            ApplyRoleVisuals(MyRole);
+        }
     }
 }
 
 void AHama::BindPlayerStateEvents()
 {
-    // وەرگرتنی PlayerState بە شێوازی پارێزراو
     if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
     {
-        // لادانی بەستنەوەی کۆن ئەگەر هەبێت (بۆ ڕێگری لە دووبارەبوونەوە)
-        HamaPS->OnPointsChanged.RemoveDynamic(this, &AHama::HandlePointsChanged);
-        HamaPS->OnKillsChanged.RemoveDynamic(this, &AHama::HandleKillsChanged);
+        // سڕینەوەی بەستنەوەکانی پێشوو بۆ ڕێگری لە دووبارەبوونەوە
+        HamaPS->OnPointsChanged.Unbind();
+        HamaPS->OnKillsChanged.Unbind();
 
-        // بەستنەوەی دیسپاچەرەکانی C++ بە فەنکشنەکانی کارەکتەرەوە
-        HamaPS->OnPointsChanged.AddDynamic(this, &AHama::HandlePointsChanged);
-        HamaPS->OnKillsChanged.AddDynamic(this, &AHama::HandleKillsChanged);
+        // بەستنەوە بە بەکارهێنانی AddUObject (دەتوانێت چەندین گوێگری هەبێت)
+        HamaPS->OnPointsChanged.BindUObject(this, &AHama::HandlePointsChanged);
+        HamaPS->OnKillsChanged.BindUObject(this, &AHama::HandleKillsChanged);
 
         if (IsLocallyControlled() && MainWidgetRef)
         {
@@ -656,5 +667,22 @@ void AHama::SprintActionPressed()
 
 void AHama::AbilityActionPressed()
 {
-    if(HamaAbilityComponent) HamaAbilityComponent->Server_ActivateAbility();
+    if (!HamaAbilityComponent || !HamaAbilityComponent->IsPowerFull()) return;
+    HamaAbilityComponent->Server_ActivateAbility();
+}
+
+void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
+{
+    if (!GetMesh()) return;
+    if (const FRoleVisualData* VisualData = RoleVisuals.Find(NewRole))
+    {
+        if (VisualData->RoleMesh)
+        {
+            GetMesh()->SetSkeletalMesh(VisualData->RoleMesh);
+        }
+        if (VisualData->RoleAnimBP)
+        {
+            GetMesh()->SetAnimInstanceClass(VisualData->RoleAnimBP);
+        }
+    }
 }

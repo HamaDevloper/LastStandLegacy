@@ -11,10 +11,7 @@ void UHamaAnimInstance::NativeInitializeAnimation()
     if (!HamaCharacter) return;
 
     MovementComponent = HamaCharacter->GetCharacterMovement();
-
     HamaCharacter->OnWeaponChanged.AddUObject(this, &UHamaAnimInstance::OnWeaponChanged);
-    HamaCharacter->OnAimChanged.BindUObject(this, &UHamaAnimInstance::UpdateAim);
-    HamaCharacter->OnSprintChanged.BindUObject(this, &UHamaAnimInstance::UpdateSprint);
     
     if (HamaCharacter->CurrentWeapon)
     {
@@ -36,7 +33,6 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     if (!MovementComponent) return;
 
-    // ڤێلۆسیتییەکە وەرگیراوە و ڕاستەوخۆ دەچێتە ناو بلوپرینت بەبێ کێشە
     PlayerVelocity = HamaCharacter->GetVelocity();
 
     FVector Velocity = HamaCharacter->GetVelocity();
@@ -45,7 +41,6 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     GroundSpeed = FMath::Sqrt(SpeedSq);
 
-    // 3*3=9 — Sqrt 
     bShouldMove = (SpeedSq > 9.f)
         && !MovementComponent->GetCurrentAcceleration().IsNearlyZero();
 
@@ -58,16 +53,9 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     float ForwardDot = FVector::DotProduct(Velocity.GetSafeNormal(), Forward);
     float RightDot = FVector::DotProduct(Velocity.GetSafeNormal(), Right);
     Direction = FMath::RadiansToDegrees(FMath::Atan2(RightDot, ForwardDot));
-}
 
-void UHamaAnimInstance::UpdateAim(bool bNewAiming)
-{
-    bIsAiming = bNewAiming;
-}
-
-void UHamaAnimInstance::UpdateSprint(bool bNewSprinting)
-{
-    bIsSprinting = bNewSprinting;
+    bIsAiming = HamaCharacter->IsAiming();
+    bIsSprinting = HamaCharacter->IsSprinting();
 }
 
 void UHamaAnimInstance::OnWeaponChanged(ABaseWeapon* NewWeapon)

@@ -8,6 +8,7 @@
 #include "LastStandLegacyGameMode.generated.h"
 
 class AZombie;
+class AZombieSpawnPoint;
 
 UCLASS()
 class LASTSTANDLEGACY_API ALastStandLegacyGameMode : public AGameModeBase
@@ -38,7 +39,7 @@ public:
     TSubclassOf<AZombie> ZombieClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    TArray<AActor*> SpawnPoints;
+    TArray<AZombieSpawnPoint*> SpawnPoints;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     float MinSafeDistance = 500.f;
@@ -51,7 +52,6 @@ protected:
     virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
     virtual void PostLogin(APlayerController* NewPlayer) override;
     virtual void BeginPlay() override;
-    virtual void RestartPlayer(AController* NewPlayer) override;
 
 private:
     FTimerHandle SpawnTimerHandle;

@@ -15,6 +15,16 @@ void AHamaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(AHamaPlayerState, Points);
     DOREPLIFETIME(AHamaPlayerState, Kills);
+    DOREPLIFETIME(AHamaPlayerState, AssignedRole);
+}
+
+void AHamaPlayerState::SetAssignedRole(EHamaAbilityType NewRole)
+{
+    if (HasAuthority())
+    {
+        AssignedRole = NewRole;
+        ForceNetUpdate();
+    }
 }
 
 void AHamaPlayerState::AddPoints(int32 Amount)
@@ -22,10 +32,9 @@ void AHamaPlayerState::AddPoints(int32 Amount)
     if (HasAuthority())
     {
         Points += Amount;
-
         ForceNetUpdate();
+        OnRep_Points();
     }
-    OnRep_Points();
 }
 
 void AHamaPlayerState::AddKills(int32 Amount)
@@ -33,18 +42,17 @@ void AHamaPlayerState::AddKills(int32 Amount)
     if (HasAuthority())
     {
         Kills += Amount;
-
         ForceNetUpdate();
+        OnRep_Kills();
     }
-    OnRep_Kills();
 }
 
 void AHamaPlayerState::OnRep_Points()
 {
-    OnPointsChanged.Broadcast(Points);
+    OnPointsChanged.ExecuteIfBound(Points);
 }
 
 void AHamaPlayerState::OnRep_Kills()
 {
-    OnKillsChanged.Broadcast(Kills);
+    OnKillsChanged.ExecuteIfBound(Kills);
 }

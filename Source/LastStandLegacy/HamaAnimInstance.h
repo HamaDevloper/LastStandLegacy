@@ -30,9 +30,6 @@ protected:
     UFUNCTION()
     void OnWeaponChanged(ABaseWeapon* NewWeapon);
 
-    void UpdateAim(bool bNewAiming);
-    void UpdateSprint(bool bNewSprinting);
-
     // ── Weapon Data ───────────────────────────────
     UPROPERTY(BlueprintReadOnly, Category = "Weapon Data")
     TObjectPtr<UAnimSequence> CurrentWeaponIdle;

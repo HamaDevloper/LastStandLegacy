@@ -31,22 +31,21 @@ protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Abilities")
-    void OnRoleAssigned_BP(EHamaAbilityType NewRole);
 
     void SetAssignedAbility(EHamaAbilityType NewAbility);
     void AddPower(float Amount);
     UFUNCTION(Server, Reliable, BlueprintCallable)
     void Server_ActivateAbility();
+    bool IsPowerFull() const;
 protected:
     UFUNCTION(BlueprintPure, Category = "Hama|Abilities")
-    FORCEINLINE EHamaAbilityType GetCurrentAssignedAbility() const { return CurrentAssignedAbility; }
+    EHamaAbilityType GetCurrentAssignedAbility() const { return CurrentAssignedAbility; }
 
 protected:
     UPROPERTY(BlueprintAssignable, Category = "Hama|Abilities")
     FOnPowerChangedSignature OnPowerChanged;
 
-    UPROPERTY(ReplicatedUsing = OnRep_CurrentAssignedAbility, VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     EHamaAbilityType CurrentAssignedAbility = EHamaAbilityType::None;
 
     
@@ -56,22 +55,14 @@ protected:
     const float MaxPower = 100.0f;
 
     UFUNCTION()
-    void OnRep_CurrentAssignedAbility();
-
-    UFUNCTION()
     void OnRep_CurrentPower();
 
     void ActivateBulletStorm();
     void ActivateMedicalSupport();
     void ActivateGhostMode();
     void ActivateDecoy();
-
-    void DeactivateBulletStorm();
    
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     float BulletStormDuration = 10.0f;
-
-private:
-    FTimerHandle BulletStormTimerHandle;
 };

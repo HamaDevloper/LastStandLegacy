@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "HamaComponent.h"
 #include "BaseWeapon.h"
+#include "HamaAbilityComponent.h"
 #include "Hama.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
@@ -13,8 +14,18 @@
 
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
-DECLARE_DELEGATE_OneParam(FOnAimChanged, bool);
-DECLARE_DELEGATE_OneParam(FOnSprintChanged, bool);
+
+USTRUCT(BlueprintType)
+struct FRoleVisualData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Role Visuals")
+    USkeletalMesh* RoleMesh = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Role Visuals")
+    TSubclassOf<UAnimInstance> RoleAnimBP;
+};
 
 // -----------------------------------------------------------------------------
 // Forward Declarations
@@ -173,10 +184,6 @@ protected:
     void OnUIUpdatePing(int32 NewKills);
 
 public:
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Abilities")
-    void OnRoleAssigned_BP(EHamaAbilityType NewRole);
-
-public:
     // -----------------------------------------------------------------------------
     // State Checking & Logic Functions
     // -----------------------------------------------------------------------------
@@ -296,9 +303,9 @@ private:
     bool bLastCrossHairState = false;
 
 public:
-       FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->bIsSprinting; }
-       FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->bIsAiming; }
-
+       FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
+       FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
+       bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
 protected:
     // CameraSensitivity
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
@@ -308,7 +315,12 @@ protected:
     float AimingSensitivity = 0.5f;
 
 public:
+    UPROPERTY(EditDefaultsOnly, Category = "Hama|Roles Visuals")
+    TMap<EHamaAbilityType, FRoleVisualData> RoleVisuals;
+
+    // فەنکشنێکی C++ بۆ جێبەجێکردنی گۆڕانکارییەکان
+    void ApplyRoleVisuals(EHamaAbilityType NewRole);
+
+public:
     FOnWeaponChanged OnWeaponChanged;
-    FOnAimChanged OnAimChanged;
-    FOnSprintChanged OnSprintChanged;
 };

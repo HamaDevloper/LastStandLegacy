@@ -1,9 +1,9 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#include "HamaAbilityComponent.h"
+﻿#include "HamaAbilityComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Hama.h"
 #include "LastStandLegacyGameState.h"
+#include "CollisionQueryParams.h"
+#include "DrawDebugHelpers.h"
 
 UHamaAbilityComponent::UHamaAbilityComponent()
 {
@@ -16,22 +16,15 @@ void UHamaAbilityComponent::BeginPlay()
     Super::BeginPlay();
 }
 
-// ڕێکخستنی نێتۆرک بۆ ناردنی داتای تواناکە تەنها بۆ خودی ئەو یاریزانە
 void UHamaAbilityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME(UHamaAbilityComponent, CurrentAssignedAbility);
     DOREPLIFETIME_CONDITION(UHamaAbilityComponent, CurrentPower, COND_OwnerOnly);
 }
 
 void UHamaAbilityComponent::SetAssignedAbility(EHamaAbilityType NewAbility)
 {
     CurrentAssignedAbility = NewAbility;
-
-    if (AHama* HamaOwner = Cast<AHama>(GetOwner()))
-    {
-        HamaOwner->OnRoleAssigned_BP(CurrentAssignedAbility);
-    }
 }
 
 void UHamaAbilityComponent::AddPower(float Amount)
@@ -40,28 +33,23 @@ void UHamaAbilityComponent::AddPower(float Amount)
     if (!GetOwner()->HasAuthority() || CurrentAssignedAbility == EHamaAbilityType::None) return;
 
     CurrentPower = FMath::Clamp(CurrentPower + Amount, 0.f, MaxPower);
-
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Magenta, FString::Printf(TEXT("Current Power is: %f"), CurrentPower));
+    }
     if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_CurrentPower();
     }
 }
 
-void UHamaAbilityComponent::OnRep_CurrentAssignedAbility()
+bool UHamaAbilityComponent::IsPowerFull() const
 {
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
-            TEXT("Your assigned ability has replicated from Server!"));
-    }
+    return CurrentPower >= MaxPower;
 }
 
 void UHamaAbilityComponent::OnRep_CurrentPower()
 {
-    if (AHama* HamaOwner = Cast<AHama>(GetOwner()))
-    {
-        HamaOwner->OnRoleAssigned_BP(CurrentAssignedAbility);
-    }
     OnPowerChanged.Broadcast(CurrentPower);
 }
 
@@ -97,11 +85,49 @@ void UHamaAbilityComponent::ActivateBulletStorm()
     {
         GS->StartGlobalBulletStorm(BulletStormDuration);
     }
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("BulletStorm Activated on Server!"));
 }
 
 void UHamaAbilityComponent::ActivateMedicalSupport()
 {
+    AActor* Owner = GetOwner();
+    if (!Owner) return;
+
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    if (!Owner->HasAuthority()) return;
+
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Medical Support Activated on Server!"));
+
+    FVector StartLocation = Owner->GetActorLocation();
+    FVector EndLocation = StartLocation;
+    float SphereRadius = 500.f;
+
+    TArray<FHitResult> HitResults;
+    FCollisionShape SphereShape = FCollisionShape::MakeSphere(SphereRadius);
+
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(Owner);
+
+    bool bHit = World->SweepMultiByChannel(HitResults, StartLocation, EndLocation, FQuat::Identity, ECC_Pawn, SphereShape, Params);
+
+    if (bHit)
+    {
+        for (const FHitResult& Hit : HitResults)
+        {
+            if (AHama* Hama = Cast<AHama>(Hit.GetActor()))
+            {
+                if (UHamaComponent* HamaComponent = Hama->FindComponentByClass<UHamaComponent>())
+                {
+                    if (HamaComponent->IsDowned())
+                    {
+                        HamaComponent->Revive();
+                    }
+                }
+            }
+        }
+    }
 }
 
 void UHamaAbilityComponent::ActivateGhostMode()

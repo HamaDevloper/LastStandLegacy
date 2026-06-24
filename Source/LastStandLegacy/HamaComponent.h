@@ -77,7 +77,11 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_Down, BlueprintReadOnly, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
     bool bIsDowned = false;
 
+    void Revive();
+
 	bool IsSprinting() const { return bIsSprinting; }
+    bool IsAiming() const { return bIsAiming; }
+    bool IsDowned() const { return bIsDowned; }
 private:
 	FTimerHandle StaminaDrainTimerHandle;
 	FTimerHandle StaminaRegenTimerHandle;

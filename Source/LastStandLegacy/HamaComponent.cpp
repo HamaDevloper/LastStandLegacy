@@ -34,12 +34,14 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 void UHamaComponent::SetAiming(bool bNewAiming)
 {
-	if (bIsAiming == bNewAiming) return;
-	bIsAiming = bNewAiming;
+    if (bIsAiming == bNewAiming) return;
+    bIsAiming = bNewAiming;
 
-	if (MoveComp) MoveComp->bAiming = bIsAiming;
+    if (MoveComp) MoveComp->bAiming = bIsAiming;
+}
 
-    OwnerCharacter->OnAimChanged.ExecuteIfBound(bIsAiming);
+void UHamaComponent::Revive()
+{
 }
 
 void UHamaComponent::StartSlide()
@@ -95,8 +97,6 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 	bIsSprinting = bNewSprinting;
 
 	if (MoveComp) MoveComp->bSprinting = bIsSprinting;
-
-    OwnerCharacter->OnSprintChanged.ExecuteIfBound(bIsSprinting);
 
 	if (bIsSprinting)
 	{
@@ -180,18 +180,16 @@ void UHamaComponent::OnRep_Sprinting()
 	{
 		MoveComp->bSprinting = bIsSprinting;
 	}
-    OwnerCharacter->OnSprintChanged.ExecuteIfBound(bIsSprinting);
 }
 
 void UHamaComponent::OnRep_Aiming()
 {
     if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
 
-	if (MoveComp)
-	{
-		MoveComp->bAiming = bIsAiming;
-	}
-    OwnerCharacter->OnAimChanged.ExecuteIfBound(bIsAiming);
+    if (MoveComp)
+    {
+        MoveComp->bAiming = bIsAiming;
+    }
 }
 
 void UHamaComponent::OnRep_Slide()

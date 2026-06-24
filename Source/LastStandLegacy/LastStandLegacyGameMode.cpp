@@ -8,6 +8,8 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
+#include "HamaPlayerState.h"
+#include "ZombieSpawnPoint.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -38,19 +40,22 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
 {
     Super::PostLogin(NewPlayer);
 
-    // Assign a permanent role exactly once when the player logs in
-    if (NewPlayer && !AssignedPlayerRoles.Contains(NewPlayer))
+    if (NewPlayer)
     {
-        if (!ActiveAbilities.IsEmpty())
+        if (AHamaPlayerState* PS = NewPlayer->GetPlayerState<AHamaPlayerState>())
         {
-            EHamaAbilityType AssignedAbility = ActiveAbilities.Pop();
-            AssignedPlayerRoles.Add(NewPlayer, AssignedAbility);
+            // ئەگەر یاریزانەکە هێشتا ڕۆڵی نییە و تواناش ماوە، پێی دەدەین
+            if (PS->GetAssignedRole() == EHamaAbilityType::None && !ActiveAbilities.IsEmpty())
+            {
+                EHamaAbilityType AssignedAbility = ActiveAbilities.Pop();
+                PS->SetAssignedRole(AssignedAbility);
 
-            UE_LOG(LogTemp, Log, TEXT("Assigned permanent role to %s"), *NewPlayer->GetName());
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("No abilities left in the ActiveAbilities array for %s!"), *NewPlayer->GetName());
+                UE_LOG(LogTemp, Log, TEXT("Assigned permanent role to %s via PlayerState!"), *NewPlayer->GetName());
+            }
+            else if (ActiveAbilities.IsEmpty())
+            {
+                UE_LOG(LogTemp, Warning, TEXT("No abilities left for %s!"), *NewPlayer->GetName());
+            }
         }
     }
 }
@@ -61,13 +66,10 @@ void ALastStandLegacyGameMode::BeginPlay()
 
     SpawnPoints.Empty();
 
-    for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+    for (TActorIterator<AZombieSpawnPoint> It(GetWorld()); It; ++It)
     {
-        AActor* Actor = *It;
-        if (Actor && Actor->ActorHasTag(FName("ZombieSpawn")))
-        {
-            SpawnPoints.Add(Actor);
-        }
+        AZombieSpawnPoint* SpawnPoint = *It;
+        SpawnPoints.Add(SpawnPoint);
     }
 
     if (SpawnPoints.IsEmpty())
@@ -87,38 +89,6 @@ void ALastStandLegacyGameMode::BeginPlay()
     }
 
     GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, 1.5f, true);
-}
-
-void ALastStandLegacyGameMode::RestartPlayer(AController* NewPlayer)
-{
-    // زۆر گرنگە: سەرەتا ڕێگە دەدەین کارەکتەرەکە بە دروستی سپۆن بێت
-    Super::RestartPlayer(NewPlayer);
-
-    if (!NewPlayer) return;
-
-    APawn* PlayerPawn = NewPlayer->GetPawn();
-    if (!PlayerPawn) return;
-
-    UHamaAbilityComponent* AbilityComp = PlayerPawn->FindComponentByClass<UHamaAbilityComponent>();
-
-    // Apply the persistently saved role rather than popping a new one
-    if (AbilityComp)
-    {
-        if (EHamaAbilityType* SavedAbility = AssignedPlayerRoles.Find(NewPlayer))
-        {
-            AbilityComp->SetAssignedAbility(*SavedAbility);
-
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 7.f, FColor::Magenta,
-                    FString::Printf(TEXT("Successfully applied saved role to %s!"), *NewPlayer->GetName()));
-            }
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("Player %s spawned but has no permanent role saved!"), *NewPlayer->GetName());
-        }
-    }
 }
 
 void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AController* KillerController)

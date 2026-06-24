@@ -2,11 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerState.h"
+#include "HamaAbilityComponent.h"
 #include "HamaPlayerState.generated.h"
 
-// ١. دروستکردنی دیسپاچەر (Dynamic Multicast Delegate) بۆ پۆینت و کیڵ
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPointsChangedSignature, int32, NewPoints);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnKillsChangedSignature, int32, NewKills);
+DECLARE_DELEGATE_OneParam(FOnPointsChangedSignature, int32);
+DECLARE_DELEGATE_OneParam(FOnKillsChangedSignature, int32);
 
 UCLASS()
 class LASTSTANDLEGACY_API AHamaPlayerState : public APlayerState
@@ -16,11 +16,7 @@ class LASTSTANDLEGACY_API AHamaPlayerState : public APlayerState
 public:
     AHamaPlayerState();
 
-    // ٢. ناساندنی دیسپاچەرەکان وەک متغییرێک کە لە بلوپرینتدا وەک Event دەرکەون
-    UPROPERTY(BlueprintAssignable, Category = "Player State | Events")
     FOnPointsChangedSignature OnPointsChanged;
-
-    UPROPERTY(BlueprintAssignable, Category = "Player State | Events")
     FOnKillsChangedSignature OnKillsChanged;
 
 protected:
@@ -31,6 +27,10 @@ protected:
 
     UPROPERTY(ReplicatedUsing = OnRep_Kills, BlueprintReadOnly, Category = "Player State")
     int32 Kills;
+
+    // پاراستنی ڕۆڵەکە لێرەدا دەبێت
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Player State")
+    EHamaAbilityType AssignedRole = EHamaAbilityType::None;
 
     UFUNCTION()
     void OnRep_Points();
@@ -50,4 +50,11 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Player State")
     int32 GetKills() const { return Kills; }
+
+    // فەنکشنە نوێیەکان بۆ وەرگرتن و پێدانی ڕۆڵ
+    UFUNCTION(BlueprintCallable, Category = "Player State")
+    void SetAssignedRole(EHamaAbilityType NewRole);
+
+    UFUNCTION(BlueprintCallable, Category = "Player State")
+    EHamaAbilityType GetAssignedRole() const { return AssignedRole; }
 };
