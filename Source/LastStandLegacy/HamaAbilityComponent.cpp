@@ -2,7 +2,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Hama.h"
 #include "LastStandLegacyGameState.h"
-#include "CollisionQueryParams.h"
+//#include "CollisionQueryParams.h"
 #include "DrawDebugHelpers.h"
 
 UHamaAbilityComponent::UHamaAbilityComponent()
@@ -20,6 +20,7 @@ void UHamaAbilityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME_CONDITION(UHamaAbilityComponent, CurrentPower, COND_OwnerOnly);
+    DOREPLIFETIME(UHamaAbilityComponent, bIsGhost);
 }
 
 void UHamaAbilityComponent::SetAssignedAbility(EHamaAbilityType NewAbility)
@@ -83,7 +84,7 @@ void UHamaAbilityComponent::ActivateBulletStorm()
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     if (GS)
     {
-        GS->StartGlobalBulletStorm(BulletStormDuration);
+        GS->StartGlobalBulletStorm(AbilityDuration);
     }
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("BulletStorm Activated on Server!"));
 }
@@ -102,7 +103,6 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
 
     FVector StartLocation = Owner->GetActorLocation();
     FVector EndLocation = StartLocation;
-    float SphereRadius = 500.f;
 
     TArray<FHitResult> HitResults;
     FCollisionShape SphereShape = FCollisionShape::MakeSphere(SphereRadius);
@@ -132,10 +132,84 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
 
 void UHamaAbilityComponent::ActivateGhostMode()
 {
+    AActor* Owner = GetOwner();
+
+    // ئەگەر خاوەنی نەبوو، یان ئەگەر کۆدەکە لەسەر کڵایەنت ڕەن بوو، ڕاستەوخۆ بیوەستێنە
+    if (!Owner || !Owner->HasAuthority())
+    {
+        return;
+    }
+
+    // ئەگەر پێشتر خێو بوو، پێویست ناکات دووبارە چالاکی بکەینەوە
+    if (bIsGhost) return;
+
+    bIsGhost = true;
+
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, TEXT("Ghost Mode Activated on Server!"));
+
+    // دانانی تایمەر بۆ کوژاندنەوەی مۆدی خێو پاش تەواوبوونی کاتەکەی
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(
+            GhostTimerHandle,
+            this,
+            &UHamaAbilityComponent::DeactivateGhostMode,
+            AbilityDuration,
+            false
+        );
+    }
+
+    // تێبینی: فەنکشنی OnRep لەسەر سێرڤەر خۆکارانە بانگ ناکرێت، بۆیە دەبێت بە دەست بانگی بکەین
+    // بۆ ئەوەی سێرڤەریش گۆڕانکارییە بینراوەکانی بەسەردا بێت
+    OnRep_IsGhost();
 }
 
 void UHamaAbilityComponent::ActivateDecoy()
 {
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Decoy Activated on Server!"));
+}
+
+void UHamaAbilityComponent::DeactivateGhostMode()
+{
+    AActor* Owner = GetOwner();
+    if (!Owner || !Owner->HasAuthority()) return;
+
+    bIsGhost = false;
+
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Ghost Mode Deactivated!"));
+
+    OnRep_IsGhost();
+}
+
+void UHamaAbilityComponent::OnRep_IsGhost()
+{
+    // ئەم بەشە لەسەر هەموو کڵایەنتەکان و سێرڤەرەکەش ڕەن دەبێت کاتێک bIsGhost دەگۆڕێت
+    if (bIsGhost)
+    {
+        // لێرەدا دەتوانیت کۆدی گۆڕینی مەتێریاڵ (Material) یان شاردنەوەی چەکی یاریزانەکە بنووسیت
+        // بۆ نموونە: یاریزانەکە بکەیتە شوشەیی
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Purple, TEXT("Visuals: Player became a Ghost"));
+    }
+    else
+    {
+        // لێرەدا یاریزانەکە دەگەڕێنیتەوە باری ئاسایی خۆی
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Visuals: Player returned to Normal"));
+    }
+}
+
+void UHamaAbilityComponent::StopAllAbilities()
+{
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    World->GetTimerManager().ClearAllTimersForObject(this);
+
+    if (bIsGhost)
+    {
+        bIsGhost = false;
+        if (GetOwner() && GetOwner()->HasAuthority())
+        {
+            OnRep_IsGhost();
+        }
+    }
 }

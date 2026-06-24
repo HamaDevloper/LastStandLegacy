@@ -10,6 +10,7 @@
 #include "TimerManager.h"
 #include "HamaPlayerState.h"
 #include "ZombieSpawnPoint.h"
+#include "LastStandLegacyGameState.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -101,7 +102,8 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
             UHamaAbilityComponent* AbilityComp = KillerPawn->FindComponentByClass<UHamaAbilityComponent>();
             if (AbilityComp)
             {
-                float PowerReward = 10.0f / (1.0f + (CurrentRound * 0.2f));
+                float BasePowerReward = 15.0f / (1.0f + (CurrentRound * 0.15f));
+                float PowerReward = FMath::Max(BasePowerReward, 2.0f);
                 AbilityComp->AddPower(PowerReward);
             }
         }
@@ -181,7 +183,7 @@ void ALastStandLegacyGameMode::ProcessSpawning()
         ZombiesSpawnedThisRound++;
 
         Zombie->SetStatsForRound(CurrentRound);
-        Zombie->OnZombieDeath.AddUObject(this, &ALastStandLegacyGameMode::HandleZombieDeath);
+        Zombie->OnZombieDeath.BindUObject(this, &ALastStandLegacyGameMode::HandleZombieDeath);
     }
 }
 
@@ -239,4 +241,37 @@ AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
     }
 
     return ScoredPoints.Last().Point;
+}
+
+void ALastStandLegacyGameMode::ActivateNuke()
+{
+    for (TActorIterator<AZombie> It(GetWorld()); It; ++It)
+    {
+        AZombie* Zombie = *It;
+        if (Zombie && !Zombie->bIsDead)
+        {
+            Zombie->Die(nullptr);
+        }
+    }
+
+    bool bDoublePoints = false;
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    {
+        bDoublePoints = GS->bIsDoublePointsActive;
+    }
+
+    int32 NukeReward = bDoublePoints ? 800 : 400;
+
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        if (APlayerController* PC = It->Get())
+        {
+            if (AHamaPlayerState* PS = PC->GetPlayerState<AHamaPlayerState>())
+            {
+                PS->AddPoints(NukeReward);
+            }
+        }
+    }
+
+    // لێرەدا دەتوانیت دەنگێکی گەورەی بۆمب یان ئیفێکتێکی شاشەی سپی (Flash) لەسەر کڵایەنتەکان لێبدەیت
 }

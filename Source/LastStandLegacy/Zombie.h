@@ -4,7 +4,10 @@
 #include "GameFramework/Character.h"
 #include "Zombie.generated.h"
 
-DECLARE_MULTICAST_DELEGATE_TwoParams(FOnZombieDeath, AZombie*, AController*);
+// Forward declaration بۆ باشترکردنی کاتی کۆمپایڵ
+class AAIController;
+
+DECLARE_DELEGATE_TwoParams(FOnZombieDeath, AZombie*, AController*);
 
 UCLASS()
 class LASTSTANDLEGACY_API AZombie : public ACharacter
@@ -21,8 +24,15 @@ public:
 
 protected:
     virtual void BeginPlay() override;
-    virtual void GetLifetimeReplicatedProps(
-        TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+    // ── گۆڕانکارییەکانی پێرفۆرمانس ──────────────────────────────────────────
+    // ئەم فەنکشنە بانگ دەکرێت کاتێک AI کۆنترۆڵی زۆمبییەکە دەکات
+    virtual void PossessedBy(AController* NewController) override;
+
+    UPROPERTY()
+    AAIController* CachedAIController;
+    // ──────────────────────────────────────────────────────────────────────
 
     FTimerHandle ChaseTimerHandle;
     FTimerHandle AttackTimerHandle;
@@ -41,16 +51,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie | Stats")
     float BaseHealth = 100.f;
 
-    // Replicated — کلاینت پێویستیەتی بۆ HealthBar UI
     UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Zombie | Stats")
     float MaxHealth;
 
     UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Zombie | Stats")
     float Health;
 
-    // ReplicatedUsing — کاتی مردن Ragdoll چالاک دەبێت
-    UPROPERTY(ReplicatedUsing = OnRep_IsDead,
-        VisibleAnywhere, BlueprintReadOnly, Category = "Zombie | Stats")
+    UPROPERTY(ReplicatedUsing = OnRep_IsDead, VisibleAnywhere, BlueprintReadOnly, Category = "Zombie | Stats")
     bool bIsDead = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zombie | Stats")
@@ -61,10 +68,10 @@ public:
     float AttackDistance = 100.f;
 
     UPROPERTY(EditAnywhere, Category = "Zombie | Combat")
-    float AttackDamage = 20.f;
+    float AttackDamage = 50.f;
 
     UPROPERTY()
-    APawn* CurrentTarget;
+    TObjectPtr<APawn> CurrentTarget;
 
     // ── Functions ──────────────────────────────────────────────────────────
     void Die(AController* KillerController);

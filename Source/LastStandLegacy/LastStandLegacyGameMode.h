@@ -63,7 +63,7 @@ private:
     void StartNextRound();
     void ProcessSpawning();
     AActor* PickWeightedSpawnPoint();
-
+    void ActivateNuke();
 protected:
     UFUNCTION()
     void HandleZombieDeath(AZombie* DeadZombie, AController* KillerController);

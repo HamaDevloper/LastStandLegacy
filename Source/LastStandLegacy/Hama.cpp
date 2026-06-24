@@ -667,6 +667,7 @@ void AHama::SprintActionPressed()
 
 void AHama::AbilityActionPressed()
 {
+    if (HamaComponent && HamaComponent->IsDowned()) return;
     if (!HamaAbilityComponent || !HamaAbilityComponent->IsPowerFull()) return;
     HamaAbilityComponent->Server_ActivateAbility();
 }

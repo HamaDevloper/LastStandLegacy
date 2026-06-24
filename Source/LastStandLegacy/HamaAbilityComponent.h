@@ -31,12 +31,15 @@ protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
+    UPROPERTY(ReplicatedUsing = OnRep_IsGhost, BlueprintReadOnly, Category = "Abilities")
+    bool bIsGhost = false;
 
     void SetAssignedAbility(EHamaAbilityType NewAbility);
     void AddPower(float Amount);
     UFUNCTION(Server, Reliable, BlueprintCallable)
     void Server_ActivateAbility();
     bool IsPowerFull() const;
+    void StopAllAbilities();
 protected:
     UFUNCTION(BlueprintPure, Category = "Hama|Abilities")
     EHamaAbilityType GetCurrentAssignedAbility() const { return CurrentAssignedAbility; }
@@ -52,6 +55,9 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_CurrentPower, VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     float CurrentPower = 0.0f;
 
+    UPROPERTY(EditAnywhere, Category = "Ability")
+    float SphereRadius = 500.f;
+
     const float MaxPower = 100.0f;
 
     UFUNCTION()
@@ -61,8 +67,17 @@ protected:
     void ActivateMedicalSupport();
     void ActivateGhostMode();
     void ActivateDecoy();
+
+    UFUNCTION()
+    void DeactivateGhostMode();
    
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
-    float BulletStormDuration = 10.0f;
+    float AbilityDuration = 10.0f;
+
+    UFUNCTION()
+    void OnRep_IsGhost();
+
+private:
+    FTimerHandle GhostTimerHandle;
 };

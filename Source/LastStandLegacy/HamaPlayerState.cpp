@@ -15,7 +15,7 @@ void AHamaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(AHamaPlayerState, Points);
     DOREPLIFETIME(AHamaPlayerState, Kills);
-    DOREPLIFETIME(AHamaPlayerState, AssignedRole);
+    DOREPLIFETIME_CONDITION(AHamaPlayerState, AssignedRole, COND_InitialOnly);
 }
 
 void AHamaPlayerState::SetAssignedRole(EHamaAbilityType NewRole)
