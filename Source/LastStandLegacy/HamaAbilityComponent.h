@@ -39,7 +39,11 @@ public:
     UFUNCTION(Server, Reliable, BlueprintCallable)
     void Server_ActivateAbility();
     bool IsPowerFull() const;
+    void FullPower();
     void StopAllAbilities();
+
+    bool GetGhost() const { return bIsGhost; }
+
 protected:
     UFUNCTION(BlueprintPure, Category = "Hama|Abilities")
     EHamaAbilityType GetCurrentAssignedAbility() const { return CurrentAssignedAbility; }

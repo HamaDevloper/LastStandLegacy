@@ -1,12 +1,13 @@
-﻿#include "Instakill.h"
+﻿#include "Nuke.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "GameFramework/RotatingMovementComponent.h" // زیادکراو بۆ خولانەوە
+#include "GameFramework/RotatingMovementComponent.h"
 #include "Hama.h"
-#include "LastStandLegacyGameState.h"
+#include "LastStandLegacyGameMode.h"
 
-AInstakill::AInstakill()
+ANuke::ANuke()
 {
+    // کوژاندنەوەی تیک بۆ پێرفۆرمانس
     PrimaryActorTick.bCanEverTick = false;
     bReplicates = true;
 
@@ -19,33 +20,33 @@ AInstakill::AInstakill()
     MeshComp->SetupAttachment(RootComponent);
     MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    // زیادکردنی خولانەوە (90 پلە لە چرکەیەکدا بە دەوری Z)
+    // خولانەوە
     RotatingComp = CreateDefaultSubobject<URotatingMovementComponent>(TEXT("RotatingComp"));
     RotatingComp->RotationRate = FRotator(0.f, 90.f, 0.f);
 }
 
-void AInstakill::BeginPlay()
+void ANuke::BeginPlay()
 {
     Super::BeginPlay();
 
     if (HasAuthority())
     {
-        CollisionSphere->OnComponentBeginOverlap.AddDynamic(this, &AInstakill::OnOverlapBegin);
-
+        CollisionSphere->OnComponentBeginOverlap.AddDynamic(this, &ANuke::OnOverlapBegin);
         SetLifeSpan(15.0f);
     }
 }
 
-void AInstakill::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+void ANuke::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
     if (!HasAuthority()) return;
 
     if (AHama* Player = Cast<AHama>(OtherActor))
     {
-        if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+        if (ALastStandLegacyGameMode* GM = GetWorld()->GetAuthGameMode<ALastStandLegacyGameMode>())
         {
-            GS->StartinstaKill(Duration);
+            GM->ActivateNuke();
         }
+
         Destroy();
     }
 }

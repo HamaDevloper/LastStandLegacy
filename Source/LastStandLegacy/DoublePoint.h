@@ -6,6 +6,7 @@
 
 class USphereComponent;
 class UStaticMeshComponent;
+class URotatingMovementComponent; // فۆروارد دیکلارەیشن بۆ کۆمپۆنێنتە نوێیەکە
 
 UCLASS()
 class LASTSTANDLEGACY_API ADoublePoint : public AActor
@@ -24,12 +25,13 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     UStaticMeshComponent* MeshComp;
 
+    // کۆمپۆنێنتی ئۆپتیمایزکراو بۆ خولانەوە
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    URotatingMovementComponent* RotatingComp;
+
     UFUNCTION()
     void OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
     UPROPERTY(EditAnywhere, Category = "PowerUp")
     float Duration = 30.0f;
-
-public:
-    virtual void Tick(float DeltaTime) override;
 };

@@ -1,20 +1,20 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Instakill.generated.h"
+#include "Nuke.generated.h"
 
 class USphereComponent;
 class UStaticMeshComponent;
-class URotatingMovementComponent; // فۆروارد دیکلارەیشنی کۆمپۆنێنتی خولانەوە
+class URotatingMovementComponent;
 
 UCLASS()
-class LASTSTANDLEGACY_API AInstakill : public AActor
+class LASTSTANDLEGACY_API ANuke : public AActor
 {
     GENERATED_BODY()
 
 public:
-    AInstakill();
+    ANuke();
 
 protected:
     virtual void BeginPlay() override;
@@ -25,13 +25,9 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     UStaticMeshComponent* MeshComp;
 
-    // کۆمپۆنێنتی ئۆپتیمایزکراو بۆ خولانەوە
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     URotatingMovementComponent* RotatingComp;
 
     UFUNCTION()
     void OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
-
-    UPROPERTY(EditAnywhere, Category = "PowerUp")
-    float Duration = 30.0f;
 };

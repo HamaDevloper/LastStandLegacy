@@ -305,6 +305,7 @@ private:
 public:
        FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
        FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
+       FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
        bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
 protected:
     // CameraSensitivity
@@ -323,4 +324,6 @@ public:
 
 public:
     FOnWeaponChanged OnWeaponChanged;
+
+    void RefillAllWeapons();
 };

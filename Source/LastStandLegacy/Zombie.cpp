@@ -6,10 +6,9 @@
 #include "Hama.h"
 #include "HamaAbilityComponent.h"
 #include "LastStandLegacyGameMode.h"
-#include "Net/UnrealNetwork.h"
-#include "EngineUtils.h"
-#include "HamaPlayerState.h"
 #include "LastStandLegacyGameState.h"
+#include "Net/UnrealNetwork.h"
+#include "HamaPlayerState.h"
 
 AZombie::AZombie()
 {
@@ -17,19 +16,20 @@ AZombie::AZombie()
     bReplicates = true;
     SetReplicateMovement(true);
 
+    AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
     SetNetUpdateFrequency(10.f);
     SetMinNetUpdateFrequency(3.f);
 
     MaxHealth = BaseHealth;
     Health = MaxHealth;
+
+    AttackDistanceSq = FMath::Square(AttackDistance);
 }
 
-// ── وەرگرتنی کۆنتڕۆڵەر تەنها یەک جار ──
 void AZombie::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
-
-    // کۆنتڕۆڵەرەکە کاش دەکەین بۆ ئەوەی چیتر پێویستمان بە Cast نەبێت لەناو تایمەرەکاندا
     CachedAIController = Cast<AAIController>(NewController);
 }
 
@@ -37,18 +37,17 @@ void AZombie::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (HasAuthority())
-    {
-        // ── بڵاوکردنەوەی کاتی تایمەرەکان بۆ ڕێگری لە لاگ ──
-        float RandomChaseDelay = FMath::RandRange(0.1f, 1.0f);
-        float RandomAttackDelay = FMath::RandRange(0.1f, 0.5f);
+    if (!HasAuthority()) return;
+    CachedGS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
-        GetWorld()->GetTimerManager().SetTimer(
-            ChaseTimerHandle, this, &AZombie::UpdateNearestTarget, 1.0f, true, RandomChaseDelay);
+    const float RandomChaseDelay = FMath::RandRange(0.1f, 1.0f);
+    const float RandomAttackDelay = FMath::RandRange(0.1f, 0.5f);
 
-        GetWorld()->GetTimerManager().SetTimer(
-            AttackTimerHandle, this, &AZombie::CheckAttackRange, 0.5f, true, RandomAttackDelay);
-    }
+    GetWorld()->GetTimerManager().SetTimer(
+        ChaseTimerHandle, this, &AZombie::UpdateNearestTarget, 1.0f, true, RandomChaseDelay);
+
+    GetWorld()->GetTimerManager().SetTimer(
+        AttackTimerHandle, this, &AZombie::CheckAttackRange, 0.5f, true, RandomAttackDelay);
 }
 
 void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -64,56 +63,38 @@ void AZombie::SetStatsForRound(int32 CurrentRound)
 {
     if (!HasAuthority()) return;
 
-    float NewHealth = BaseHealth * FMath::Pow(1.12f, CurrentRound - 1);
+    const float NewHealth = BaseHealth * FMath::Pow(1.12f, CurrentRound - 1);
     MaxHealth = FMath::Clamp(NewHealth, BaseHealth, 60000.f);
     Health = MaxHealth;
 
-    float Alpha = FMath::Clamp((CurrentRound - 1) / 19.f, 0.f, 1.f);
-    float BaseSpeed = FMath::Lerp(200.f, 550.f, Alpha);
+    const float Alpha = FMath::Clamp((CurrentRound - 1) / 19.f, 0.f, 1.f);
+    const float BaseSpeed = FMath::Lerp(200.f, 550.f, Alpha);
 
     const float TierOffsets[] = { -30.f, 0.f, 0.f, +30.f, +70.f };
-    int32 MaxTier = FMath::Clamp(CurrentRound, 1, 5);
-    int32 RandTier = FMath::RandRange(0, MaxTier - 1);
-    float TierBonus = TierOffsets[RandTier];
+    const int32 MaxTier = FMath::Clamp(CurrentRound, 1, 5);
+    const int32 RandTier = FMath::RandRange(0, MaxTier - 1);
 
-    float FinalSpeed = FMath::Clamp(BaseSpeed + TierBonus, 200.f, 550.f);
-    GetCharacterMovement()->MaxWalkSpeed = FinalSpeed;
+    GetCharacterMovement()->MaxWalkSpeed =
+        FMath::Clamp(BaseSpeed + TierOffsets[RandTier], 200.f, 550.f);
 }
 
 void AZombie::UpdateNearestTarget()
 {
-    // ئەگەر مردووە یان کۆنتڕۆڵەرەکەی نییە، ڕاستەوخۆ بیوەستێنە
-    if (bIsDead || !CachedAIController) return;
+    if (bIsDead || !CachedAIController || !CachedGS) return;
 
     APawn* NearestPlayer = nullptr;
-    float ClosestDistanceSq = UE_BIG_NUMBER;
-    FVector ZombieLocation = GetActorLocation();
+    float  ClosestDistanceSq = UE_BIG_NUMBER;
+    const FVector ZombieLocation = GetActorLocation();
 
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    for (APawn* Candidate : CachedGS->ValidTargets)
     {
-        if (!It->IsValid()) continue;
+        if (!IsValid(Candidate)) continue;
 
-        if (APawn* PlayerPawn = It->Get()->GetPawn())
+        const float DistSq = FVector::DistSquared(ZombieLocation, Candidate->GetActorLocation());
+        if (DistSq < ClosestDistanceSq)
         {
-            // ── ئۆپتیمایزکردن و پشکنینی خێو ──
-            if (AHama* HamaPlayer = Cast<AHama>(PlayerPawn))
-            {
-                if (UHamaAbilityComponent* AbilityComp = HamaPlayer->FindComponentByClass<UHamaAbilityComponent>())
-                {
-                    if (AbilityComp->bIsGhost)
-                    {
-                        continue; // پشتگوێخستنی یاریزانی خێو
-                    }
-                }
-            }
-
-            float DistanceSq = FVector::DistSquared(ZombieLocation, PlayerPawn->GetActorLocation());
-
-            if (DistanceSq < ClosestDistanceSq)
-            {
-                ClosestDistanceSq = DistanceSq;
-                NearestPlayer = PlayerPawn;
-            }
+            ClosestDistanceSq = DistSq;
+            NearestPlayer = Candidate;
         }
     }
 
@@ -127,49 +108,56 @@ void AZombie::UpdateNearestTarget()
         CurrentTarget = nullptr;
         CachedAIController->StopMovement();
     }
+
+    // ── گۆڕینی ڕێژەی نوێکردنەوە بەپێی مەسافە ──
+    if (CurrentTarget)
+    {
+        const float DistSq = FVector::DistSquared(ZombieLocation, CurrentTarget->GetActorLocation());
+        const float NewRate = (DistSq > FMath::Square(2000.f)) ? 2.0f : 1.0f;
+        GetWorld()->GetTimerManager().SetTimer(
+            ChaseTimerHandle, this, &AZombie::UpdateNearestTarget, NewRate, false);
+    }
 }
 
 void AZombie::CheckAttackRange()
 {
-    if (!CurrentTarget || bIsDead) return;
+    if (bIsDead || !CurrentTarget) return;
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), CurrentTarget->GetActorLocation());
-
-    if (DistSq < FMath::Square(AttackDistance))
+    if (FVector::DistSquared(GetActorLocation(), CurrentTarget->GetActorLocation()) < AttackDistanceSq)
     {
         UGameplayStatics::ApplyDamage(
             CurrentTarget, AttackDamage, GetController(), this, UDamageType::StaticClass());
     }
 }
 
-float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
+    AController* EventInstigator, AActor* DamageCauser)
 {
     if (!HasAuthority() || bIsDead) return 0.f;
 
     float DamageApplied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 
-    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    // ── CachedGS بەکاردێت لێرەشدا ──
     bool bDoublePoints = false;
-
-    // یەکەم جار پشکنین دەکەین بزانین GS هەیە، پاشان زانیاری لێ وەردەگرین
-    if (GS)
+    if (CachedGS)
     {
-        bDoublePoints = GS->bIsDoublePointsActive;
-        if (GS->bHasInstaKill)
+        bDoublePoints = CachedGS->bIsDoublePointsActive;
+        if (CachedGS->bHasInstaKill)
         {
             DamageApplied = Health;
         }
     }
+
     Health -= DamageApplied;
 
-    AHamaPlayerState* AttackerPS = EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
+    AHamaPlayerState* AttackerPS =
+        EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
 
     if (Health <= 0.f)
     {
         if (AttackerPS)
         {
-            int32 PointsToGive = bDoublePoints ? 200 : 100;
-            AttackerPS->AddPoints(PointsToGive);
+            AttackerPS->AddPoints(bDoublePoints ? 200 : 100);
             AttackerPS->AddKills(1);
         }
         Die(EventInstigator);
@@ -178,8 +166,7 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
     {
         if (AttackerPS)
         {
-            int32 PointsToGive = bDoublePoints ? 20 : 10;
-            AttackerPS->AddPoints(PointsToGive);
+            AttackerPS->AddPoints(bDoublePoints ? 20 : 10);
         }
     }
 
@@ -191,6 +178,8 @@ void AZombie::Die(AController* KillerController)
     if (bIsDead || !HasAuthority()) return;
 
     bIsDead = true;
+
+    SetNetUpdateFrequency(2.f);
 
     GetWorld()->GetTimerManager().ClearTimer(ChaseTimerHandle);
     GetWorld()->GetTimerManager().ClearTimer(AttackTimerHandle);

@@ -315,6 +315,13 @@ void AHama::OnRep_CurrentWeapon()
     OnWeaponChanged.Broadcast(CurrentWeapon);
 }
 
+void AHama::RefillAllWeapons()
+{
+    if (PrimaryWeapon) PrimaryWeapon->RefillAmmo();
+    if (SecondaryWeapon) SecondaryWeapon->RefillAmmo();
+    if (ThirdWeapon) ThirdWeapon->RefillAmmo();
+}
+
 // -----------------------------------------------------------------------------
 // Input Binding
 // -----------------------------------------------------------------------------
@@ -425,7 +432,7 @@ void AHama::AimPressedSitck()
     for (AActor* Actor : OverlappedZombies)
     {
         AZombie* PotentialTarget = Cast<AZombie>(Actor);
-        if (!PotentialTarget || PotentialTarget->bIsDead) continue;
+        if (!PotentialTarget || PotentialTarget->IsDead()) continue;
 
         FVector TargetLocation = PotentialTarget->GetActorLocation();
         if (PotentialTarget->GetMesh() && PotentialTarget->GetMesh()->DoesSocketExist(FName("spine_04")))

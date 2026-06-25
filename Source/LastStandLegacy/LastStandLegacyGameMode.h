@@ -47,6 +47,8 @@ public:
     // لیستی تواناکان بۆ دابەشکردن بەسەر یاریزاناندا
     TArray<EHamaAbilityType> ActiveAbilities;
 
+    void ActivateNuke();
+
 protected:
     // Core GameMode overrides for setup and connection handling
     virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
@@ -63,7 +65,7 @@ private:
     void StartNextRound();
     void ProcessSpawning();
     AActor* PickWeightedSpawnPoint();
-    void ActivateNuke();
+
 protected:
     UFUNCTION()
     void HandleZombieDeath(AZombie* DeadZombie, AController* KillerController);

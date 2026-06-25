@@ -1,8 +1,9 @@
 ﻿#pragma once
-
 #include "CoreMinimal.h"
 #include "GameFramework/GameState.h"
 #include "LastStandLegacyGameState.generated.h"
+
+class AHama;
 
 UCLASS()
 class LASTSTANDLEGACY_API ALastStandLegacyGameState : public AGameState
@@ -13,6 +14,7 @@ public:
     ALastStandLegacyGameState();
 
 protected:
+    virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
@@ -25,6 +27,10 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_InstaKill, BlueprintReadOnly, Category = "Abilities")
     bool bHasInstaKill = false;
 
+    // ── لیستی ئامانجە دروستەکان، خوێندراوە لە زۆمبیەکان (سێرڤەر تەنها) ──
+    UPROPERTY()
+    TArray<APawn*> ValidTargets;
+
     UFUNCTION()
     void OnRep_GlobalBulletStorm();
 
@@ -34,10 +40,8 @@ public:
     UFUNCTION()
     void OnRep_InstaKill();
 
-
     bool GetInstaKill() const { return bHasInstaKill; }
 
-    // زیادکراوەکان بۆ کۆنتڕۆڵکردنی تواناکە
     void StartGlobalBulletStorm(float Duration);
     void StartDoublePoints(float Duration);
     void StartinstaKill(float Duration);
@@ -46,9 +50,11 @@ protected:
     void EndDoublePoints();
     void EndGlobalBulletStorm();
     void EndInstaKill();
+    void RefreshValidTargets();
 
 private:
     FTimerHandle BulletStormTimer;
     FTimerHandle DoublePointTimer;
     FTimerHandle InstaKillTimer;
+    FTimerHandle TargetCacheTimerHandle;
 };

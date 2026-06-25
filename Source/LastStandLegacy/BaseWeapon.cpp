@@ -134,8 +134,15 @@ void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
     Damage *= 2.f;
     MaxAmmoInClip = FMath::RoundToInt(MaxAmmoInClip * 1.5f);
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo * 2;
+    CurrentWeaponData.MaxReserveAmmo = ReserveAmmo;
+}
 
-    CurrentAmmo = MaxAmmoInClip;
+void ABaseWeapon::RefillAmmo()
+{
+    if (HasAuthority())
+    {
+        ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+    }
 }
 
 void ABaseWeapon::StartFire()

@@ -119,6 +119,9 @@ public:
     UFUNCTION(BlueprintCallable, Server, Reliable)
     void ServerUpgradeWeapon_PackAPunch();
 
+    UFUNCTION(BlueprintCallable, Category = "Weapon")
+    void RefillAmmo();
+
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;

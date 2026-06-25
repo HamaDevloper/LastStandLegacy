@@ -248,7 +248,7 @@ void ALastStandLegacyGameMode::ActivateNuke()
     for (TActorIterator<AZombie> It(GetWorld()); It; ++It)
     {
         AZombie* Zombie = *It;
-        if (Zombie && !Zombie->bIsDead)
+        if (Zombie && !Zombie->IsDead())
         {
             Zombie->Die(nullptr);
         }

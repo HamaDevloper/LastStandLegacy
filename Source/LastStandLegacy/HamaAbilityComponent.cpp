@@ -49,6 +49,11 @@ bool UHamaAbilityComponent::IsPowerFull() const
     return CurrentPower >= MaxPower;
 }
 
+void UHamaAbilityComponent::FullPower()
+{
+    CurrentPower = MaxPower;
+}
+
 void UHamaAbilityComponent::OnRep_CurrentPower()
 {
     OnPowerChanged.Broadcast(CurrentPower);
