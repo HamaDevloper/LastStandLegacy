@@ -15,6 +15,7 @@ class UAnimMontage;
 class UAnimSequence;
 class UForceFeedbackEffect;
 class UCurveFloat;
+class ALastStandLegacyGameState;
 
 UENUM(BlueprintType)
 enum class EWeaponFireMode : uint8
@@ -195,6 +196,9 @@ public:
 
     void Reload();
 
+    UFUNCTION(Client, Reliable)
+    void Client_ForceReload();
+
     UFUNCTION(Server, Reliable)
     void ServerReload(float InReloadTime);
 
@@ -229,10 +233,16 @@ protected:
     UPROPERTY()
     TObjectPtr<APlayerController> OwnerController;
 
+    UPROPERTY()
+    TObjectPtr<ALastStandLegacyGameState> GSCache;
+
 public:
     FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }
-
     FORCEINLINE UAnimSequence* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
     FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
     FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
+    bool CanReload() const { return CurrentAmmo <= 0 && ReserveAmmo > 0; }
+
+    UFUNCTION(BlueprintCallable)
+    float Test() const { return CurrentWeaponData.MaxReserveAmmo; }
 };

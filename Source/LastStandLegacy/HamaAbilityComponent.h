@@ -15,7 +15,7 @@ enum class EHamaAbilityType : uint8
     BulletStorm    UMETA(DisplayName = "BulletStorm"),
     MedicalSupport UMETA(DisplayName = "MedicalSupport"),
     GhostMode      UMETA(DisplayName = "GhostMode"),
-    Decoy          UMETA(DisplayName = "Decoy"),
+    Blitz          UMETA(DisplayName = "Blitz"),
 };
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
@@ -64,13 +64,15 @@ protected:
 
     const float MaxPower = 100.0f;
 
+    void ResetPower();
+
     UFUNCTION()
     void OnRep_CurrentPower();
 
     void ActivateBulletStorm();
     void ActivateMedicalSupport();
     void ActivateGhostMode();
-    void ActivateDecoy();
+    void ActivateBlitz();
 
     UFUNCTION()
     void DeactivateGhostMode();
@@ -78,6 +80,10 @@ protected:
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     float AbilityDuration = 10.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
+    float BlitzAbilityDuration = 20.0f;
+
 
     UFUNCTION()
     void OnRep_IsGhost();

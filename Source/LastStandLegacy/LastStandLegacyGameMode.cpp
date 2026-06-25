@@ -25,7 +25,7 @@ void ALastStandLegacyGameMode::InitGame(const FString& MapName, const FString& O
     ActiveAbilities.Add(EHamaAbilityType::BulletStorm);
     ActiveAbilities.Add(EHamaAbilityType::MedicalSupport);
     ActiveAbilities.Add(EHamaAbilityType::GhostMode);
-    ActiveAbilities.Add(EHamaAbilityType::Decoy);
+    ActiveAbilities.Add(EHamaAbilityType::Blitz);
 
     for (int32 i = 0; i < ActiveAbilities.Num(); ++i)
     {
@@ -94,6 +94,8 @@ void ALastStandLegacyGameMode::BeginPlay()
 
 void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AController* KillerController)
 {
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Death Handler Triggered!"));
+
     if (KillerController)
     {
         APawn* KillerPawn = KillerController->GetPawn();
@@ -104,11 +106,25 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
             {
                 float BasePowerReward = 15.0f / (1.0f + (CurrentRound * 0.15f));
                 float PowerReward = FMath::Max(BasePowerReward, 2.0f);
+
+                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Power Reward Calculated: %f"), PowerReward));
+
                 AbilityComp->AddPower(PowerReward);
             }
+            else
+            {
+                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Error: AbilityComp NOT Found!"));
+            }
+        }
+        else
+        {
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Error: Killer Pawn is NULL!"));
         }
     }
-
+    else
+    {
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("KillerController is NULL (Trap Kill?)"));
+    }
     DeadZombiesCount++;
     ActiveZombiesCount--;
 

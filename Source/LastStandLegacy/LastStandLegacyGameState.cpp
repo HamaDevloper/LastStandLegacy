@@ -13,7 +13,6 @@ void ALastStandLegacyGameState::BeginPlay()
 
     if (!HasAuthority()) return;
 
-    // ── تەنها سێرڤەر ئەم تایمەرە دەسەلمێنێت ──
     // 0.25f = 4 جار لە چرکەیەکدا، بە یەک سکان هەموو زۆمبیەکانی جیهان خزمەت دەکات
     GetWorldTimerManager().SetTimer(
         TargetCacheTimerHandle,
@@ -30,6 +29,7 @@ void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimePrope
     DOREPLIFETIME(ALastStandLegacyGameState, bIsGlobalBulletStormActive);
     DOREPLIFETIME(ALastStandLegacyGameState, bIsDoublePointsActive);
     DOREPLIFETIME(ALastStandLegacyGameState, bHasInstaKill);
+    DOREPLIFETIME(ALastStandLegacyGameState, bIsAdrenalineActive);
 }
 
 void ALastStandLegacyGameState::RefreshValidTargets()
@@ -52,6 +52,29 @@ void ALastStandLegacyGameState::RefreshValidTargets()
     }
 }
 
+// ------------------- ADRENALINE (BLITZ) -------------------
+void ALastStandLegacyGameState::StartTeamAdrenaline(float Duration)
+{
+    if (HasAuthority())
+    {
+        bIsAdrenalineActive = true;
+        ForceNetUpdate();
+        OnRep_Adrenaline();
+        GetWorldTimerManager().SetTimer(AdrenalineTimerHandle, this, &ALastStandLegacyGameState::EndTeamAdrenaline, Duration, false);
+    }
+}
+
+void ALastStandLegacyGameState::EndTeamAdrenaline()
+{
+    if (HasAuthority())
+    {
+        bIsAdrenalineActive = false;
+        ForceNetUpdate();
+        OnRep_Adrenaline();
+    }
+}
+
+// ------------------- BULLET STORM -------------------
 void ALastStandLegacyGameState::StartGlobalBulletStorm(float Duration)
 {
     if (HasAuthority())
@@ -70,10 +93,10 @@ void ALastStandLegacyGameState::EndGlobalBulletStorm()
         bIsGlobalBulletStormActive = false;
         ForceNetUpdate();
         OnRep_GlobalBulletStorm();
-        GetWorldTimerManager().ClearTimer(BulletStormTimer);
     }
 }
 
+// ------------------- DOUBLE POINTS -------------------
 void ALastStandLegacyGameState::StartDoublePoints(float Duration)
 {
     if (HasAuthority())
@@ -92,10 +115,10 @@ void ALastStandLegacyGameState::EndDoublePoints()
         bIsDoublePointsActive = false;
         ForceNetUpdate();
         OnRep_DoublePoints();
-        GetWorldTimerManager().ClearTimer(DoublePointTimer);
     }
 }
 
+// ------------------- INSTA KILL -------------------
 void ALastStandLegacyGameState::StartinstaKill(float Duration)
 {
     if (HasAuthority())
@@ -114,26 +137,26 @@ void ALastStandLegacyGameState::EndInstaKill()
         bHasInstaKill = false;
         ForceNetUpdate();
         OnRep_InstaKill();
-        GetWorldTimerManager().ClearTimer(InstaKillTimer);
     }
+}
+
+// ------------------- ON REP FUNCTIONS -------------------
+void ALastStandLegacyGameState::OnRep_Adrenaline()
+{
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, bIsAdrenalineActive ? FColor::Orange : FColor::Red, bIsAdrenalineActive ? TEXT("CLIENT: Blitz Adrenaline Active!") : TEXT("CLIENT: Blitz Ended!"));
 }
 
 void ALastStandLegacyGameState::OnRep_DoublePoints()
 {
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, bIsDoublePointsActive ? FColor::Yellow : FColor::Red, bIsDoublePointsActive ? TEXT("CLIENT: Double Points Active!") : TEXT("CLIENT: Double Points Ended!"));
 }
 
 void ALastStandLegacyGameState::OnRep_InstaKill()
 {
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, bHasInstaKill ? FColor::Magenta : FColor::Red, bHasInstaKill ? TEXT("CLIENT: Insta-Kill Active!") : TEXT("CLIENT: Insta-Kill Ended!"));
 }
 
 void ALastStandLegacyGameState::OnRep_GlobalBulletStorm()
 {
-    if (bIsGlobalBulletStormActive)
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("CLIENT: BulletStorm is Active!"));
-    }
-    else
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("CLIENT: BulletStorm Ended!"));
-    }
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, bIsGlobalBulletStormActive ? FColor::Green : FColor::Red, bIsGlobalBulletStormActive ? TEXT("CLIENT: BulletStorm is Active!") : TEXT("CLIENT: BulletStorm Ended!"));
 }

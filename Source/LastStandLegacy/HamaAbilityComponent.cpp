@@ -2,7 +2,8 @@
 #include "Net/UnrealNetwork.h"
 #include "Hama.h"
 #include "LastStandLegacyGameState.h"
-//#include "CollisionQueryParams.h"
+#include "CollisionQueryParams.h"
+#include "HamaPlayerState.h"
 #include "DrawDebugHelpers.h"
 
 UHamaAbilityComponent::UHamaAbilityComponent()
@@ -14,6 +15,17 @@ UHamaAbilityComponent::UHamaAbilityComponent()
 void UHamaAbilityComponent::BeginPlay()
 {
     Super::BeginPlay();
+
+    GetWorld()->GetTimerManager().SetTimerForNextTick([this]()
+        {
+            if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+            {
+                if (AHamaPlayerState* PS = OwnerPawn->GetPlayerState<AHamaPlayerState>())
+                {
+                    SetAssignedAbility(PS->GetAssignedRole());
+                }
+            }
+        });
 }
 
 void UHamaAbilityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -34,10 +46,19 @@ void UHamaAbilityComponent::AddPower(float Amount)
     if (!GetOwner()->HasAuthority() || CurrentAssignedAbility == EHamaAbilityType::None) return;
 
     CurrentPower = FMath::Clamp(CurrentPower + Amount, 0.f, MaxPower);
-    if (GEngine)
+
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Magenta, FString::Printf(TEXT("Current Power is: %f"), CurrentPower));
+
+    // نوێکردنەوەی شاشە بۆ ئەو یاریزانەی کە هۆستە
+    if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Magenta, FString::Printf(TEXT("Current Power is: %f"), CurrentPower));
+        OnRep_CurrentPower();
     }
+}
+
+void UHamaAbilityComponent::ResetPower()
+{
+    CurrentPower = 0.f;
     if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_CurrentPower();
@@ -52,6 +73,10 @@ bool UHamaAbilityComponent::IsPowerFull() const
 void UHamaAbilityComponent::FullPower()
 {
     CurrentPower = MaxPower;
+    if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
+    {
+        OnRep_CurrentPower();
+    }
 }
 
 void UHamaAbilityComponent::OnRep_CurrentPower()
@@ -61,7 +86,8 @@ void UHamaAbilityComponent::OnRep_CurrentPower()
 
 void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
 {
-    if (CurrentPower < MaxPower) return;
+    if (CurrentPower < MaxPower || CurrentAssignedAbility == EHamaAbilityType::None) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 
     switch (CurrentAssignedAbility)
     {
@@ -74,48 +100,44 @@ void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
     case EHamaAbilityType::GhostMode:
         ActivateGhostMode();
         break;
-    case EHamaAbilityType::Decoy:
-        ActivateDecoy();
+    case EHamaAbilityType::Blitz:
+        ActivateBlitz();
         break;
     default:
         UE_LOG(LogTemp, Warning, TEXT("Player tried to activate ability but has NONE assigned!"));
         break;
     }
-    CurrentPower = 0.f;
 }
 
 void UHamaAbilityComponent::ActivateBulletStorm()
 {
-    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-    if (GS)
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
     {
         GS->StartGlobalBulletStorm(AbilityDuration);
+        ResetPower();
     }
+
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("BulletStorm Activated on Server!"));
 }
 
 void UHamaAbilityComponent::ActivateMedicalSupport()
 {
-    AActor* Owner = GetOwner();
-    if (!Owner) return;
-
     UWorld* World = GetWorld();
-    if (!World) return;
-
-    if (!Owner->HasAuthority()) return;
-
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Medical Support Activated on Server!"));
+    AActor* Owner = GetOwner();
+    if (!World || !Owner) return;
 
     FVector StartLocation = Owner->GetActorLocation();
-    FVector EndLocation = StartLocation;
-
     TArray<FHitResult> HitResults;
     FCollisionShape SphereShape = FCollisionShape::MakeSphere(SphereRadius);
 
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(Owner);
 
-    bool bHit = World->SweepMultiByChannel(HitResults, StartLocation, EndLocation, FQuat::Identity, ECC_Pawn, SphereShape, Params);
+    bool bHit = World->SweepMultiByChannel(HitResults, StartLocation, StartLocation, FQuat::Identity, ECC_Pawn, SphereShape, Params);
+    bool bSuccessfullyRevivedSomeone = false; // بۆ دڵنیابوونەوەی ئەوەی کەسێکی هەستاندۆتەوە
 
     if (bHit)
     {
@@ -128,31 +150,34 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
                     if (HamaComponent->IsDowned())
                     {
                         HamaComponent->Revive();
+                        bSuccessfullyRevivedSomeone = true;
                     }
                 }
             }
         }
     }
+
+    // تەنها لە کاتێکدا هێزی لێ دەسێنینەوە کە بەڕاستی کەسێکی زیندوو کردبێتەوە
+    if (bSuccessfullyRevivedSomeone)
+    {
+        ResetPower();
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Medical Support Successfully Revived Player(s)!"));
+    }
+    else
+    {
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow, TEXT("Medical Support Failed: No downed players nearby. Power kept."));
+    }
 }
 
 void UHamaAbilityComponent::ActivateGhostMode()
 {
-    AActor* Owner = GetOwner();
-
-    // ئەگەر خاوەنی نەبوو، یان ئەگەر کۆدەکە لەسەر کڵایەنت ڕەن بوو، ڕاستەوخۆ بیوەستێنە
-    if (!Owner || !Owner->HasAuthority())
-    {
-        return;
-    }
-
-    // ئەگەر پێشتر خێو بوو، پێویست ناکات دووبارە چالاکی بکەینەوە
     if (bIsGhost) return;
 
     bIsGhost = true;
+    ResetPower();
 
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, TEXT("Ghost Mode Activated on Server!"));
 
-    // دانانی تایمەر بۆ کوژاندنەوەی مۆدی خێو پاش تەواوبوونی کاتەکەی
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().SetTimer(
@@ -163,22 +188,11 @@ void UHamaAbilityComponent::ActivateGhostMode()
             false
         );
     }
-
-    // تێبینی: فەنکشنی OnRep لەسەر سێرڤەر خۆکارانە بانگ ناکرێت، بۆیە دەبێت بە دەست بانگی بکەین
-    // بۆ ئەوەی سێرڤەریش گۆڕانکارییە بینراوەکانی بەسەردا بێت
     OnRep_IsGhost();
-}
-
-void UHamaAbilityComponent::ActivateDecoy()
-{
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Decoy Activated on Server!"));
 }
 
 void UHamaAbilityComponent::DeactivateGhostMode()
 {
-    AActor* Owner = GetOwner();
-    if (!Owner || !Owner->HasAuthority()) return;
-
     bIsGhost = false;
 
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Ghost Mode Deactivated!"));
@@ -186,18 +200,28 @@ void UHamaAbilityComponent::DeactivateGhostMode()
     OnRep_IsGhost();
 }
 
+void UHamaAbilityComponent::ActivateBlitz()
+{
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+    {
+        GS->StartTeamAdrenaline(BlitzAbilityDuration);
+        ResetPower();
+    }
+
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Blitz Activated on Server!"));
+}
+
 void UHamaAbilityComponent::OnRep_IsGhost()
 {
-    // ئەم بەشە لەسەر هەموو کڵایەنتەکان و سێرڤەرەکەش ڕەن دەبێت کاتێک bIsGhost دەگۆڕێت
     if (bIsGhost)
     {
-        // لێرەدا دەتوانیت کۆدی گۆڕینی مەتێریاڵ (Material) یان شاردنەوەی چەکی یاریزانەکە بنووسیت
-        // بۆ نموونە: یاریزانەکە بکەیتە شوشەیی
         if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Purple, TEXT("Visuals: Player became a Ghost"));
     }
     else
     {
-        // لێرەدا یاریزانەکە دەگەڕێنیتەوە باری ئاسایی خۆی
         if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Visuals: Player returned to Normal"));
     }
 }

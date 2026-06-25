@@ -148,7 +148,7 @@ void AHama::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 
     // لەبەر ئەوەی پۆست-پڕۆسێس و خاوکردنەوەمان بردووەتە ناو لۆژیکی Look، ئۆتۆماتیکی دەیبڕینەوە بۆ نزمکردنی لۆد
-    SetActorTickEnabled(false);
+    //SetActorTickEnabled(false);
 }
 
 // -----------------------------------------------------------------------------

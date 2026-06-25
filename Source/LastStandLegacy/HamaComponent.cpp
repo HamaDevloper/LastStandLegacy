@@ -5,6 +5,7 @@
 #include "Hama.h"
 #include "HamaMovementComponent.h"
 #include "BaseWeapon.h"
+#include "LastStandLegacyGameState.h"
 
 UHamaComponent::UHamaComponent()
 {
@@ -84,7 +85,7 @@ void UHamaComponent::StartSprinting()
 
 void UHamaComponent::StopSprinting()
 {
-	SetSprinting(false);
+    SetSprinting(false);
 }
 
 void UHamaComponent::SetSprinting(bool bNewSprinting)
@@ -105,15 +106,23 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 	}
 	else
 	{
-		if (OwnerCharacter && OwnerCharacter->IsAimButtonHold())
-		{
-			SetAiming(true);
-			OwnerCharacter->OnAim(true);
-		}
-		if (OwnerCharacter && OwnerCharacter->IsFireButtonHolded())
-		{
-			OwnerCharacter->FireActionPressed();
-		}
+        if (OwnerCharacter)
+        {
+            if (OwnerCharacter->IsAimButtonHold())
+            {
+                SetAiming(true);
+                OwnerCharacter->OnAim(true);
+            }
+            if (OwnerCharacter->IsFireButtonHolded())
+            {
+                OwnerCharacter->FireActionPressed();
+            }
+            if (OwnerCharacter->CurrentWeapon && OwnerCharacter->CurrentWeapon->CanReload())
+            {
+                OwnerCharacter->CurrentWeapon->Reload();
+            }
+        }
+		
 		if (GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
 		GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
 	}
@@ -124,6 +133,11 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 void UHamaComponent::DrainStamina()
 {
 	if (!OwnerCharacter || !MoveComp) return;
+    if (!GSCache)
+    {
+        GSCache = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    }
+    if (GSCache && GSCache->IsTeamAdrenalineActive()) return;
 
 	if (Stamina <= 0.f)
 	{

@@ -8,6 +8,7 @@
 
 class AHama;
 class UHamaMovementComponent;
+class ALastStandLegacyGameState;
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class LASTSTANDLEGACY_API UHamaComponent : public UActorComponent
@@ -92,6 +93,9 @@ private:
 
     UPROPERTY()
     TObjectPtr<UHamaMovementComponent> MoveComp;
+
+    UPROPERTY()
+    TObjectPtr<ALastStandLegacyGameState> GSCache;
 
 	UFUNCTION()
 	void OnRep_Sprinting();

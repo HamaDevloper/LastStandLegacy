@@ -139,9 +139,15 @@ void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
 
 void ABaseWeapon::RefillAmmo()
 {
-    if (HasAuthority())
+    if (!HasAuthority()) return;
+
+    bool bWasEmpty = (CurrentAmmo <= 0 && ReserveAmmo <= 0);
+
+    ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+
+    if (bWasEmpty)
     {
-        ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+        Client_ForceReload();
     }
 }
 
@@ -149,7 +155,7 @@ void ABaseWeapon::StartFire()
 {
     if (GetWorldTimerManager().IsTimerActive(FireTimerHandle)) return;
 
-    if (CurrentAmmo <= 0 && ReserveAmmo <= 0 && IsInfiniteAmmoActive()) return;
+    if (CurrentAmmo <= 0 && ReserveAmmo <= 0 && !IsInfiniteAmmoActive()) return;
 
     if (bIsReloading)
     {
@@ -557,9 +563,14 @@ void ABaseWeapon::PlayWeaponEffects()
     // VFX و دەنگ
 }
 
+void ABaseWeapon::Client_ForceReload_Implementation()
+{
+    Reload();
+}
+
 void ABaseWeapon::Reload()
 {
-    if (ReserveAmmo <= 0 || bIsReloading || CurrentAmmo == CurrentWeaponData.MaxAmmoInClip || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
+    if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip ||bIsReloading || CurrentAmmo == CurrentWeaponData.MaxAmmoInClip || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
     bIsReloading = true;
     float ReloadTimeToUse = CurrentWeaponData.DefaultReloadTime;
@@ -568,6 +579,14 @@ void ABaseWeapon::Reload()
     {
         OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage);
         ReloadTimeToUse = CurrentWeaponData.ReloadMontage->GetPlayLength();
+        if (!GSCache)
+        {
+            GSCache = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+        }
+        if (GSCache && GSCache->IsTeamAdrenalineActive())
+        {
+            ReloadTimeToUse /= 2;
+        }
     }
 
     GetWorldTimerManager().SetTimer(
@@ -611,8 +630,14 @@ void ABaseWeapon::ServerReload_Implementation(float InReloadTime)
         OnRep_Reload();
     }
 
-    float ExactReloadTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : InReloadTime;
-    float BufferTolerance = (OwnerCharacter && OwnerCharacter->IsLocallyControlled()) ? ExactReloadTime : FMath::Max(ExactReloadTime - 0.2f, 0.1f);
+    float FinalReloadTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : InReloadTime;
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    if (GS && GS->IsTeamAdrenalineActive())
+    {
+        FinalReloadTime /= 2.0f;
+    }
+
+    float BufferTolerance = FMath::Max(FinalReloadTime - 0.1f, 0.1f);
 
     GetWorldTimerManager().SetTimer(
         ReloadTimerHandle, this, &ABaseWeapon::Server_ReloadComplete,

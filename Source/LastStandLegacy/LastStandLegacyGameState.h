@@ -21,24 +21,23 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_GlobalBulletStorm, BlueprintReadOnly, Category = "Abilities")
     bool bIsGlobalBulletStormActive = false;
 
+    UPROPERTY(ReplicatedUsing = OnRep_Adrenaline, BlueprintReadOnly, Category = "Abilities")
+    bool bIsAdrenalineActive = false;
+
     UPROPERTY(ReplicatedUsing = OnRep_DoublePoints, BlueprintReadOnly, Category = "Abilities")
     bool bIsDoublePointsActive = false;
 
     UPROPERTY(ReplicatedUsing = OnRep_InstaKill, BlueprintReadOnly, Category = "Abilities")
     bool bHasInstaKill = false;
 
+    void StartTeamAdrenaline(float Duration);
+    bool IsTeamAdrenalineActive() const { return bIsAdrenalineActive; }
+
     // ── لیستی ئامانجە دروستەکان، خوێندراوە لە زۆمبیەکان (سێرڤەر تەنها) ──
     UPROPERTY()
     TArray<APawn*> ValidTargets;
 
-    UFUNCTION()
-    void OnRep_GlobalBulletStorm();
-
-    UFUNCTION()
-    void OnRep_DoublePoints();
-
-    UFUNCTION()
-    void OnRep_InstaKill();
+   
 
     bool GetInstaKill() const { return bHasInstaKill; }
 
@@ -52,9 +51,25 @@ protected:
     void EndInstaKill();
     void RefreshValidTargets();
 
+   
+    void EndTeamAdrenaline();
+
+    UFUNCTION()
+    void OnRep_GlobalBulletStorm();
+
+    UFUNCTION()
+    void OnRep_DoublePoints();
+
+    UFUNCTION()
+    void OnRep_InstaKill();
+
+    UFUNCTION()
+    void OnRep_Adrenaline();
+
 private:
     FTimerHandle BulletStormTimer;
     FTimerHandle DoublePointTimer;
     FTimerHandle InstaKillTimer;
     FTimerHandle TargetCacheTimerHandle;
+    FTimerHandle AdrenalineTimerHandle;
 };
