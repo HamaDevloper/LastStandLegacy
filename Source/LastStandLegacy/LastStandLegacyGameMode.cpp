@@ -3,6 +3,7 @@
 #include "LastStandLegacyGameMode.h"
 #include "Zombie.h"
 #include "Hama.h"
+#include "BasePowerUp.h" 
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
@@ -11,16 +12,17 @@
 #include "HamaPlayerState.h"
 #include "ZombieSpawnPoint.h"
 #include "LastStandLegacyGameState.h"
+#include "HamaAbilityComponent.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
+    PrimaryActorTick.bCanEverTick = false;
 }
 
 void ALastStandLegacyGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
     Super::InitGame(MapName, Options, ErrorMessage);
 
-    // Populate and shuffle abilities BEFORE any player (including the host) connects
     ActiveAbilities.Empty();
     ActiveAbilities.Add(EHamaAbilityType::BulletStorm);
     ActiveAbilities.Add(EHamaAbilityType::MedicalSupport);
@@ -45,7 +47,6 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
     {
         if (AHamaPlayerState* PS = NewPlayer->GetPlayerState<AHamaPlayerState>())
         {
-            // ئەگەر یاریزانەکە هێشتا ڕۆڵی نییە و تواناش ماوە، پێی دەدەین
             if (PS->GetAssignedRole() == EHamaAbilityType::None && !ActiveAbilities.IsEmpty())
             {
                 EHamaAbilityType AssignedAbility = ActiveAbilities.Pop();
@@ -107,24 +108,11 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
                 float BasePowerReward = 15.0f / (1.0f + (CurrentRound * 0.15f));
                 float PowerReward = FMath::Max(BasePowerReward, 2.0f);
 
-                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Power Reward Calculated: %f"), PowerReward));
-
                 AbilityComp->AddPower(PowerReward);
             }
-            else
-            {
-                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Error: AbilityComp NOT Found!"));
-            }
-        }
-        else
-        {
-            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Error: Killer Pawn is NULL!"));
         }
     }
-    else
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("KillerController is NULL (Trap Kill?)"));
-    }
+
     DeadZombiesCount++;
     ActiveZombiesCount--;
 
@@ -141,7 +129,7 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
         float CurrentTime = GetWorld()->GetTimeSeconds();
         float CalculateTime = CurrentTime - CurrentPowerSpawnTime;
 
-        if (CalculateTime >= PowerSpawnLimitTime)
+        if (CalculateTime >= PowerUpCooldownTime)
         {
             float RandomChance = FMath::RandRange(0.0f, 100.0f);
 
@@ -152,7 +140,7 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
             }
         }
     }
- 
+
     if (DeadZombiesCount >= ZombiesToKill)
     {
         StartNextRound();
@@ -166,6 +154,7 @@ void ALastStandLegacyGameMode::StartNextRound()
     DeadZombiesCount = 0;
     ZombiesSpawnedThisRound = 0;
     ActiveZombiesCount = 0;
+    CurrentPowerSpawn = 0;
 
     ZombiesToKill += 5;
 
@@ -276,9 +265,6 @@ AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
     return ScoredPoints.Last().Point;
 }
 
-// لەسەرەوەی فایلەکە دڵنیابە کە ئینکلوودی ABasePowerUp کراوە
-#include "BasePowerUp.h"
-
 void ALastStandLegacyGameMode::SpawnPowers(FVector SpawnLocation)
 {
     if (PowerUpClasses.IsEmpty())
@@ -288,7 +274,6 @@ void ALastStandLegacyGameMode::SpawnPowers(FVector SpawnLocation)
     }
 
     int32 RandomIndex = FMath::RandRange(0, PowerUpClasses.Num() - 1);
-
     TSubclassOf<ABasePowerUp> SelectedPowerUp = PowerUpClasses[RandomIndex];
 
     if (SelectedPowerUp)
@@ -334,6 +319,4 @@ void ALastStandLegacyGameMode::ActivateNuke()
             }
         }
     }
-
-    // لێرەدا دەتوانیت دەنگێکی گەورەی بۆمب یان ئیفێکتێکی شاشەی سپی (Flash) لەسەر کڵایەنتەکان لێبدەیت
 }

@@ -1,14 +1,14 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameMode.h"
-#include "HamaAbilityComponent.h"
 #include "LastStandLegacyGameMode.generated.h"
 
 class AZombie;
 class AZombieSpawnPoint;
+class ABasePowerUp;
+class AController;
+enum class EHamaAbilityType : uint8;
 
 UCLASS()
 class LASTSTANDLEGACY_API ALastStandLegacyGameMode : public AGameMode
@@ -18,72 +18,74 @@ class LASTSTANDLEGACY_API ALastStandLegacyGameMode : public AGameMode
 public:
     ALastStandLegacyGameMode();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    int32 CurrentRound = 1;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    int32 ZombiesSpawnLimit = 24;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    int32 ZombiesToKill = 5;
-
-    int32 DeadZombiesCount = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zombie Settings")
-    int32 ActiveZombiesCount = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PowerUp Settings")
-    TArray<TSubclassOf<class ABasePowerUp>> PowerUpClasses;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zombie Settings")
-    int32 ZombiesSpawnedThisRound = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    int32 MaxPowerSpawn = 5;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    int32 CurrentPowerSpawn = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    int32 PowerSpawnLimitTime = 10;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PowerUp Settings", meta = (ClampMin = "0.0", ClampMax = "100.0"))
-    float PowerUpDropChance = 5.0f;
-
-    float CurrentPowerSpawnTime = 0.f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    TSubclassOf<AZombie> ZombieClass;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    TArray<AZombieSpawnPoint*> SpawnPoints;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
-    float MinSafeDistance = 500.f;
-
-    TArray<EHamaAbilityType> ActiveAbilities;
-
-    void SpawnPowers(FVector SpawnLocation);
-    void ActivateNuke();
-
-protected:
-    // Core GameMode overrides for setup and connection handling
     virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
     virtual void PostLogin(APlayerController* NewPlayer) override;
     virtual void BeginPlay() override;
 
-private:
-    FTimerHandle SpawnTimerHandle;
+    void HandleZombieDeath(AZombie* DeadZombie, AController* KillerController);
+    void ActivateNuke();
 
-    // Maps a player controller to their permanent assigned role
-    UPROPERTY()
-    TMap<AController*, EHamaAbilityType> AssignedPlayerRoles;
+protected:
+    void SpawnPowers(FVector SpawnLocation);
 
     void StartNextRound();
     void ProcessSpawning();
     AActor* PickWeightedSpawnPoint();
 
-protected:
-    UFUNCTION()
-    void HandleZombieDeath(AZombie* DeadZombie, AController* KillerController);
+public:
+    // =========================================================================
+    // [Zombie Settings] 
+    // =========================================================================
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
+    TSubclassOf<AZombie> ZombieClass;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
+    TArray<AZombieSpawnPoint*> SpawnPoints;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
+    float MinSafeDistance = 500.f;
+
+    int32 DeadZombiesCount = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|Zombie Settings")
+    int32 ActiveZombiesCount = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
+    int32 ZombiesToKill = 10;
+
+    int32 CurrentRound = 1;
+    int32 ZombiesSpawnedThisRound = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
+    int32 ZombiesSpawnLimit = 24;
+
+
+    // =========================================================================
+    // [PowerUp Settings]
+    // =========================================================================
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|PowerUp")
+    TArray<TSubclassOf<ABasePowerUp>> PowerUpClasses;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|PowerUp")
+    int32 MaxPowerSpawn = 5;
+
+    int32 CurrentPowerSpawn = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|PowerUp", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+    float PowerUpDropChance = 5.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|PowerUp")
+    float PowerUpCooldownTime = 10.0f;
+
+    float CurrentPowerSpawnTime = -9999.0f;
+
+
+    // =========================================================================
+    // [Abilities]
+    // =========================================================================
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|Abilities")
+    TArray<EHamaAbilityType> ActiveAbilities;
+
+private:
+    FTimerHandle SpawnTimerHandle;
 };
