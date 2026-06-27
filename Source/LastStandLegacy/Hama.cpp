@@ -230,11 +230,8 @@ void AHama::BindPlayerStateEvents()
 {
     if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
     {
-        // سڕینەوەی بەستنەوەکانی پێشوو بۆ ڕێگری لە دووبارەبوونەوە
         HamaPS->OnPointsChanged.Unbind();
         HamaPS->OnKillsChanged.Unbind();
-
-        // بەستنەوە بە بەکارهێنانی AddUObject (دەتوانێت چەندین گوێگری هەبێت)
         HamaPS->OnPointsChanged.BindUObject(this, &AHama::HandlePointsChanged);
         HamaPS->OnKillsChanged.BindUObject(this, &AHama::HandleKillsChanged);
 
@@ -320,6 +317,109 @@ void AHama::RefillAllWeapons()
     if (PrimaryWeapon) PrimaryWeapon->RefillAmmo();
     if (SecondaryWeapon) SecondaryWeapon->RefillAmmo();
     if (ThirdWeapon) ThirdWeapon->RefillAmmo();
+}
+
+void AHama::SwapWeapon()
+{
+    if (!HasAuthority()) return;
+
+    if (ActiveDeathMachine)
+    {
+        GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
+        RemoveDeathMachine();
+        return;
+    }
+
+    ABaseWeapon* NextWeapon = nullptr;
+
+    if (CurrentWeapon == PrimaryWeapon)
+    {
+        if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
+        else if (ThirdWeapon) NextWeapon = ThirdWeapon;
+    }
+    else if (CurrentWeapon == SecondaryWeapon)
+    {
+        if (ThirdWeapon) NextWeapon = ThirdWeapon;
+        else if (PrimaryWeapon) NextWeapon = PrimaryWeapon;
+    }
+    else if (CurrentWeapon == ThirdWeapon)
+    {
+        if (PrimaryWeapon) NextWeapon = PrimaryWeapon;
+        else if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
+    }
+
+    if (NextWeapon && NextWeapon != CurrentWeapon)
+    {
+        CurrentWeapon->SetActorHiddenInGame(true);
+        CurrentWeapon->SetActorEnableCollision(false);
+        CurrentWeapon = NextWeapon;
+        CurrentWeapon->SetActorHiddenInGame(false);
+        CurrentWeapon->SetActorEnableCollision(true);
+
+        CurrentWeapon->EquipWeapon(this);
+        AttachWeaponToMesh(CurrentWeapon);
+
+        OnWeaponChanged.Broadcast(CurrentWeapon);
+    }
+}
+
+void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration)
+{
+    if (!HasAuthority() || !WeaponClass) return;
+
+    if (GetWorldTimerManager().IsTimerActive(DeathMachineTimerHandle))
+    {
+        GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
+        return;
+    }
+
+    if (CurrentWeapon)
+    {
+        if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+        PreDeathMachineWeapon = CurrentWeapon;
+        PreDeathMachineWeapon->SetActorHiddenInGame(true);
+        PreDeathMachineWeapon->SetActorEnableCollision(false);
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.Instigator = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    ActiveDeathMachine = GetWorld()->SpawnActor<ABaseWeapon>(WeaponClass, GetActorLocation(), GetActorRotation(), SpawnParams);
+
+    if (ActiveDeathMachine)
+    {
+        CurrentWeapon = ActiveDeathMachine;
+        CurrentWeapon->EquipWeapon(this);
+        AttachWeaponToMesh(CurrentWeapon);
+        OnWeaponChanged.Broadcast(CurrentWeapon);
+    }
+
+    GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
+}
+
+void AHama::RemoveDeathMachine()
+{
+    if (!HasAuthority()) return;
+
+    if (ActiveDeathMachine)
+    {
+        ActiveDeathMachine->Destroy();
+        ActiveDeathMachine = nullptr;
+    }
+
+    if (PreDeathMachineWeapon)
+    {
+        CurrentWeapon = PreDeathMachineWeapon;
+        CurrentWeapon->SetActorHiddenInGame(false);
+        CurrentWeapon->SetActorEnableCollision(true);
+        CurrentWeapon->EquipWeapon(this);
+        AttachWeaponToMesh(CurrentWeapon);
+        OnWeaponChanged.Broadcast(CurrentWeapon);
+
+        PreDeathMachineWeapon = nullptr;
+    }
 }
 
 // -----------------------------------------------------------------------------

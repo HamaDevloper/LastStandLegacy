@@ -100,6 +100,21 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
     FName SocketName;
 
+protected:
+    UPROPERTY(Transient)
+    TObjectPtr<ABaseWeapon> PreDeathMachineWeapon;
+
+    UPROPERTY(Transient)
+    TObjectPtr<ABaseWeapon> ActiveDeathMachine;
+
+    FTimerHandle DeathMachineTimerHandle;
+
+public:
+    void GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration);
+    void RemoveDeathMachine();
+    UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
+    void SwapWeapon();
+
 public:
     // -----------------------------------------------------------------------------
     // Input Mapping & Actions

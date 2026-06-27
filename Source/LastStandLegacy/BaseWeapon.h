@@ -245,7 +245,5 @@ public:
     FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
     FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
     bool CanReload() const { return CurrentAmmo <= 0 && ReserveAmmo > 0; }
-
-    UFUNCTION(BlueprintCallable)
-    float Test() const { return CurrentWeaponData.MaxReserveAmmo; }
+    bool IsReloading() const{ return bIsReloading; }
 };
