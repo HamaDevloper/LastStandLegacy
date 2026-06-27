@@ -136,6 +136,23 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
             FString::Printf(TEXT("Zombies Remaining: %d"), ZombiesRemaining));
     }
 
+    if (CurrentPowerSpawn < MaxPowerSpawn)
+    {
+        float CurrentTime = GetWorld()->GetTimeSeconds();
+        float CalculateTime = CurrentTime - CurrentPowerSpawnTime;
+
+        if (CalculateTime >= PowerSpawnLimitTime)
+        {
+            float RandomChance = FMath::RandRange(0.0f, 100.0f);
+
+            if (RandomChance <= PowerUpDropChance)
+            {
+                SpawnPowers(DeadZombie->GetActorLocation());
+                CurrentPowerSpawnTime = CurrentTime;
+            }
+        }
+    }
+ 
     if (DeadZombiesCount >= ZombiesToKill)
     {
         StartNextRound();
@@ -257,6 +274,35 @@ AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
     }
 
     return ScoredPoints.Last().Point;
+}
+
+// لەسەرەوەی فایلەکە دڵنیابە کە ئینکلوودی ABasePowerUp کراوە
+#include "BasePowerUp.h"
+
+void ALastStandLegacyGameMode::SpawnPowers(FVector SpawnLocation)
+{
+    if (PowerUpClasses.IsEmpty())
+    {
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("ERROR: PowerUp array is empty in GameMode!"));
+        return;
+    }
+
+    int32 RandomIndex = FMath::RandRange(0, PowerUpClasses.Num() - 1);
+
+    TSubclassOf<ABasePowerUp> SelectedPowerUp = PowerUpClasses[RandomIndex];
+
+    if (SelectedPowerUp)
+    {
+        FVector AdjustedLocation = SpawnLocation + FVector(0.0f, 0.0f, 40.0f);
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+        GetWorld()->SpawnActor<ABasePowerUp>(SelectedPowerUp, AdjustedLocation, FRotator::ZeroRotator, SpawnParams);
+
+        CurrentPowerSpawn++;
+
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("Random PowerUp Spawned!"));
+    }
 }
 
 void ALastStandLegacyGameMode::ActivateNuke()

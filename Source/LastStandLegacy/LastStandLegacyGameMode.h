@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/GameModeBase.h"
+#include "GameFramework/GameMode.h"
 #include "HamaAbilityComponent.h"
 #include "LastStandLegacyGameMode.generated.h"
 
@@ -11,7 +11,7 @@ class AZombie;
 class AZombieSpawnPoint;
 
 UCLASS()
-class LASTSTANDLEGACY_API ALastStandLegacyGameMode : public AGameModeBase
+class LASTSTANDLEGACY_API ALastStandLegacyGameMode : public AGameMode
 {
     GENERATED_BODY()
 
@@ -32,8 +32,25 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zombie Settings")
     int32 ActiveZombiesCount = 0;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PowerUp Settings")
+    TArray<TSubclassOf<class ABasePowerUp>> PowerUpClasses;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zombie Settings")
     int32 ZombiesSpawnedThisRound = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
+    int32 MaxPowerSpawn = 5;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
+    int32 CurrentPowerSpawn = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
+    int32 PowerSpawnLimitTime = 10;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PowerUp Settings", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+    float PowerUpDropChance = 5.0f;
+
+    float CurrentPowerSpawnTime = 0.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     TSubclassOf<AZombie> ZombieClass;
@@ -44,9 +61,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie Settings")
     float MinSafeDistance = 500.f;
 
-    // لیستی تواناکان بۆ دابەشکردن بەسەر یاریزاناندا
     TArray<EHamaAbilityType> ActiveAbilities;
 
+    void SpawnPowers(FVector SpawnLocation);
     void ActivateNuke();
 
 protected:

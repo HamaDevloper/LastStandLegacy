@@ -4,7 +4,7 @@
 
 ALastStandLegacyGameState::ALastStandLegacyGameState()
 {
-    SetNetUpdateFrequency(1.f);
+    SetNetUpdateFrequency(33.f);
 }
 
 void ALastStandLegacyGameState::BeginPlay()

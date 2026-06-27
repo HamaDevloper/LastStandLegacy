@@ -149,7 +149,7 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
     }
 
     Health -= DamageApplied;
-
+    GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::Printf(TEXT("Current Zombie Health Is %f"), Health));
     AHamaPlayerState* AttackerPS =
         EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
 

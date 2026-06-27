@@ -4,6 +4,7 @@
 #include "LastStandLegacyGameState.h"
 #include "CollisionQueryParams.h"
 #include "HamaPlayerState.h"
+#include "Engine/OverlapResult.h"
 #include "DrawDebugHelpers.h"
 
 UHamaAbilityComponent::UHamaAbilityComponent()
@@ -73,6 +74,7 @@ bool UHamaAbilityComponent::IsPowerFull() const
 void UHamaAbilityComponent::FullPower()
 {
     CurrentPower = MaxPower;
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Magenta, FString::Printf(TEXT("Current Power is: %f"), CurrentPower));
     if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_CurrentPower();
@@ -117,10 +119,10 @@ void UHamaAbilityComponent::ActivateBulletStorm()
     if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
     {
         GS->StartGlobalBulletStorm(AbilityDuration);
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("BulletStorm Activated on Server!"));
         ResetPower();
     }
-
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("BulletStorm Activated on Server!"));
+    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("BulletStorm Failed!"));
 }
 
 void UHamaAbilityComponent::ActivateMedicalSupport()
@@ -129,21 +131,23 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
     AActor* Owner = GetOwner();
     if (!World || !Owner) return;
 
-    FVector StartLocation = Owner->GetActorLocation();
-    TArray<FHitResult> HitResults;
+    FVector CenterLocation = Owner->GetActorLocation();
+    TArray<FOverlapResult> OverlapResults; // گۆڕا بۆ OverlapResult
     FCollisionShape SphereShape = FCollisionShape::MakeSphere(SphereRadius);
 
     FCollisionQueryParams Params;
-    Params.AddIgnoredActor(Owner);
+    Params.AddIgnoredActor(Owner); // خۆت فەرامۆش دەکەیت بۆ ئەوەی خۆت نەگریت
 
-    bool bHit = World->SweepMultiByChannel(HitResults, StartLocation, StartLocation, FQuat::Identity, ECC_Pawn, SphereShape, Params);
-    bool bSuccessfullyRevivedSomeone = false; // بۆ دڵنیابوونەوەی ئەوەی کەسێکی هەستاندۆتەوە
+    // بەکارهێنانی Overlap لەبری Sweep
+    bool bHit = World->OverlapMultiByChannel(OverlapResults, CenterLocation, FQuat::Identity, ECC_Pawn, SphereShape, Params);
+    bool bSuccessfullyRevivedSomeone = false;
 
     if (bHit)
     {
-        for (const FHitResult& Hit : HitResults)
+        for (const FOverlapResult& Overlap : OverlapResults)
         {
-            if (AHama* Hama = Cast<AHama>(Hit.GetActor()))
+            // وەرگرتنی ئەکتەرەکە لە Overlapـەوە
+            if (AHama* Hama = Cast<AHama>(Overlap.GetActor()))
             {
                 if (UHamaComponent* HamaComponent = Hama->FindComponentByClass<UHamaComponent>())
                 {
@@ -157,7 +161,6 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
         }
     }
 
-    // تەنها لە کاتێکدا هێزی لێ دەسێنینەوە کە بەڕاستی کەسێکی زیندوو کردبێتەوە
     if (bSuccessfullyRevivedSomeone)
     {
         ResetPower();

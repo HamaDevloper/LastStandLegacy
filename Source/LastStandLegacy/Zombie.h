@@ -34,19 +34,19 @@ private:
     FTimerHandle AttackTimerHandle;
 
     UPROPERTY()
-    AAIController* CachedAIController = nullptr;
-
-    // ── کاش کردنی GameState یەک جار، وەک CachedAIController ──
-    UPROPERTY()
-    ALastStandLegacyGameState* CachedGS = nullptr;
+    TObjectPtr<AAIController> CachedAIController;
 
     UPROPERTY()
-    APawn* CurrentTarget = nullptr;
+    TObjectPtr<ALastStandLegacyGameState> CachedGS;
 
+    UPROPERTY()
+    TObjectPtr<APawn> CurrentTarget;
+
+protected:
     UPROPERTY(ReplicatedUsing = OnRep_IsDead)
     bool bIsDead = false;
 
-    UPROPERTY(Replicated)
+    UPROPERTY(Replicated, BlueprintReadOnly)
     float Health = 0.f;
 
     UPROPERTY(Replicated)

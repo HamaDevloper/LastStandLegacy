@@ -183,12 +183,13 @@ public:
     float CalculateBulletSpread();
     bool IsInfiniteAmmoActive() const;
 
+
     UFUNCTION(Server, Reliable)
     void Server_StartFire();
 
     UFUNCTION(Server, Reliable)
     void Server_StopFire();
-
+    //FVector_NetQuantizeNormal ShootDir
     void Server_FireRoutine();
 
     UFUNCTION()
@@ -235,6 +236,8 @@ protected:
 
     UPROPERTY()
     TObjectPtr<ALastStandLegacyGameState> GSCache;
+
+    ALastStandLegacyGameState* GetGameStateCache();
 
 public:
     FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }

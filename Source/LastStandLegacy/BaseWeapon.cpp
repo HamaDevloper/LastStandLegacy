@@ -18,7 +18,7 @@
 ABaseWeapon::ABaseWeapon()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.bStartWithTickEnabled = false;
+    PrimaryActorTick.bStartWithTickEnabled = true;
 
     bReplicates = true;
 
@@ -54,11 +54,38 @@ void ABaseWeapon::Tick(float DeltaTime)
 
     OwnerController->AddPitchInput(-DeltaPitch);
     OwnerController->AddYawInput(DeltaYaw);
+    
+    ALastStandLegacyGameState* GS = GetGameStateCache();
+
+        if (GS)
+        {
+            // ٢. وەرگرتنی بەهای بولینەکە (True یان False)
+            bool bIsActive = GS->bIsGlobalBulletStormActive;
+
+            // ٣. گۆڕینی بۆ تێکست بۆ پرینت کردن
+            FString BoolText = bIsActive ? TEXT("TRUE (Active)") : TEXT("FALSE (Inactive)");
+            FColor DisplayColor = bIsActive ? FColor::Green : FColor::Red;
+
+            // ٤. پرینت کردن بە بەکارهێنانی سورس کۆدی تایبەت بۆ ئەوەی شاشەکە پڕ نەبێتەوە
+            // بەکارهێنانی کلیل (Key: 555) وادەکات تەنها یەک هێڵ لەسەر شاشە بمێنێتەوە و ئەپدێت بێتەوە
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(555, 0.0f, DisplayColor, FString::Printf(TEXT("BulletStorm Status in Tick: %s"), *BoolText));
+            }
+        }
+        else
+        {
+            // ئەگەر گەیم ستەیت هێشتا لۆد نەبووبوو
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(555, 0.0f, FColor::Yellow, TEXT("GameState is NULL in Tick"));
+            }
+        }
 
     // ئەگەر گەیشتە ئامانجەکە، Tick بکوژێنەوە بۆ ئەوەی کایەکە خێرا بێت
     if (CurrentRecoilOffset.Equals(TargetRecoilOffset, 0.01f))
     {
-        SetActorTickEnabled(false);
+        //SetActorTickEnabled(false);
     }
 }
 
@@ -235,11 +262,37 @@ float ABaseWeapon::CalculateBulletSpread()
     return CurrentSpread;
 }
 
+float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
+{
+    float ActualDamage = Damage;
+
+    if (Hit.PhysMaterial.IsValid())
+    {
+        EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
+
+        UE_LOG(LogTemp, Warning, TEXT("SurfaceType: %d"), (int32)SurfaceType);
+
+        if (SurfaceType == EPhysicalSurface::SurfaceType1)
+            ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
+        else if (SurfaceType == EPhysicalSurface::SurfaceType2)
+            ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
+    }
+    return ActualDamage;
+}
+
 bool ABaseWeapon::IsInfiniteAmmoActive() const
 {
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    if (GSCache)
     {
-        return GS->bIsGlobalBulletStormActive;
+        return GSCache->bIsGlobalBulletStormActive;
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+        {
+            return GS->bIsGlobalBulletStormActive;
+        }
     }
     return false;
 }
@@ -277,7 +330,7 @@ void ABaseWeapon::HandleFireLocal()
     // ٤. کەمکردنەوەی فیشەک: تەنها ئەگەر هێزەکە چالاک نەبوو (!) فیشەک کەم دەکەین
     if (!IsInfiniteAmmoActive())
     {
-        CurrentAmmo--;
+        CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
     }
 
     // ٥. ڕێکخستنی کاتی تەقەی داهاتوو
@@ -303,7 +356,7 @@ void ABaseWeapon::HandleFireLocal()
     ApplyRecoilAndCameraShake();
     PlayWeaponEffects();
 
-    // ٩. ترەیس و ئاڕاستە (وەک خۆی)
+    // ٩. ترەیس و ئاڕاستە (بە چارەسەری Ghost Bulletـەوە)
     FVector CameraLoc;
     FRotator CameraRot;
     OwnerController->GetPlayerViewPoint(CameraLoc, CameraRot);
@@ -312,10 +365,17 @@ void ABaseWeapon::HandleFireLocal()
     float Spread = CalculateBulletSpread();
     float SpreadInRadians = FMath::DegreesToRadians(Spread);
 
+    // زۆر گرنگ: کڵایەنتیش لێرەدا BurstCounter زیاد دەکات بۆ ئەوەی لەگەڵ سێرڤەر یەکبگرێتەوە
+    BurstCounter = (BurstCounter >= 255) ? 1 : BurstCounter + 1;
+
     FVector LaunchDirection = BaseDir;
     if (SpreadInRadians > 0.0f)
     {
-        LaunchDirection = FMath::VRandCone(BaseDir, SpreadInRadians);
+        // دروستکردنی ستریمەکە بە بەکارهێنانی BurstCounter وەک بنچینە (Seed)
+        FRandomStream WeaponRandomStream;
+        WeaponRandomStream.Initialize(BurstCounter);
+
+        LaunchDirection = WeaponRandomStream.VRandCone(BaseDir, SpreadInRadians);
     }
 
     FVector EndLocation = CameraLoc + (LaunchDirection.GetSafeNormal() * CurrentWeaponData.MaxRange);
@@ -362,24 +422,6 @@ void ABaseWeapon::PlayLocalHitEffects(const FHitResult& LocalHit)
     // UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), BloodEffect, LocalHit.ImpactPoint);
 }
 
-float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
-{
-    float ActualDamage = Damage;
-    if (Hit.PhysMaterial.IsValid())
-    {
-        EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
-
-        if (SurfaceType == EPhysicalSurface::SurfaceType1)
-        {
-            ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
-        }
-        else if (SurfaceType == EPhysicalSurface::SurfaceType2)
-        {
-            ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
-        }
-    }
-    return ActualDamage;
-}
 
 // ------------------- سێرڤەر ڕووتین -------------------
 
@@ -432,9 +474,12 @@ void ABaseWeapon::Server_FireRoutine()
     float CurrentTime = GetWorld()->GetTimeSeconds();
     NextAllowedFireTime = CurrentTime + CurrentWeaponData.FireRate;
 
-    if (HasAuthority() && !OwnerCharacter->IsLocallyControlled() && !IsInfiniteAmmoActive())
+    if (HasAuthority() && !OwnerCharacter->IsLocallyControlled())
     {
-        CurrentAmmo--;
+        if (!IsInfiniteAmmoActive())
+        {
+            CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
+        }
     }
 
     BurstCounter = (BurstCounter >= 255) ? 1 : BurstCounter + 1;
@@ -456,10 +501,15 @@ void ABaseWeapon::Server_FireRoutine()
 
     float Spread = CalculateBulletSpread();
     float SpreadInRadians = FMath::DegreesToRadians(Spread);
+
+    // چارەسەری Ghost Bullet بۆ سێرڤەر
     FVector LaunchDirection = BaseDir;
     if (SpreadInRadians > 0.0f)
     {
-        LaunchDirection = FMath::VRandCone(BaseDir, SpreadInRadians);
+        FRandomStream WeaponRandomStream;
+        WeaponRandomStream.Initialize(BurstCounter);
+
+        LaunchDirection = WeaponRandomStream.VRandCone(BaseDir, SpreadInRadians);
     }
 
     FVector EndLocation = StartLocation + (LaunchDirection.GetSafeNormal() * CurrentWeaponData.MaxRange);
@@ -539,7 +589,7 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
 
         TargetRecoilOffset = FRotator(TargetPitch, TargetYaw, 0.f);
 
-        SetActorTickEnabled(true);
+        //SetActorTickEnabled(true);
 
         ShotsFiredInBurst++;
     }
@@ -550,7 +600,19 @@ void ABaseWeapon::ResetRecoil()
     ShotsFiredInBurst = 0;
     TargetRecoilOffset = FRotator::ZeroRotator;
     CurrentRecoilOffset = FRotator::ZeroRotator;
-    SetActorTickEnabled(false);
+    //SetActorTickEnabled(false);
+}
+
+ALastStandLegacyGameState* ABaseWeapon::GetGameStateCache()
+{
+    if (!GSCache)
+    {
+        if (UWorld* World = GetWorld())
+        {
+            GSCache = World->GetGameState<ALastStandLegacyGameState>();
+        }
+    }
+    return GSCache;
 }
 
 void ABaseWeapon::OnRep_BurstCounter()
@@ -577,16 +639,15 @@ void ABaseWeapon::Reload()
 
     if (CurrentWeaponData.ReloadMontage)
     {
-        OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage);
+        float MontagePlayRate = 1.0f;
         ReloadTimeToUse = CurrentWeaponData.ReloadMontage->GetPlayLength();
-        if (!GSCache)
-        {
-            GSCache = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-        }
-        if (GSCache && GSCache->IsTeamAdrenalineActive())
+        ALastStandLegacyGameState* GS = GetGameStateCache();
+        if (GS && GS->IsTeamAdrenalineActive())
         {
             ReloadTimeToUse /= 2;
+            MontagePlayRate = 2;
         }
+        OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage, MontagePlayRate);
     }
 
     GetWorldTimerManager().SetTimer(
@@ -631,7 +692,7 @@ void ABaseWeapon::ServerReload_Implementation(float InReloadTime)
     }
 
     float FinalReloadTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : InReloadTime;
-    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    ALastStandLegacyGameState* GS = GetGameStateCache();
     if (GS && GS->IsTeamAdrenalineActive())
     {
         FinalReloadTime /= 2.0f;
@@ -728,7 +789,14 @@ void ABaseWeapon::OnRep_Reload()
     {
         if (CurrentWeaponData.ReloadMontage)
         {
-            AnimInstance->Montage_Play(CurrentWeaponData.ReloadMontage);
+            float MontagePlayRate = 1.0f;
+
+            ALastStandLegacyGameState* GS = GetGameStateCache();
+            if (GS && GS->IsTeamAdrenalineActive())
+            {
+                MontagePlayRate = 2.0f;
+            }
+            AnimInstance->Montage_Play(CurrentWeaponData.ReloadMontage, MontagePlayRate);
         }
     }
     else

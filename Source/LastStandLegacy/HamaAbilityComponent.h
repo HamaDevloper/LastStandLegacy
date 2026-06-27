@@ -79,7 +79,7 @@ protected:
    
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
-    float AbilityDuration = 10.0f;
+    float AbilityDuration = 15.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     float BlitzAbilityDuration = 20.0f;
