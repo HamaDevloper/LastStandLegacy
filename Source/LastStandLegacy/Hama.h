@@ -112,9 +112,12 @@ protected:
 public:
     void GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration);
     void RemoveDeathMachine();
+
     UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
     void SwapWeapon();
 
+    UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
+    void GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive);
 public:
     // -----------------------------------------------------------------------------
     // Input Mapping & Actions
@@ -334,7 +337,6 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "Hama|Roles Visuals")
     TMap<EHamaAbilityType, FRoleVisualData> RoleVisuals;
 
-    // فەنکشنێکی C++ بۆ جێبەجێکردنی گۆڕانکارییەکان
     void ApplyRoleVisuals(EHamaAbilityType NewRole);
 
 public:

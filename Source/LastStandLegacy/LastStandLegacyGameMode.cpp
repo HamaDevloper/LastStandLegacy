@@ -124,7 +124,7 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
             FString::Printf(TEXT("Zombies Remaining: %d"), ZombiesRemaining));
     }
 
-    if (CurrentPowerSpawn < MaxPowerSpawn)
+    if (KillerController != nullptr && CurrentPowerSpawn < MaxPowerSpawn)
     {
         float CurrentTime = GetWorld()->GetTimeSeconds();
         float CalculateTime = CurrentTime - CurrentPowerSpawnTime;

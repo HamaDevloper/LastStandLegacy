@@ -19,7 +19,6 @@
 AHama::AHama(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer.SetDefaultSubobjectClass<UHamaMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
-    // گرنگ: Tick لێرەدا دەکوژێنینەوە؛ لۆژیکی قورسی کۆنمان تێدا نەهێشتووە
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = true;
 
@@ -288,6 +287,56 @@ void AHama::CreateDefaultWeapon()
         {
             if (CurrentWeapon) CurrentWeapon->Destroy();
             PrimaryWeapon = SpawnedWeapon;
+        }
+
+        CurrentWeapon = SpawnedWeapon;
+        CurrentWeapon->EquipWeapon(this);
+        AttachWeaponToMesh(CurrentWeapon);
+        OnWeaponChanged.Broadcast(CurrentWeapon);
+    }
+}
+
+void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
+{
+    if (!HasAuthority() || !WeaponClassToGive) return;
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.Instigator = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    ABaseWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ABaseWeapon>(WeaponClassToGive, GetActorLocation(), GetActorRotation(), SpawnParams);
+
+    if (SpawnedWeapon)
+    {
+        if (!PrimaryWeapon)
+        {
+            PrimaryWeapon = SpawnedWeapon;
+        }
+        else if (!SecondaryWeapon)
+        {
+            SecondaryWeapon = SpawnedWeapon;
+        }
+        else if (!ThirdWeapon)
+        {
+            ThirdWeapon = SpawnedWeapon;
+        }
+        else
+        {
+            if (CurrentWeapon)
+            {
+                if (CurrentWeapon == PrimaryWeapon) PrimaryWeapon = SpawnedWeapon;
+                else if (CurrentWeapon == SecondaryWeapon) SecondaryWeapon = SpawnedWeapon;
+                else if (CurrentWeapon == ThirdWeapon) ThirdWeapon = SpawnedWeapon;
+
+                CurrentWeapon->Destroy();
+            }
+        }
+
+        if (CurrentWeapon && CurrentWeapon != SpawnedWeapon && !CurrentWeapon->IsPendingKillPending())
+        {
+            CurrentWeapon->SetActorHiddenInGame(true);
+            CurrentWeapon->SetActorEnableCollision(false);
         }
 
         CurrentWeapon = SpawnedWeapon;
