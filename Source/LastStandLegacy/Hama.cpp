@@ -13,6 +13,9 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "EngineUtils.h"
 #include "Zombie.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
+#include "BasePerk.h"
 
 // -----------------------------------------------------------------------------
 // Constructor
@@ -122,6 +125,8 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
     DOREPLIFETIME(AHama, CurrentWeapon);
+    DOREPLIFETIME(AHama, OwnedPerks);
+    DOREPLIFETIME(AHama, bHasFastHands);
     DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
 }
@@ -866,4 +871,69 @@ void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
             GetMesh()->SetAnimInstanceClass(VisualData->RoleAnimBP);
         }
     }
+}
+
+void AHama::AddPerkByID(FName PerkID)
+{
+    if (!HasAuthority() || OwnedPerks.Contains(PerkID)) return;
+
+    OwnedPerks.Add(PerkID);
+    if (PerkID == FName(TEXT("FastHands")))
+    {
+        bHasFastHands = true;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("Server: Fast Hands Granted!"));
+    }
+}
+
+void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPerk)
+{
+    if (!TargetPerk || !DrinkPerkMontage) return;
+
+    // ١. وەرگرتنی مێشی بوتڵەکە ڕاستەوخۆ لە خودی پێرکەکەوە!
+    UStaticMesh* BottleMesh = TargetPerk->GetBottleMesh();
+
+    if (BottleMesh)
+    {
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Owner = this;
+
+        CurrentSpawnedBottle = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), GetActorLocation(), GetActorRotation(), SpawnParams);
+        if (CurrentSpawnedBottle && CurrentSpawnedBottle->GetStaticMeshComponent())
+        {
+            CurrentSpawnedBottle->GetStaticMeshComponent()->SetStaticMesh(BottleMesh);
+            CurrentSpawnedBottle->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetIncludingScale, TEXT("PerkBottleSocket"));
+        }
+    }
+
+    // ٢. لێدانی ئەنیمەیشنەکە
+    PlayAnimMontage(DrinkPerkMontage, 1.0f);
+
+    // ٣. تایمەری سێرڤەر بۆ بەخشینی پێرکەکە
+    if (HasAuthority())
+    {
+        PendingPerkID = TargetPerk->GetPerkID(); // فەنکشنێکی گێتەر بۆ GetPerkID لە کلاسی پێرک دابنە
+
+        float MontageLength = DrinkPerkMontage->GetPlayLength();
+        FTimerHandle PerkTimerHandle;
+        GetWorldTimerManager().SetTimer(PerkTimerHandle, this, &AHama::OnDrinkPerkAnimationComplete, MontageLength, false);
+    }
+}
+
+void AHama::OnDrinkPerkAnimationComplete()
+{
+    if (CurrentSpawnedBottle)
+    {
+        CurrentSpawnedBottle->Destroy();
+        CurrentSpawnedBottle = nullptr;
+    }
+
+    if (HasAuthority())
+    {
+        AddPerkByID(PendingPerkID);
+    }
+}
+
+void AHama::OnRep_OwnedPerks()
+{
+    
 }

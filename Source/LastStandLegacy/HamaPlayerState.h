@@ -43,6 +43,9 @@ public:
     void AddPoints(int32 Amount);
 
     UFUNCTION(BlueprintCallable, Category = "Player State")
+    void RemovePoints(int32 Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Player State")
     void AddKills(int32 Amount);
 
     UFUNCTION(BlueprintCallable, Category = "Player State")

@@ -37,6 +37,16 @@ void AHamaPlayerState::AddPoints(int32 Amount)
     }
 }
 
+void AHamaPlayerState::RemovePoints(int32 Amount)
+{
+    if (HasAuthority())
+    {
+        Points = FMath::Max(0, Points - Amount);
+        ForceNetUpdate();
+        OnRep_Points();
+    }
+}
+
 void AHamaPlayerState::AddKills(int32 Amount)
 {
     if (HasAuthority())

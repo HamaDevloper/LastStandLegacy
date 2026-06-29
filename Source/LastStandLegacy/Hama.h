@@ -12,7 +12,6 @@
 #define ECC_Bullet ECC_GameTraceChannel1
 #define ECC_CrossHair ECC_GameTraceChannel2
 
-
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
 
 USTRUCT(BlueprintType)
@@ -30,7 +29,6 @@ struct FRoleVisualData
 // -----------------------------------------------------------------------------
 // Forward Declarations
 // -----------------------------------------------------------------------------
-
 class UHamaMovementComponent;
 class UHamaAbilityComponent;
 class USpringArmComponent;
@@ -39,6 +37,7 @@ class UInputMappingContext;
 class UInputAction;
 class APlayerController;
 class AZombie;
+class ABasePerk; // فۆروارد دیکلەیرەیشن بۆ کلاسی پێرک
 
 struct FInputActionValue;
 struct FInputActionInstance;
@@ -117,6 +116,7 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
     void GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive);
+
 public:
     // -----------------------------------------------------------------------------
     // Input Mapping & Actions
@@ -158,7 +158,6 @@ public:
     // -----------------------------------------------------------------------------
     // UI & HUD
     // -----------------------------------------------------------------------------
-   
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
     TSubclassOf<UUserWidget> PlayerCrossHairClass;
 
@@ -172,13 +171,9 @@ public:
     class UHamaMainWidget* MainWidgetRef;
 
 protected:
-    // فەنکشنی بنەڕەتی ئینجین کە خۆی چاوەڕێی گەیشتنی ڕاستەقینەی PlayerState دەکات
     virtual void OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState) override;
-
-    // لۆجیکی نێوخۆیی بۆ بەستنەوەی دیسپاچەرەکان
     void BindPlayerStateEvents();
 
-    // فەنکشنەکان کە کاتێک دیسپاچەری C++ لێدەدات، ئەمان بەئاگا دێنەوە
     UFUNCTION()
     void HandlePointsChanged(int32 NewPoints);
 
@@ -190,7 +185,6 @@ protected:
 
     FTimerHandle PingUpdateTimerHandle;
 
-    // ئەمەش ئیڤێنتێکە بۆ ناو بلوپرینت (UI) تا تەنها تێکستەکە ئەپدیت بکاتەوە بێ کاست
     UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
     void OnUIUpdatePoints(int32 NewPoints);
 
@@ -220,6 +214,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
     UAnimMontage* SlideMontage;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
+    UAnimMontage* DrinkPerkMontage;
+
 public:
     // -----------------------------------------------------------------------------
     // Blueprint Events
@@ -247,9 +244,6 @@ protected:
 
     UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
     bool bIsInRightShoulderView = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
-    UAnimMontage* DrinkPerkMontage;
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
     void Switchcamera(bool bIsRightShoulderViewChanged);
@@ -302,15 +296,13 @@ protected:
     bool bIsHoldedTrigger = false;
     bool bIsAimButtonHold = false;
 
-    // --- Aim Assist Settings ---
     UPROPERTY()
     TWeakObjectPtr<AZombie> LockedTarget;
 
     bool bIsStickyAiming = false;
 
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Targeting")
-    float StickySlowdownMultiplier = 0.5f; // خاوبوونەوەی سێنسەتیڤیتی کاتی قوفڵبوون
+    float StickySlowdownMultiplier = 0.5f;
 
 public:
     bool bIsFireButtonHold = false;
@@ -320,13 +312,13 @@ private:
     bool bLastCrossHairState = false;
 
 public:
-       FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
-       FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
-       FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
-       FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
-       bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
+    FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
+    FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
+    FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
+    FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
+    bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
+
 protected:
-    // CameraSensitivity
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
     float NormalSensitivity = 1.f;
 
@@ -341,9 +333,39 @@ public:
 
 public:
     FOnWeaponChanged OnWeaponChanged;
-
     void RefillAllWeapons();
 
 protected:
     void HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo);
+
+    // -----------------------------------------------------------------------------
+    // AAA Dynamic Perk System
+    // -----------------------------------------------------------------------------
+protected:
+    UPROPERTY(ReplicatedUsing = OnRep_OwnedPerks, BlueprintReadOnly, Category = "Hama|Perks")
+    TArray<FName> OwnedPerks;
+
+    UFUNCTION()
+    void OnRep_OwnedPerks();
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
+    bool bHasFastHands = false;
+
+    FName PendingPerkID;
+
+    UPROPERTY()
+    class AStaticMeshActor* CurrentSpawnedBottle;
+
+public:
+    // ناردنی پۆینتەری پێرکەکە بۆ مڵتیکاست بۆ خوێندنەوەی ڕاستەوخۆی مێشی بوتڵەکە لێیەوە
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_PlayDrinkPerkAnimation(ABasePerk* TargetPerk);
+
+    UFUNCTION()
+    void OnDrinkPerkAnimationComplete();
+
+    void AddPerkByID(FName PerkID);
+
+    bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
+    bool HasFastHands() const { return bHasFastHands; }
 };

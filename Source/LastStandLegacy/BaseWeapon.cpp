@@ -653,7 +653,7 @@ void ABaseWeapon::Reload()
         float MontagePlayRate = 1.0f;
         ReloadTimeToUse = CurrentWeaponData.ReloadMontage->GetPlayLength();
         ALastStandLegacyGameState* GS = GetGameStateCache();
-        if (GS && GS->IsTeamAdrenalineActive())
+        if ((GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands()))
         {
             ReloadTimeToUse /= 2;
             MontagePlayRate = 2;
@@ -706,7 +706,7 @@ void ABaseWeapon::ServerReload_Implementation(float InReloadTime)
 
     float FinalReloadTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : InReloadTime;
     ALastStandLegacyGameState* GS = GetGameStateCache();
-    if (GS && GS->IsTeamAdrenalineActive())
+    if ((GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands()))
     {
         FinalReloadTime /= 2.0f;
     }
@@ -810,7 +810,7 @@ void ABaseWeapon::OnRep_Reload()
             float MontagePlayRate = 1.0f;
 
             ALastStandLegacyGameState* GS = GetGameStateCache();
-            if (GS && GS->IsTeamAdrenalineActive())
+            if ((GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands()))
             {
                 MontagePlayRate = 2.0f;
             }
