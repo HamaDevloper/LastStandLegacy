@@ -248,7 +248,7 @@ void ABaseWeapon::StopFire()
 
 float ABaseWeapon::CalculateBulletSpread()
 {
-    if (HamaComponent && HamaComponent->bIsAiming)
+    if (HamaComponent && HamaComponent->IsAiming())
     {
         return 0.f;
     }
@@ -349,7 +349,7 @@ void ABaseWeapon::HandleFireLocal()
     NextAllowedFireTime = CurrentTime + CurrentWeaponData.FireRate;
 
     // ٦. وەستاندنی ڕاکردن
-    if (HamaComponent && HamaComponent->bIsSprinting)
+    if (HamaComponent && HamaComponent->IsSprinting())
     {
         HamaComponent->StopSprinting();
     }
@@ -592,7 +592,7 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
 
         float RandomYaw = FMath::RandRange(-CurrentWeaponData.RecoilRandomness, CurrentWeaponData.RecoilRandomness);
 
-        float Multiplier = (HamaComponent && HamaComponent->bIsAiming) ? CurrentWeaponData.AimRecoilMultiplier : 1.0f;
+        float Multiplier = (HamaComponent && HamaComponent->IsAiming()) ? CurrentWeaponData.AimRecoilMultiplier : 1.0f;
 
         // خاوێنترین و سادەترین لۆجیک
         float TargetPitch = CurvePitchValue * Multiplier;
@@ -746,33 +746,29 @@ void ABaseWeapon::Server_ReloadComplete()
 
 void ABaseWeapon::CancelReload()
 {
+    // ١. دەستبەجێ کوژاندنەوەی تایمەری ڕیلۆد لەسەر هەر ئامێرێک کە ئەم کۆدەی تێدا ڕادەکات
     GetWorldTimerManager().ClearTimer(ReloadTimerHandle);
+    bIsReloading = false;
 
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    // ٢. وەستاندنی ئەنیمەیشنی مۆنتاژەکە ئەگەر لێی دەدا
+    if (OwnerCharacter)
     {
-        bIsReloading = false;
-
         USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
-        if (MeshComp && MeshComp->GetAnimInstance())
+        if (MeshComp && MeshComp->GetAnimInstance() && CurrentWeaponData.ReloadMontage)
         {
             MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
         }
 
-        if (!HasAuthority()) Server_CancelReload();
+        // ٣. ئەگەر کڵایەنتی سەرەکی بوو، سێرڤەر ئاگادار بکەرەوە
+        if (OwnerCharacter->IsLocallyControlled() && !HasAuthority())
+        {
+            Server_CancelReload();
+        }
     }
 
-    if (HasAuthority())
+    if (HasAuthority() && OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
     {
-        bIsReloading = false;
-
-        if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
-        {
-            USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
-            if (MeshComp && MeshComp->GetAnimInstance())
-            {
-                MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
-            }
-        }
+        OnRep_Reload();
     }
 }
 
@@ -786,7 +782,7 @@ void ABaseWeapon::Server_CancelReload_Implementation()
         OnRep_Reload();
 
         USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
-        if (MeshComp && MeshComp->GetAnimInstance())
+        if (MeshComp && MeshComp->GetAnimInstance() && CurrentWeaponData.ReloadMontage)
         {
             MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
         }

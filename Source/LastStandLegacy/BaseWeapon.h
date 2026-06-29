@@ -126,10 +126,6 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Weapon")
     void RefillAmmo();
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-    FName WeaponIDForDeathMachine;
-
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;

@@ -31,6 +31,7 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsAiming, COND_SkipOwner);
 	DOREPLIFETIME_CONDITION(UHamaComponent, bIsSlide, COND_SkipOwner);
     DOREPLIFETIME_CONDITION(UHamaComponent, bIsDowned, COND_SkipOwner);
+    DOREPLIFETIME_CONDITION(UHamaComponent, MaxStamina, COND_OwnerOnly);
 }
 
 void UHamaComponent::SetAiming(bool bNewAiming)
@@ -182,6 +183,40 @@ void UHamaComponent::RegenerateStamina()
 		return;
 	}
 	Stamina = FMath::Clamp(Stamina + StaminaRegenRate * 0.1f, 0.f, MaxStamina);
+}
+
+void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
+{
+    // ١. حیسابکردنی ڕێژەی سەدی پێش گۆڕینی ماکس
+    float StaminaRatio = (MaxStamina > 0.f) ? (Stamina / MaxStamina) : 1.0f;
+
+    // ٢. گۆڕینی بەهای ماکس
+    MaxStamina = NewMaxStamina;
+
+    // ٣. جێگیرکردنی ستامینای ئێستا بەپێی ڕێژەی سەدی کۆن
+    Stamina = MaxStamina * StaminaRatio;
+
+    // ٤. 🚀 [AAA Timer Check]: ئەگەر یاریزانەکە خەریکی ڕاکردن نەبوو
+    if (!bIsSprinting)
+    {
+        // ئەگەر تایمەری پڕبوونەوە پێشتر داگیرساو نەبوو، دەستبەجێ دایگیرسێنەوە بۆ ئەوەی بەها نوێیەکە پڕ بکاتەوە
+        if (GetWorld() && !GetWorld()->GetTimerManager().IsTimerActive(StaminaRegenTimerHandle))
+        {
+            // ئەگەر تایمەری پێناڵتی (Penalty) چالاک نەبوو، بە دێڵەی ئاسایی دەستی پێ بکە
+            float Delay = GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle) ? PenaltyStamina : NormalDelayStamina;
+
+            GetWorld()->GetTimerManager().SetTimer(
+                StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina,
+                0.1f, true, Delay
+            );
+        }
+    }
+
+    // ٥. ئەپدیتکردنی نێتوۆرک لای سێرڤەر
+    if (OwnerCharacter && OwnerCharacter->HasAuthority())
+    {
+        OwnerCharacter->ForceNetUpdate();
+    }
 }
 
 

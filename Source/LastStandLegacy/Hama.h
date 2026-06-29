@@ -37,7 +37,7 @@ class UInputMappingContext;
 class UInputAction;
 class APlayerController;
 class AZombie;
-class ABasePerk; // فۆروارد دیکلەیرەیشن بۆ کلاسی پێرک
+class ABasePerk;
 
 struct FInputActionValue;
 struct FInputActionInstance;
@@ -108,14 +108,31 @@ protected:
 public:
     UPROPERTY(Transient)
     TObjectPtr<ABaseWeapon> ActiveDeathMachine;
+    
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|State")
+    bool bIsDeathMachineActive = false;
+
     void GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration);
+   
     void RemoveDeathMachine();
+   
+    void CompleteWeaponSwap();
+
+    UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
+    void GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive);
+
+protected:
+    UPROPERTY()
+    TObjectPtr<ABaseWeapon> PendingWeaponForSwap;
 
     UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
     void SwapWeapon();
 
-    UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
-    void GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive);
+    UFUNCTION(Server, Reliable)
+    void Server_SwapWeapon(ABaseWeapon* NewWeapon);
+
+    UFUNCTION()
+    void OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 public:
     // -----------------------------------------------------------------------------
@@ -153,6 +170,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> AbilityAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> SwapWeaponAction;
 
 public:
     // -----------------------------------------------------------------------------
@@ -216,6 +236,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
     UAnimMontage* DrinkPerkMontage;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
+    UAnimMontage* SwapWeaponMontage;
 
 public:
     // -----------------------------------------------------------------------------
@@ -316,6 +339,7 @@ public:
     FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
     FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
+    FORCEINLINE bool IsDeathMachineActive() const { return bIsDeathMachineActive; }
     bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
 
 protected:
@@ -362,7 +386,7 @@ public:
     void Multicast_PlayDrinkPerkAnimation(ABasePerk* TargetPerk);
 
     UFUNCTION()
-    void OnDrinkPerkAnimationComplete();
+    void OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool bInterrupted);
 
     void AddPerkByID(FName PerkID);
 

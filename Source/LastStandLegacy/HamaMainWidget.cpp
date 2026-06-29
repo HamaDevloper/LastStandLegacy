@@ -34,17 +34,10 @@ void UHamaMainWidget::UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo)
 {
     if (!Ammo) return;
 
-    if (CachedHamaChar)
+    if (CachedHamaChar && CachedHamaChar->IsDeathMachineActive())
     {
-        if (ABaseWeapon* CurrentWeapon = CachedHamaChar->GetCurrentWeapon())
-        {
-            if (CurrentWeapon->WeaponIDForDeathMachine == FName(TEXT("DeathMachine")))
-            {
-                FString InfiniteFormat = FString::Printf(TEXT("\u221E / \u221E"));
-                Ammo->SetText(FText::FromString(InfiniteFormat));
-                return;
-            }
-        }
+        Ammo->SetText(FText::FromString(TEXT("\u221E / \u221E")));
+        return;
     }
 
     FString AmmoString = FString::Printf(TEXT("%d / %d"), CurrentAmmo, ReserveAmmo);

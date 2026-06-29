@@ -127,6 +127,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME(AHama, CurrentWeapon);
     DOREPLIFETIME(AHama, OwnedPerks);
     DOREPLIFETIME(AHama, bHasFastHands);
+    DOREPLIFETIME(AHama, bIsDeathMachineActive);
     DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
 }
@@ -400,17 +401,10 @@ void AHama::RefillAllWeapons()
 
 void AHama::SwapWeapon()
 {
-    if (!HasAuthority()) return;
-
-    if (ActiveDeathMachine)
-    {
-        GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
-        RemoveDeathMachine();
-        return;
-    }
+    if (!SwapWeaponMontage) return;
 
     ABaseWeapon* NextWeapon = nullptr;
-
+    // ... لۆژیکی دۆزینەوەی چەکی داهاتووی خۆت لێرە جێگیرە ...
     if (CurrentWeapon == PrimaryWeapon)
     {
         if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
@@ -427,19 +421,128 @@ void AHama::SwapWeapon()
         else if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
     }
 
-    if (NextWeapon && NextWeapon != CurrentWeapon)
+    if (!NextWeapon || NextWeapon == CurrentWeapon) return;
+
+    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (!AnimInstance) return;
+
+    // [YY Logic]
+    if (AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+    {
+        AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
+    }
+
+    PendingWeaponForSwap = NextWeapon;
+
+    float TargetPlayRate = 1.0f;
+
+    bool bIsAdrenalineActive = false;
+    if (GetWorld() && GetWorld()->GetGameState())
+    {
+        if (ALastStandLegacyGameState* GS = Cast<ALastStandLegacyGameState>(GetWorld()->GetGameState()))
+        {
+            bIsAdrenalineActive = GS->IsTeamAdrenalineActive(); // دڵنیابەوە فەنکشنی IsTeamAdrenalineActive هەیە لە GS
+        }
+    }
+
+    if (HasFastHands() || bIsAdrenalineActive)
+    {
+        TargetPlayRate = 2.0f;
+    }
+
+    AnimInstance->Montage_Play(SwapWeaponMontage, TargetPlayRate);
+
+    FOnMontageEnded MontageEndedDelegate;
+    MontageEndedDelegate.BindUObject(this, &AHama::OnSwapWeaponMontageEnded);
+    AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, SwapWeaponMontage);
+
+    // ٢. ناردنی سیگناڵ بۆ سێرڤەر
+    if (IsLocallyControlled())
+    {
+        Server_SwapWeapon(NextWeapon);
+    }
+}
+
+void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
+{
+    if (!NewWeapon) return;
+
+    PendingWeaponForSwap = NewWeapon;
+
+    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (AnimInstance && SwapWeaponMontage)
+    {
+        if (AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+        {
+            AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
+        }
+
+        // ١. حیسابکردنی خێرایی بنەڕەتی بەپێی پێرک و ئەدیناڵین
+        float BasePlayRate = 1.0f;
+
+        bool bIsAdrenalineActive = false;
+        if (GetWorld() && GetWorld()->GetGameState())
+        {
+            if (ALastStandLegacyGameState* GS = Cast<ALastStandLegacyGameState>(GetWorld()->GetGameState()))
+            {
+                bIsAdrenalineActive = GS->IsTeamAdrenalineActive();
+            }
+        }
+
+        if (HasFastHands() || bIsAdrenalineActive)
+        {
+            BasePlayRate = 2.0f;
+        }
+
+        float ServerPlayRate = BasePlayRate * 1.15f;
+
+        // ٣. لێدانی ئەنیمەیشنەکە لای سێرڤەر بە خێراییە ئەپدیتکراوەکە
+        AnimInstance->Montage_Play(SwapWeaponMontage, ServerPlayRate);
+
+        FOnMontageEnded ServerMontageEndedDelegate;
+        ServerMontageEndedDelegate.BindUObject(this, &AHama::OnSwapWeaponMontageEnded);
+        AnimInstance->Montage_SetEndDelegate(ServerMontageEndedDelegate, SwapWeaponMontage);
+    }
+    else
+    {
+        CompleteWeaponSwap();
+    }
+}
+
+void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    if (bInterrupted)
+    {
+        PendingWeaponForSwap = nullptr;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Weapon Swap Interrupted!"));
+        return;
+    }
+
+    if (HasAuthority())
+    {
+        CompleteWeaponSwap();
+    }
+}
+
+void AHama::CompleteWeaponSwap()
+{
+    if (!HasAuthority() || !PendingWeaponForSwap) return;
+
+    if (CurrentWeapon)
     {
         CurrentWeapon->SetActorHiddenInGame(true);
         CurrentWeapon->SetActorEnableCollision(false);
-        CurrentWeapon = NextWeapon;
-        CurrentWeapon->SetActorHiddenInGame(false);
-        CurrentWeapon->SetActorEnableCollision(true);
-
-        CurrentWeapon->EquipWeapon(this);
-        AttachWeaponToMesh(CurrentWeapon);
-
-        OnWeaponChanged.Broadcast(CurrentWeapon);
     }
+
+    CurrentWeapon = PendingWeaponForSwap;
+    CurrentWeapon->SetActorHiddenInGame(false);
+    CurrentWeapon->SetActorEnableCollision(true);
+
+    CurrentWeapon->EquipWeapon(this);
+    AttachWeaponToMesh(CurrentWeapon);
+
+    OnWeaponChanged.Broadcast(CurrentWeapon);
+    PendingWeaponForSwap = nullptr;
 }
 
 void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration)
@@ -469,6 +572,9 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 
     if (ActiveDeathMachine)
     {
+        bIsDeathMachineActive = true;
+        ForceNetUpdate();
+
         CurrentWeapon = ActiveDeathMachine;
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
@@ -480,6 +586,9 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 void AHama::RemoveDeathMachine()
 {
     if (!HasAuthority()) return;
+
+    bIsDeathMachineActive = false;
+    ForceNetUpdate();
 
     if (ActiveDeathMachine)
     {
@@ -531,6 +640,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHama::FireActionReleased);
         EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
         EnhancedInput->BindAction(AbilityAction, ETriggerEvent::Started, this, &AHama::AbilityActionPressed);
+        EnhancedInput->BindAction(SwapWeaponAction, ETriggerEvent::Started, this, &AHama::SwapWeapon);
     }
 }
 
@@ -558,7 +668,7 @@ void AHama::AimActionPressed()
     if (!HamaComponent || !CurrentWeapon) return;
     bIsAimButtonHold = true;
 
-    if (HamaComponent->bIsSprinting)
+    if (HamaComponent->IsSprinting())
     {
         HamaComponent->StopSprinting();
     }
@@ -651,7 +761,7 @@ void AHama::AimPressedSitck()
 void AHama::ReloadActionPressed()
 {
     if (!CurrentWeapon || CurrentWeapon->ReserveAmmo <= 0) return;
-    if (CurrentWeapon->WeaponIDForDeathMachine == FName(TEXT("DeathMachine"))) return;
+    if (bIsDeathMachineActive) return;
     if (HamaComponent && HamaComponent->IsSprinting())
     {
         HamaComponent->StopSprinting();
@@ -729,7 +839,7 @@ void AHama::Look(const FInputActionValue& Value)
 
 void AHama::JumpActionPressed()
 {
-    if (HamaComponent && HamaComponent->bIsSlide)
+    if (HamaComponent && HamaComponent->IsSlide())
     {
         bCanJumpSlide = true;
         StopSlideRoutine();
@@ -747,7 +857,7 @@ void AHama::JumpActionPressed()
 void AHama::CrouchActionPressed()
 {
     bIsCrouchButtonHold = true;
-    if (HamaComponent && HamaComponent->bIsSlide) return;
+    if (HamaComponent && HamaComponent->IsSlide()) return;
 
     if (HamaComponent && IsSprinting())
     {
@@ -838,7 +948,7 @@ void AHama::SprintActionPressed()
 {
     if (!HamaComponent || HamaComponent->GetStamina() < 15.f || GetCharacterMovement()->IsFalling()) return;
 
-    if (HamaComponent->bIsAiming)
+    if (HamaComponent->IsAiming())
     {
         HamaComponent->SetAiming(false);
         OnAim(false);
@@ -875,13 +985,43 @@ void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
 
 void AHama::AddPerkByID(FName PerkID)
 {
-    if (!HasAuthority() || OwnedPerks.Contains(PerkID)) return;
+    if (PerkID.IsNone()) return;
 
-    OwnedPerks.Add(PerkID);
+    // زیادکردنی بۆ ناو لیستی پێرکەکان بۆ UI
+    if (!OwnedPerks.Contains(PerkID))
+    {
+        OwnedPerks.Add(PerkID);
+        if (HasAuthority()) ForceNetUpdate();
+    }
+
     if (PerkID == FName(TEXT("FastHands")))
     {
         bHasFastHands = true;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("Server: Fast Hands Granted!"));
+    }
+ 
+    else if (PerkID == FName(TEXT("Juggernaut")))
+    {
+        MaxHealth = 250.f;
+
+        FTimerHandle JuggHealTimerHandle;
+
+        // دروستکردنی لایامبدا (Lambda) بۆ ئەوەی پێویستت بە دروستکردنی فەنکشنی نوێ نەبێت لە هێدەردا
+        GetWorldTimerManager().SetTimer(JuggHealTimerHandle, [this]()
+            {
+                if (HasAuthority())
+                {
+                    CurrentHealth = MaxHealth;
+                    ForceNetUpdate();
+                }
+            }, 3.0f, false);
+    }
+   
+    else if (PerkID == FName(TEXT("StaminaUp")))
+    {
+        if (HamaComponent)
+        {
+            HamaComponent->UpgradeMaxStamina(250.f);
+        }
     }
 }
 
@@ -889,7 +1029,6 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
 {
     if (!TargetPerk || !DrinkPerkMontage) return;
 
-    // ١. وەرگرتنی مێشی بوتڵەکە ڕاستەوخۆ لە خودی پێرکەکەوە!
     UStaticMesh* BottleMesh = TargetPerk->GetBottleMesh();
 
     if (BottleMesh)
@@ -905,26 +1044,35 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
         }
     }
 
-    // ٢. لێدانی ئەنیمەیشنەکە
-    PlayAnimMontage(DrinkPerkMontage, 1.0f);
-
-    // ٣. تایمەری سێرڤەر بۆ بەخشینی پێرکەکە
     if (HasAuthority())
     {
-        PendingPerkID = TargetPerk->GetPerkID(); // فەنکشنێکی گێتەر بۆ GetPerkID لە کلاسی پێرک دابنە
+        PendingPerkID = TargetPerk->GetPerkID();
+    }
 
-        float MontageLength = DrinkPerkMontage->GetPlayLength();
-        FTimerHandle PerkTimerHandle;
-        GetWorldTimerManager().SetTimer(PerkTimerHandle, this, &AHama::OnDrinkPerkAnimationComplete, MontageLength, false);
+    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (AnimInstance)
+    {
+        AnimInstance->Montage_Play(DrinkPerkMontage, 1.0f);
+
+        // بەستنەوەی فەنکشنەکە بە کۆتایی هاتنی مۆنتاژەکە
+        FOnMontageEnded MontageEndedDelegate;
+        MontageEndedDelegate.BindUObject(this, &AHama::OnDrinkPerkAnimationCompleteFromMontage);
+        AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, DrinkPerkMontage);
     }
 }
 
-void AHama::OnDrinkPerkAnimationComplete()
+void AHama::OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool bInterrupted)
 {
     if (CurrentSpawnedBottle)
     {
         CurrentSpawnedBottle->Destroy();
         CurrentSpawnedBottle = nullptr;
+    }
+
+    if (bInterrupted)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Perk Drinking Interrupted! No Perk Granted."));
+        return;
     }
 
     if (HasAuthority())
@@ -935,5 +1083,19 @@ void AHama::OnDrinkPerkAnimationComplete()
 
 void AHama::OnRep_OwnedPerks()
 {
-    
+    // ١. پشکنین دەکەین؛ ئایا دوایین پێرک کە زیادبووە چییە؟
+    if (OwnedPerks.Num() > 0)
+    {
+        FName LatestPerk = OwnedPerks.Last();
+
+        // ٢. لێدانی نامەیەک بۆ دڵنیایی
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Client Received Perk: %s"), *LatestPerk.ToString()));
+
+        // ٣. 🚀 لێرەدا دەتوانیت فەنکشنێکی ناو وەجێتەکەت (MainWidgetRef) بانگ بکەیت بۆ ئەپدیتکردنی شاشە:
+        if (MainWidgetRef)
+        {
+            // بۆ نموونە فەنکشنێک لە ناو بلۆپرێنتی یوئای دروست دەکەیت بە ناوی AddPerkIconToHUD
+            // MainWidgetRef->AddPerkIconToHUD(LatestPerk);
+        }
+    }
 }

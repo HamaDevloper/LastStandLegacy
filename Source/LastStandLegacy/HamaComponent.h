@@ -28,7 +28,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	float Stamina;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	float MaxStamina = 100.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
@@ -60,12 +60,13 @@ protected:
 
 	void DrainStamina();
 	void RegenerateStamina();
-	
-public:
-	void SetAiming(bool bNewAiming);
 
 public:
-	// ✅ ڤاریابڵەکان وەک خۆیان پارێزراون بەڵام ReplicatedUsing مان لابردووە چونکە Saved Moves خۆی کارەکە دەکات
+    void UpgradeMaxStamina(float NewMaxStamina);
+	
+
+	void SetAiming(bool bNewAiming);
+
 	UPROPERTY(ReplicatedUsing = OnRep_Sprinting, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	bool bIsSprinting = false;
 
@@ -78,11 +79,13 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_Down, BlueprintReadOnly, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
     bool bIsDowned = false;
 
-    void Revive();
-
 	bool IsSprinting() const { return bIsSprinting; }
+    bool IsSlide() const { return bIsSlide; }
     bool IsAiming() const { return bIsAiming; }
     bool IsDowned() const { return bIsDowned; }
+
+    void Revive();
+
 private:
 	FTimerHandle StaminaDrainTimerHandle;
 	FTimerHandle StaminaRegenTimerHandle;
