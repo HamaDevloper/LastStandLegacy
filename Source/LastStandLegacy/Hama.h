@@ -104,12 +104,11 @@ protected:
     UPROPERTY(Transient)
     TObjectPtr<ABaseWeapon> PreDeathMachineWeapon;
 
-    UPROPERTY(Transient)
-    TObjectPtr<ABaseWeapon> ActiveDeathMachine;
-
     FTimerHandle DeathMachineTimerHandle;
 
 public:
+    UPROPERTY(Transient)
+    TObjectPtr<ABaseWeapon> ActiveDeathMachine;
     void GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration);
     void RemoveDeathMachine();
 
@@ -324,6 +323,7 @@ public:
        FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
        FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
        FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
+       FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
        bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
 protected:
     // CameraSensitivity
@@ -343,4 +343,7 @@ public:
     FOnWeaponChanged OnWeaponChanged;
 
     void RefillAllWeapons();
+
+protected:
+    void HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo);
 };

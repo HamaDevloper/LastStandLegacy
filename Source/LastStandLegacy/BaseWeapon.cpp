@@ -18,7 +18,7 @@
 ABaseWeapon::ABaseWeapon()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.bStartWithTickEnabled = true;
+    PrimaryActorTick.bStartWithTickEnabled = false;
 
     bReplicates = true;
 
@@ -85,7 +85,7 @@ void ABaseWeapon::Tick(float DeltaTime)
     // ئەگەر گەیشتە ئامانجەکە، Tick بکوژێنەوە بۆ ئەوەی کایەکە خێرا بێت
     if (CurrentRecoilOffset.Equals(TargetRecoilOffset, 0.01f))
     {
-        //SetActorTickEnabled(false);
+        SetActorTickEnabled(false);
     }
 }
 
@@ -162,6 +162,11 @@ void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
     MaxAmmoInClip = FMath::RoundToInt(MaxAmmoInClip * 1.5f);
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo * 2;
     CurrentWeaponData.MaxReserveAmmo = ReserveAmmo;
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
 }
 
 void ABaseWeapon::RefillAmmo()
@@ -171,6 +176,11 @@ void ABaseWeapon::RefillAmmo()
     bool bWasEmpty = (CurrentAmmo <= 0 && ReserveAmmo <= 0);
 
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
 
     if (bWasEmpty)
     {
@@ -331,6 +341,7 @@ void ABaseWeapon::HandleFireLocal()
     if (!IsInfiniteAmmoActive())
     {
         CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 
     // ٥. ڕێکخستنی کاتی تەقەی داهاتوو
@@ -632,7 +643,7 @@ void ABaseWeapon::Client_ForceReload_Implementation()
 
 void ABaseWeapon::Reload()
 {
-    if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip ||bIsReloading || CurrentAmmo == CurrentWeaponData.MaxAmmoInClip || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
+    if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip || bIsReloading || CurrentAmmo == CurrentWeaponData.MaxAmmoInClip || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
     bIsReloading = true;
     float ReloadTimeToUse = CurrentWeaponData.DefaultReloadTime;
@@ -676,6 +687,8 @@ void ABaseWeapon::Local_ReloadComplete()
     ReserveAmmo -= AmmoToMove;
     bIsReloading = false;
 
+    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+
     if (OwnerCharacter->bIsFireButtonHold)
     {
         StartFire();
@@ -714,6 +727,11 @@ void ABaseWeapon::Server_ReloadComplete()
     CurrentAmmo += AmmoToMove;
     ReserveAmmo -= AmmoToMove;
     bIsReloading = false;
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
 
     if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
     {
@@ -806,4 +824,14 @@ void ABaseWeapon::OnRep_Reload()
             AnimInstance->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
         }
     }
+}
+
+void ABaseWeapon::OnRep_CurrentAmmo()
+{
+    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+}
+
+void ABaseWeapon::OnRep_ReserveAmmo()
+{
+    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 }

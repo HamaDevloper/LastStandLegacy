@@ -2,6 +2,7 @@
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
 #include "HamaMainWidget.h"
+#include "LastStandLegacyGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -79,11 +80,20 @@ void AHama::BeginPlay()
         if (MainWidgetRef)
         {
             MainWidgetRef->AddToViewport();
+            MainWidgetRef->InitializeWidget(this);
 
             if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
             {
                 MainWidgetRef->UpdatePointsText(HamaPS->GetPoints());
                 MainWidgetRef->UpdateKillsText(HamaPS->GetKills());
+            }
+            if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+            {
+                MainWidgetRef->UpdateRoundText(GS->GetCurrentRound());
+            }
+            else
+            {
+                MainWidgetRef->UpdateRoundText(1);
             }
         }
     }
@@ -358,7 +368,22 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 void AHama::OnRep_CurrentWeapon()
 {
     AttachWeaponToMesh(CurrentWeapon);
+
+    if (IsLocallyControlled() && MainWidgetRef && CurrentWeapon)
+    {
+        CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
+        MainWidgetRef->UpdateAmmoText(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
+    }
+
     OnWeaponChanged.Broadcast(CurrentWeapon);
+}
+
+void AHama::HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo)
+{
+    if (IsLocallyControlled() && MainWidgetRef)
+    {
+        MainWidgetRef->UpdateAmmoText(CurrentAmmo, ReserveAmmo);
+    }
 }
 
 void AHama::RefillAllWeapons()
@@ -444,7 +469,6 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
         AttachWeaponToMesh(CurrentWeapon);
         OnWeaponChanged.Broadcast(CurrentWeapon);
     }
-
     GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
 }
 
@@ -563,7 +587,7 @@ void AHama::AimPressedSitck()
     FVector CameraForward = StartRotation.Vector();
 
     float WeaponRange = CurrentWeapon->GetWeaponMaxRange();
-    float BestDotProduct = 0.90f; // سنوری جێگیر بۆ ڕاکێشانی نیشانە
+    float BestDotProduct = 0.90f;
 
     AZombie* TargetToSnap = nullptr;
 
@@ -622,7 +646,7 @@ void AHama::AimPressedSitck()
 void AHama::ReloadActionPressed()
 {
     if (!CurrentWeapon || CurrentWeapon->ReserveAmmo <= 0) return;
-
+    if (CurrentWeapon->WeaponIDForDeathMachine == FName(TEXT("DeathMachine"))) return;
     if (HamaComponent && HamaComponent->IsSprinting())
     {
         HamaComponent->StopSprinting();

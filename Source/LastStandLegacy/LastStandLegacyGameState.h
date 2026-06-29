@@ -1,4 +1,5 @@
 ﻿#pragma once
+
 #include "CoreMinimal.h"
 #include "GameFramework/GameState.h"
 #include "LastStandLegacyGameState.generated.h"
@@ -18,6 +19,19 @@ protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
+    // ── سیستەمی ڕاوەند ──
+    void SetCurrentRound(int32 NewRound);
+    int32 GetCurrentRound() const { return CurrentRound; }
+
+protected:
+    UPROPERTY(ReplicatedUsing = OnRep_CurrentRound, BlueprintReadOnly, Category = "Zombie|Round")
+    int32 CurrentRound = 1;
+
+    UFUNCTION()
+    void OnRep_CurrentRound();
+
+public:
+    // ── ئەبیلیتی و پاوەرەکان ──
     UPROPERTY(ReplicatedUsing = OnRep_GlobalBulletStorm, BlueprintReadOnly, Category = "Abilities")
     bool bIsGlobalBulletStormActive = false;
 
@@ -33,11 +47,9 @@ public:
     void StartTeamAdrenaline(float Duration);
     bool IsTeamAdrenalineActive() const { return bIsAdrenalineActive; }
 
-    // ── لیستی ئامانجە دروستەکان، خوێندراوە لە زۆمبیەکان (سێرڤەر تەنها) ──
+    // لیستی ئامانجە دروستەکان، خوێندراوە لە زۆمبیەکان (سێرڤەر تەنها)
     UPROPERTY()
     TArray<APawn*> ValidTargets;
-
-   
 
     bool GetInstaKill() const { return bHasInstaKill; }
 
@@ -50,8 +62,6 @@ protected:
     void EndGlobalBulletStorm();
     void EndInstaKill();
     void RefreshValidTargets();
-
-   
     void EndTeamAdrenaline();
 
     UFUNCTION()

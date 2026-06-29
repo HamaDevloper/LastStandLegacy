@@ -17,6 +17,8 @@ class UForceFeedbackEffect;
 class UCurveFloat;
 class ALastStandLegacyGameState;
 
+DECLARE_DELEGATE_TwoParams(FOnAmmoChangedSignature, int32, int32);
+
 UENUM(BlueprintType)
 enum class EWeaponFireMode : uint8
 {
@@ -111,6 +113,8 @@ class LASTSTANDLEGACY_API ABaseWeapon : public AActor
 
 public:
     ABaseWeapon();
+    
+    FOnAmmoChangedSignature OnAmmoChanged;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Mesh")
     TObjectPtr<USkeletalMeshComponent> WeaponMesh;
@@ -122,6 +126,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Weapon")
     void RefillAmmo();
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+    FName WeaponIDForDeathMachine;
 
 protected:
     virtual void BeginPlay() override;
@@ -144,7 +151,7 @@ public:
 protected:
     FWeaponData CurrentWeaponData;
 
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
+    UPROPERTY(ReplicatedUsing = OnRep_CurrentAmmo, EditAnywhere, BlueprintReadWrite, Category = "Weapon|Ammo")
     int32 CurrentAmmo;
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
@@ -170,7 +177,7 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon|LiveStats")
     bool bIsReloading = false;
 
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
+    UPROPERTY(ReplicatedUsing = OnRep_ReserveAmmo, EditAnywhere, BlueprintReadWrite, Category = "Weapon|Ammo")
     int32 ReserveAmmo;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Effects")
@@ -194,6 +201,12 @@ public:
 
     UFUNCTION()
     void OnRep_BurstCounter();
+
+    UFUNCTION()
+    void OnRep_CurrentAmmo();
+
+    UFUNCTION()
+    void OnRep_ReserveAmmo();
 
     void Reload();
 
@@ -246,4 +259,6 @@ public:
     FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
     bool CanReload() const { return CurrentAmmo <= 0 && ReserveAmmo > 0; }
     bool IsReloading() const{ return bIsReloading; }
+    int32 GetCurrentAmmo() const { return CurrentAmmo; }
+    int32 GetReserveAmmo() const { return ReserveAmmo; }
 };

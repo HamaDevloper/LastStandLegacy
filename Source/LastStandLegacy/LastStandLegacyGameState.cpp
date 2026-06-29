@@ -1,10 +1,11 @@
 ﻿#include "LastStandLegacyGameState.h"
 #include "Hama.h"
+#include "HamaMainWidget.h" // +++ گرنگە بۆ ناسینەوەی UI +++
 #include "Net/UnrealNetwork.h"
 
 ALastStandLegacyGameState::ALastStandLegacyGameState()
 {
-    SetNetUpdateFrequency(33.f);
+    SetNetUpdateFrequency(1.f);
 }
 
 void ALastStandLegacyGameState::BeginPlay()
@@ -26,10 +27,47 @@ void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+    // +++ ناساندنی ڕاوند بە تۆڕەکە +++
+    DOREPLIFETIME(ALastStandLegacyGameState, CurrentRound);
+
     DOREPLIFETIME(ALastStandLegacyGameState, bIsGlobalBulletStormActive);
     DOREPLIFETIME(ALastStandLegacyGameState, bIsDoublePointsActive);
     DOREPLIFETIME(ALastStandLegacyGameState, bHasInstaKill);
     DOREPLIFETIME(ALastStandLegacyGameState, bIsAdrenalineActive);
+}
+
+// ── فەنکشنە نوێیەکانی سیستەمی ڕاوەند ──
+void ALastStandLegacyGameState::SetCurrentRound(int32 NewRound)
+{
+    if (!HasAuthority()) return;
+    CurrentRound = NewRound;
+    ForceNetUpdate();
+    // نوێکردنەوەی شاشەی کەسی هۆست (سێرڤەر) ڕاستەوخۆ
+    if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+    {
+        if (AHama* HamaChar = Cast<AHama>(PC->GetPawn()))
+        {
+            if (HamaChar->MainWidgetRef)
+            {
+                HamaChar->MainWidgetRef->UpdateRoundText(CurrentRound);
+            }
+        }
+    }
+}
+
+void ALastStandLegacyGameState::OnRep_CurrentRound()
+{
+    // کاتێک سێرڤەر ڕاوند دەگۆڕێت، ئەمە لەسەر کۆمپیوتەری کڵایەنتەکان لێدەدات و شاشەیان ئەپدێت دەکات
+    if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+    {
+        if (AHama* HamaChar = Cast<AHama>(PC->GetPawn()))
+        {
+            if (HamaChar->MainWidgetRef)
+            {
+                HamaChar->MainWidgetRef->UpdateRoundText(CurrentRound);
+            }
+        }
+    }
 }
 
 void ALastStandLegacyGameState::RefreshValidTargets()

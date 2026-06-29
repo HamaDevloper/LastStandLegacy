@@ -1,6 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#include "LastStandLegacyGameMode.h"
+﻿#include "LastStandLegacyGameMode.h"
 #include "Zombie.h"
 #include "Hama.h"
 #include "BasePowerUp.h" 
@@ -84,6 +82,12 @@ void ALastStandLegacyGameMode::BeginPlay()
     ActiveZombiesCount = 0;
     ZombiesSpawnedThisRound = 0;
 
+    // ناردنی ڕاوندی یەکەم بۆ Game专业State بۆ نوێکردنەوەی شاشەی هەمووان
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    {
+        GS->SetCurrentRound(CurrentRound);
+    }
+
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
@@ -158,10 +162,15 @@ void ALastStandLegacyGameMode::StartNextRound()
 
     ZombiesToKill += 5;
 
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    {
+        GS->SetCurrentRound(CurrentRound);
+    }
+
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
-            FString::Printf(TEXT("Round %d Started! Zombies this round: %d"), CurrentRound, ZombiesToKill));
+            FString::Printf(TEXT("Round %d Started!"), CurrentRound));
     }
 
     for (TActorIterator<AZombie> It(GetWorld()); It; ++It)

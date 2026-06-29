@@ -27,15 +27,12 @@ public:
 
 protected:
     void SpawnPowers(FVector SpawnLocation);
-
     void StartNextRound();
     void ProcessSpawning();
     AActor* PickWeightedSpawnPoint();
 
 public:
-    // =========================================================================
     // [Zombie Settings] 
-    // =========================================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     TSubclassOf<AZombie> ZombieClass;
 
@@ -53,16 +50,15 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     int32 ZombiesToKill = 10;
 
+    // لێرەدا لۆکاڵی تەنها بۆ سێرڤەر بەکاری دەهێنین، پێویستی بە OnRep نییە
     int32 CurrentRound = 1;
+
     int32 ZombiesSpawnedThisRound = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     int32 ZombiesSpawnLimit = 24;
 
-
-    // =========================================================================
     // [PowerUp Settings]
-    // =========================================================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|PowerUp")
     TArray<TSubclassOf<ABasePowerUp>> PowerUpClasses;
 
@@ -79,9 +75,7 @@ public:
 
     float CurrentPowerSpawnTime = -9999.0f;
 
-    // =========================================================================
     // [Abilities]
-    // =========================================================================
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|Abilities")
     TArray<EHamaAbilityType> ActiveAbilities;
 
