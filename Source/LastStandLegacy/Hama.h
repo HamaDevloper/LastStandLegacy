@@ -12,6 +12,8 @@
 
 #define ECC_Bullet ECC_GameTraceChannel1
 #define ECC_CrossHair ECC_GameTraceChannel2
+#define ECC_Intract ECC_GameTraceChannel3
+
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
 
@@ -173,6 +175,12 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> SwapWeaponAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    UInputAction* InteractAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    UInputAction* GamepadXAction;
 
 public:
     // -----------------------------------------------------------------------------
@@ -400,4 +408,18 @@ public:
 
     UFUNCTION(BlueprintImplementableEvent, Category = "UI")
     void OnDamageIndicatorUpdate(float Angle);
+
+protected:
+    void CheckForInteractables();
+    
+    UPROPERTY()
+    FTimerHandle InteractTimerHandle;
+
+    class IInteractInterface* FocusedInteractable;
+    
+    void InteractActionPressed();
+    void GamepadXActionPressed();
+  
+    UFUNCTION(Server, Reliable)
+    void Server_Interact(AActor* InteractTarget);
 };

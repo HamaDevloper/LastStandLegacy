@@ -16,6 +16,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "BasePerk.h"
+#include "InteractInterface.h"
 
 // -----------------------------------------------------------------------------
 // Constructor
@@ -104,6 +105,7 @@ void AHama::BeginPlay()
 
     GetWorldTimerManager().ClearTimer(PingUpdateTimerHandle);
     GetWorldTimerManager().SetTimer(PingUpdateTimerHandle, this, &AHama::UpdatePingUI, 1.f, true);
+    GetWorld()->GetTimerManager().SetTimer(InteractTimerHandle, this, &AHama::CheckForInteractables, 0.1f, true);
 
     if (HasAuthority()) CreateDefaultWeapon();
     StartCrossHairTimer();
@@ -165,6 +167,53 @@ void AHama::Tick(float DeltaTime)
 
     // لەبەر ئەوەی پۆست-پڕۆسێس و خاوکردنەوەمان بردووەتە ناو لۆژیکی Look، ئۆتۆماتیکی دەیبڕینەوە بۆ نزمکردنی لۆد
     //SetActorTickEnabled(false);
+}
+
+void AHama::CheckForInteractables()
+{
+    if (!IsLocallyControlled()) return;
+    if (!OwnerController) return;
+
+    FVector StartLocation;
+    FRotator ViewRotation;
+
+    OwnerController->GetPlayerViewPoint(StartLocation, ViewRotation);
+
+    FVector EndLocation = StartLocation + (ViewRotation.Vector() * 250.0f);
+
+    FHitResult HitResult;
+    FCollisionShape SphereShape = FCollisionShape::MakeSphere(15.0f);
+    FCollisionQueryParams QueryParams;
+    QueryParams.AddIgnoredActor(this);
+
+    bool bHit = GetWorld()->SweepSingleByChannel(HitResult, StartLocation, EndLocation, FQuat::Identity, ECC_Intract, SphereShape, QueryParams);
+
+    if (bHit && HitResult.GetActor())
+    {
+        IInteractInterface* InteractableActor = Cast<IInteractInterface>(HitResult.GetActor());
+
+        if (InteractableActor)
+        {
+            if (FocusedInteractable != InteractableActor)
+            {
+                FocusedInteractable = InteractableActor;
+            }
+        }
+        else
+        {
+            if (FocusedInteractable)
+            {
+                FocusedInteractable = nullptr;
+            }
+        }
+    }
+    else
+    {
+        if (FocusedInteractable)
+        {
+            FocusedInteractable = nullptr;
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -643,6 +692,8 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
         EnhancedInput->BindAction(AbilityAction, ETriggerEvent::Started, this, &AHama::AbilityActionPressed);
         EnhancedInput->BindAction(SwapWeaponAction, ETriggerEvent::Started, this, &AHama::SwapWeapon);
+        EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &AHama::InteractActionPressed);
+        EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Started, this, &AHama::GamepadXActionPressed);
     }
 }
 
@@ -1087,7 +1138,7 @@ void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
 
     FVector PlayerLocation = GetActorLocation();
 
-    // سفرکردنەوەی بەرزی (Z) بۆ ئەوەی تەنها لای ڕاست/چەپ و پێش/دواوە حیساب بکات
+ 
     DamageOrigin.Z = PlayerLocation.Z;
 
     // ئاڕاستەی زۆمبییەکە لە کارەکتەرەکەوە
@@ -1107,4 +1158,41 @@ void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
 
     // ناردنی گۆشە ئامادەکراوەکە بۆ بلوپرێنت
     OnDamageIndicatorUpdate(AngleDegrees);
+}
+
+void AHama::InteractActionPressed()
+{
+    if (FocusedInteractable)
+    {
+        AActor* InteractActor = Cast<AActor>(FocusedInteractable);
+        if (InteractActor)
+        {
+            Server_Interact(InteractActor);
+        }
+    }
+}
+
+void AHama::GamepadXActionPressed()
+{
+    if (FocusedInteractable)
+    {
+        InteractActionPressed();
+    }
+    else
+    {
+        ReloadActionPressed();
+    }
+}
+void AHama::Server_Interact_Implementation(AActor* InteractTarget)
+{
+    if (!InteractTarget) return;
+
+    float Distance = FVector::Dist(GetActorLocation(), InteractTarget->GetActorLocation());
+    if (Distance > 300.f) return;
+
+    IInteractInterface* Interface = Cast<IInteractInterface>(InteractTarget);
+    if (Interface)
+    {
+        Interface->Interact(this);
+    }
 }

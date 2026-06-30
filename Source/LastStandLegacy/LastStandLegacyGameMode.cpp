@@ -57,6 +57,18 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
                 UE_LOG(LogTemp, Warning, TEXT("No abilities left for %s!"), *NewPlayer->GetName());
             }
         }
+        ALastStandLegacyGameState* GS = GetGameState<ALastStandLegacyGameState>();
+        if (GS)
+        {
+            if (GetNumPlayers() <= 1)
+            {
+                GS->bIsSoloMatch = true;
+            }
+            else
+            {
+                GS->bIsSoloMatch = false;
+            }
+        }
     }
 }
 
