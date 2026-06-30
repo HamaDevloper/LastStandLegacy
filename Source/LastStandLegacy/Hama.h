@@ -108,9 +108,6 @@ protected:
 public:
     UPROPERTY(Transient)
     TObjectPtr<ABaseWeapon> ActiveDeathMachine;
-    
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|State")
-    bool bIsDeathMachineActive = false;
 
     void GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration);
    
@@ -339,8 +336,10 @@ public:
     FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
     FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
-    FORCEINLINE bool IsDeathMachineActive() const { return bIsDeathMachineActive; }
+    FORCEINLINE ABaseWeapon* IsDeathMachineActive() const { return ActiveDeathMachine; }
     bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
+    bool GetDoubleTap() { return bHasDoubleTap; }
+    bool HasDeadshot() const { return bHasDeadshot; }
 
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
@@ -374,6 +373,12 @@ protected:
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
     bool bHasFastHands = false;
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
+    bool bHasDoubleTap = false;
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
+    bool bHasDeadshot = false;
 
     FName PendingPerkID;
 

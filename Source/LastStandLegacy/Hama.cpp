@@ -125,9 +125,9 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
     DOREPLIFETIME(AHama, CurrentWeapon);
-    DOREPLIFETIME(AHama, OwnedPerks);
     DOREPLIFETIME(AHama, bHasFastHands);
-    DOREPLIFETIME(AHama, bIsDeathMachineActive);
+    DOREPLIFETIME(AHama, bHasDoubleTap);
+    DOREPLIFETIME_CONDITION(AHama, OwnedPerks, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
 }
@@ -572,7 +572,6 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 
     if (ActiveDeathMachine)
     {
-        bIsDeathMachineActive = true;
         ForceNetUpdate();
 
         CurrentWeapon = ActiveDeathMachine;
@@ -587,7 +586,6 @@ void AHama::RemoveDeathMachine()
 {
     if (!HasAuthority()) return;
 
-    bIsDeathMachineActive = false;
     ForceNetUpdate();
 
     if (ActiveDeathMachine)
@@ -705,17 +703,19 @@ void AHama::AimPressedSitck()
     float BestDotProduct = 0.90f;
 
     AZombie* TargetToSnap = nullptr;
+    FVector FinalSnapLocation;
 
     TArray<AActor*> OverlappedZombies;
     TArray<AActor*> ActorsToIgnore;
     ActorsToIgnore.Add(this);
 
-    // بەکارهێنانی سستەمی ئۆڤەرلاپ لەبری TActorIterator بۆ کارایی بەرز
     UKismetSystemLibrary::SphereOverlapActors(
         this, StartLocation, WeaponRange,
         TArray<TEnumAsByte<EObjectTypeQuery>>(),
         AZombie::StaticClass(), ActorsToIgnore, OverlappedZombies
     );
+
+    FName TargetSocket = bHasDeadshot ? FName("head") : FName("spine_04");
 
     for (AActor* Actor : OverlappedZombies)
     {
@@ -723,9 +723,10 @@ void AHama::AimPressedSitck()
         if (!PotentialTarget || PotentialTarget->IsDead()) continue;
 
         FVector TargetLocation = PotentialTarget->GetActorLocation();
-        if (PotentialTarget->GetMesh() && PotentialTarget->GetMesh()->DoesSocketExist(FName("spine_04")))
+
+        if (PotentialTarget->GetMesh() && PotentialTarget->GetMesh()->DoesSocketExist(TargetSocket))
         {
-            TargetLocation = PotentialTarget->GetMesh()->GetSocketLocation(FName("spine_04"));
+            TargetLocation = PotentialTarget->GetMesh()->GetSocketLocation(TargetSocket);
         }
 
         FVector ToTargetDir = (TargetLocation - StartLocation).GetSafeNormal();
@@ -742,6 +743,7 @@ void AHama::AimPressedSitck()
             {
                 BestDotProduct = CurrentDot;
                 TargetToSnap = PotentialTarget;
+                FinalSnapLocation = TargetLocation;
             }
         }
     }
@@ -751,9 +753,7 @@ void AHama::AimPressedSitck()
         LockedTarget = TargetToSnap;
         bIsStickyAiming = true;
 
-        FVector TargetLocation = TargetToSnap->GetMesh()->GetSocketLocation(FName("spine_04"));
-        FRotator DesiredRot = (TargetLocation - StartLocation).Rotation();
-
+        FRotator DesiredRot = (FinalSnapLocation - StartLocation).Rotation();
         OwnerController->SetControlRotation(DesiredRot);
     }
 }
@@ -761,7 +761,7 @@ void AHama::AimPressedSitck()
 void AHama::ReloadActionPressed()
 {
     if (!CurrentWeapon || CurrentWeapon->ReserveAmmo <= 0) return;
-    if (bIsDeathMachineActive) return;
+    if (IsDeathMachineActive()) return;
     if (HamaComponent && HamaComponent->IsSprinting())
     {
         HamaComponent->StopSprinting();
@@ -791,47 +791,6 @@ void AHama::Look(const FInputActionValue& Value)
 
     FVector2D lookVector = Value.Get<FVector2D>();
     float ApplySensitivity = bIsAimButtonHold ? AimingSensitivity : NormalSensitivity;
-
-    // پشکنین و بەکارهێنانی TWeakObjectPtr بە شێوەیەکی سەلامەت بۆ ڕێگری لە کڕاش
-    if (bIsStickyAiming && LockedTarget.IsValid())
-    {
-        if (lookVector.Length() > 0.7f)
-        {
-            bIsStickyAiming = false;
-            LockedTarget = nullptr;
-        }
-    }
-    else if (bIsStickyAiming && !LockedTarget.IsValid())
-    {
-        bIsStickyAiming = false;
-        LockedTarget = nullptr;
-    }
-
-    // لۆژیکی BO3 Aim Friction Bubble (خاوکردنەوەی نەرمی نیشانە لە دەوری زۆمبی)
-    if (bIsAimButtonHold && CurrentWeapon)
-    {
-        FVector TraceStart;
-        FRotator TraceRotation;
-        OwnerController->GetPlayerViewPoint(TraceStart, TraceRotation);
-
-        float AssistDistance = CurrentWeapon->GetWeaponMaxRange() * 0.8f;
-        FVector TraceEnd = TraceStart + (TraceRotation.Vector() * AssistDistance);
-
-        FHitResult HitResult;
-        FCollisionQueryParams Params;
-        Params.AddIgnoredActor(this);
-
-        // بڵقێک بە نیوەتیرەی ٤٥ یەکە دروست دەکەین بۆ گرتنەوەی دەوروبەری زۆمبییەکە پێش گەیشتنی فیشەک
-        FCollisionShape SphereShape = FCollisionShape::MakeSphere(45.f);
-
-        if (GetWorld()->SweepSingleByChannel(HitResult, TraceStart, TraceEnd, FQuat::Identity, ECC_Pawn, SphereShape, Params))
-        {
-            if (Cast<AZombie>(HitResult.GetActor()))
-            {
-                ApplySensitivity *= StickySlowdownMultiplier;
-            }
-        }
-    }
 
     AddControllerYawInput(lookVector.X * ApplySensitivity);
     AddControllerPitchInput(lookVector.Y * ApplySensitivity);
@@ -997,6 +956,7 @@ void AHama::AddPerkByID(FName PerkID)
     if (PerkID == FName(TEXT("FastHands")))
     {
         bHasFastHands = true;
+        if (HasAuthority()) ForceNetUpdate();
     }
  
     else if (PerkID == FName(TEXT("Juggernaut")))
@@ -1005,7 +965,6 @@ void AHama::AddPerkByID(FName PerkID)
 
         FTimerHandle JuggHealTimerHandle;
 
-        // دروستکردنی لایامبدا (Lambda) بۆ ئەوەی پێویستت بە دروستکردنی فەنکشنی نوێ نەبێت لە هێدەردا
         GetWorldTimerManager().SetTimer(JuggHealTimerHandle, [this]()
             {
                 if (HasAuthority())
@@ -1022,6 +981,17 @@ void AHama::AddPerkByID(FName PerkID)
         {
             HamaComponent->UpgradeMaxStamina(250.f);
         }
+    }
+
+    else if (PerkID == FName(TEXT("DoubleTap")))
+    {
+        bHasDoubleTap = true;
+        if (HasAuthority())  ForceNetUpdate();
+    }
+    else if (PerkID == FName(TEXT("Deadshot")))
+    {
+        bHasDeadshot = true;
+        if (HasAuthority()) ForceNetUpdate();
     }
 }
 
@@ -1054,7 +1024,6 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
     {
         AnimInstance->Montage_Play(DrinkPerkMontage, 1.0f);
 
-        // بەستنەوەی فەنکشنەکە بە کۆتایی هاتنی مۆنتاژەکە
         FOnMontageEnded MontageEndedDelegate;
         MontageEndedDelegate.BindUObject(this, &AHama::OnDrinkPerkAnimationCompleteFromMontage);
         AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, DrinkPerkMontage);
