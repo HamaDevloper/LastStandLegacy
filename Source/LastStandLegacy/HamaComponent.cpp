@@ -38,12 +38,16 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 {
     if (bIsAiming == bNewAiming) return;
     bIsAiming = bNewAiming;
-
+    OwnerCharacter->ForceNetUpdate();
     if (MoveComp) MoveComp->bAiming = bIsAiming;
 }
 
-void UHamaComponent::Revive()
+void UHamaComponent::SetDown(bool NewValue)
 {
+    if (bIsDowned == NewValue) return;
+    bIsDowned = NewValue;
+    OwnerCharacter->ForceNetUpdate();
+    if (MoveComp) MoveComp->bDowned = bIsDowned;
 }
 
 void UHamaComponent::StartSlide()

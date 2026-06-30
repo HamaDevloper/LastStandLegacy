@@ -37,6 +37,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     }
 
     HamaComponent = CreateDefaultSubobject<UHamaComponent>(TEXT("HamaComponent"));
+    HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
     HamaAbilityComponent = CreateDefaultSubobject<UHamaAbilityComponent>(TEXT("HamaAbilityComponent"));
     HamaMovementComponent = Cast<UHamaMovementComponent>(GetCharacterMovement());
 
@@ -53,7 +54,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     FPCamera->SetupAttachment(GetMesh(), FName("head"));
     FPCamera->bUsePawnControlRotation = true;
 
-    bIsStickyAiming = false;
+    //bIsStickyAiming = false;
 }
 
 const float AHama::CrossHairTimer = 0.1f;
@@ -127,9 +128,9 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME(AHama, CurrentWeapon);
     DOREPLIFETIME(AHama, bHasFastHands);
     DOREPLIFETIME(AHama, bHasDoubleTap);
+    DOREPLIFETIME(AHama, bHasMuleKick);
     DOREPLIFETIME_CONDITION(AHama, OwnedPerks, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, CurrentHealth, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, MaxHealth, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, bIsDeathMachineActive, COND_OwnerOnly);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -298,7 +299,6 @@ void AHama::CreateDefaultWeapon()
     {
         if (!PrimaryWeapon) PrimaryWeapon = SpawnedWeapon;
         else if (!SecondaryWeapon) SecondaryWeapon = SpawnedWeapon;
-        else if (!ThirdWeapon) ThirdWeapon = SpawnedWeapon;
         else
         {
             if (CurrentWeapon) CurrentWeapon->Destroy();
@@ -333,7 +333,7 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
         {
             SecondaryWeapon = SpawnedWeapon;
         }
-        else if (!ThirdWeapon)
+        else if (!ThirdWeapon && bHasMuleKick)
         {
             ThirdWeapon = SpawnedWeapon;
         }
@@ -345,7 +345,9 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
                 else if (CurrentWeapon == SecondaryWeapon) SecondaryWeapon = SpawnedWeapon;
                 else if (CurrentWeapon == ThirdWeapon) ThirdWeapon = SpawnedWeapon;
 
-                CurrentWeapon->Destroy();
+                ABaseWeapon* WeaponToDestroy = CurrentWeapon;
+                CurrentWeapon = nullptr;
+                WeaponToDestroy->Destroy();
             }
         }
 
@@ -572,6 +574,7 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 
     if (ActiveDeathMachine)
     {
+        bIsDeathMachineActive = true;
         ForceNetUpdate();
 
         CurrentWeapon = ActiveDeathMachine;
@@ -586,6 +589,7 @@ void AHama::RemoveDeathMachine()
 {
     if (!HasAuthority()) return;
 
+    bIsDeathMachineActive = false;
     ForceNetUpdate();
 
     if (ActiveDeathMachine)
@@ -642,8 +646,6 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
     }
 }
 
-void AHama::OnRep_Health() {}
-
 // -----------------------------------------------------------------------------
 // Input Callback Functions
 // -----------------------------------------------------------------------------
@@ -682,9 +684,6 @@ void AHama::AimActionReleased()
 {
     if (!HamaComponent || !CurrentWeapon) return;
     bIsAimButtonHold = false;
-
-    bIsStickyAiming = false;
-    LockedTarget = nullptr;
 
     HamaComponent->SetAiming(false);
     OnAim(false);
@@ -750,9 +749,6 @@ void AHama::AimPressedSitck()
 
     if (TargetToSnap)
     {
-        LockedTarget = TargetToSnap;
-        bIsStickyAiming = true;
-
         FRotator DesiredRot = (FinalSnapLocation - StartLocation).Rotation();
         OwnerController->SetControlRotation(DesiredRot);
     }
@@ -761,7 +757,7 @@ void AHama::AimPressedSitck()
 void AHama::ReloadActionPressed()
 {
     if (!CurrentWeapon || CurrentWeapon->ReserveAmmo <= 0) return;
-    if (IsDeathMachineActive()) return;
+    if (GetDeathMachine()) return;
     if (HamaComponent && HamaComponent->IsSprinting())
     {
         HamaComponent->StopSprinting();
@@ -926,6 +922,7 @@ void AHama::AbilityActionPressed()
     HamaAbilityComponent->Server_ActivateAbility();
 }
 
+
 void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
 {
     if (!GetMesh()) return;
@@ -961,18 +958,10 @@ void AHama::AddPerkByID(FName PerkID)
  
     else if (PerkID == FName(TEXT("Juggernaut")))
     {
-        MaxHealth = 250.f;
-
-        FTimerHandle JuggHealTimerHandle;
-
-        GetWorldTimerManager().SetTimer(JuggHealTimerHandle, [this]()
-            {
-                if (HasAuthority())
-                {
-                    CurrentHealth = MaxHealth;
-                    ForceNetUpdate();
-                }
-            }, 3.0f, false);
+        if (HealthComponent)
+        {
+            HealthComponent->UpgradeHealth(250.f);
+        }
     }
    
     else if (PerkID == FName(TEXT("StaminaUp")))
@@ -991,6 +980,11 @@ void AHama::AddPerkByID(FName PerkID)
     else if (PerkID == FName(TEXT("Deadshot")))
     {
         bHasDeadshot = true;
+        if (HasAuthority()) ForceNetUpdate();
+    }
+    else if (PerkID == FName(TEXT("MuleKick")))
+    {
+        bHasMuleKick = true;
         if (HasAuthority()) ForceNetUpdate();
     }
 }
@@ -1067,4 +1061,50 @@ void AHama::OnRep_OwnedPerks()
             // MainWidgetRef->AddPerkIconToHUD(LatestPerk);
         }
     }
+}
+
+float AHama::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+    float AppliedDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    
+    if (!HasAuthority()) return 0.f;
+    if (!HealthComponent) return 0.f;
+
+    HealthComponent->GetDamage(AppliedDamage);
+
+    if (DamageCauser)
+    {
+       Client_ShowDamageIndicator(DamageCauser->GetActorLocation());
+    }
+
+    return AppliedDamage;
+}
+
+void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
+{
+    // ئەگەر ئەم کارەکتەرە خۆمان کۆنتڕۆڵمان نەکردبوو (وەک بینینی یاریزانێکی تر)، بوەستە
+    if (!IsLocallyControlled()) return;
+
+    FVector PlayerLocation = GetActorLocation();
+
+    // سفرکردنەوەی بەرزی (Z) بۆ ئەوەی تەنها لای ڕاست/چەپ و پێش/دواوە حیساب بکات
+    DamageOrigin.Z = PlayerLocation.Z;
+
+    // ئاڕاستەی زۆمبییەکە لە کارەکتەرەکەوە
+    FVector DamageDirection = (DamageOrigin - PlayerLocation).GetSafeNormal();
+
+    // وەرگرتنی ئاڕاستەی سەیرکردنی کامێرای یاریزانەکە
+    FVector Forward = GetActorForwardVector();
+    FVector Right = GetActorRightVector();
+
+    // 🚀 بیرکاری AAA بۆ دۆزینەوەی گۆشەی نێوانیان (Dot Product)
+    float ForwardDot = FVector::DotProduct(Forward, DamageDirection);
+    float RightDot = FVector::DotProduct(Right, DamageDirection);
+
+    // وەرگرتنی گۆشەکە بە ڕادیان، پاشان گۆڕینی بۆ پلە (Degrees) لە نێوان -١٨٠ بۆ ١٨٠
+    float AngleRads = FMath::Atan2(RightDot, ForwardDot);
+    float AngleDegrees = FMath::RadiansToDegrees(AngleRads);
+
+    // ناردنی گۆشە ئامادەکراوەکە بۆ بلوپرێنت
+    OnDamageIndicatorUpdate(AngleDegrees);
 }

@@ -153,7 +153,7 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
                 {
                     if (HamaComponent->IsDowned())
                     {
-                        HamaComponent->Revive();
+                        //HamaComponent->Revive();
                         bSuccessfullyRevivedSomeone = true;
                     }
                 }

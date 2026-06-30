@@ -66,6 +66,7 @@ public:
 	
 
 	void SetAiming(bool bNewAiming);
+    void SetDown(bool NewValue);
 
 	UPROPERTY(ReplicatedUsing = OnRep_Sprinting, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
 	bool bIsSprinting = false;
@@ -83,8 +84,6 @@ public:
     bool IsSlide() const { return bIsSlide; }
     bool IsAiming() const { return bIsAiming; }
     bool IsDowned() const { return bIsDowned; }
-
-    void Revive();
 
 private:
 	FTimerHandle StaminaDrainTimerHandle;

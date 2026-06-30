@@ -34,7 +34,7 @@ void UHamaMainWidget::UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo)
 {
     if (!Ammo) return;
 
-    if (CachedHamaChar && CachedHamaChar->IsDeathMachineActive())
+    if (CachedHamaChar && CachedHamaChar->GetDeathMachine())
     {
         Ammo->SetText(FText::FromString(TEXT("\u221E / \u221E")));
         return;

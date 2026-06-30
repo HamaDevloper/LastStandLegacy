@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "HamaComponent.h"
+#include "HealthComponent.h"
 #include "BaseWeapon.h"
 #include "HamaAbilityComponent.h"
 #include "Hama.generated.h"
@@ -30,7 +31,6 @@ struct FRoleVisualData
 // Forward Declarations
 // -----------------------------------------------------------------------------
 class UHamaMovementComponent;
-class UHamaAbilityComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputMappingContext;
@@ -58,6 +58,9 @@ public:
     // -----------------------------------------------------------------------------
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<UHamaComponent> HamaComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UHealthComponent> HealthComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<UHamaMovementComponent> HamaMovementComponent;
@@ -254,6 +257,7 @@ protected:
     virtual void Landed(const FHitResult& Hit) override;
     virtual void PossessedBy(AController* NewController) override;
     virtual void OnRep_Controller() override;
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, class AActor* DamageCauser) override;
 
     UFUNCTION()
     void OnRep_CurrentWeapon();
@@ -267,19 +271,6 @@ protected:
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
     void Switchcamera(bool bIsRightShoulderViewChanged);
-
-    // -----------------------------------------------------------------------------
-    // Health
-    // -----------------------------------------------------------------------------
-public:
-    UPROPERTY(ReplicatedUsing = OnRep_Health, EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
-    float CurrentHealth;
-
-    UPROPERTY(ReplicatedUsing = OnRep_Health, EditAnywhere, BlueprintReadwrite, Category = "Hama|Health")
-    float MaxHealth = 100.f;
-
-    UFUNCTION()
-    void OnRep_Health();
 
     // -----------------------------------------------------------------------------
     // Input Callbacks & Network RPCs
@@ -316,10 +307,7 @@ protected:
     bool bIsHoldedTrigger = false;
     bool bIsAimButtonHold = false;
 
-    UPROPERTY()
-    TWeakObjectPtr<AZombie> LockedTarget;
-
-    bool bIsStickyAiming = false;
+    //bool bIsStickyAiming = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Targeting")
     float StickySlowdownMultiplier = 0.5f;
@@ -336,11 +324,11 @@ public:
     FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
     FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
-    FORCEINLINE ABaseWeapon* IsDeathMachineActive() const { return ActiveDeathMachine; }
-    bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
+    FORCEINLINE bool GetDeathMachine() const { return bIsDeathMachineActive; }
+    
     bool GetDoubleTap() { return bHasDoubleTap; }
     bool HasDeadshot() const { return bHasDeadshot; }
-
+    bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
     float NormalSensitivity = 1.f;
@@ -380,6 +368,12 @@ protected:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
     bool bHasDeadshot = false;
 
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
+    bool bHasMuleKick = false;
+
+    UPROPERTY(Replicated)
+    bool bIsDeathMachineActive = false;
+
     FName PendingPerkID;
 
     UPROPERTY()
@@ -397,4 +391,13 @@ public:
 
     bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
     bool HasFastHands() const { return bHasFastHands; }
+
+
+
+public:
+    UFUNCTION(Client, Unreliable)
+    void Client_ShowDamageIndicator(FVector DamageOrigin);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+    void OnDamageIndicatorUpdate(float Angle);
 };
