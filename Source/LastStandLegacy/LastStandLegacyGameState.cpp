@@ -27,13 +27,13 @@ void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    // +++ ناساندنی ڕاوند بە تۆڕەکە +++
     DOREPLIFETIME(ALastStandLegacyGameState, CurrentRound);
-
     DOREPLIFETIME(ALastStandLegacyGameState, bIsGlobalBulletStormActive);
     DOREPLIFETIME(ALastStandLegacyGameState, bIsDoublePointsActive);
     DOREPLIFETIME(ALastStandLegacyGameState, bHasInstaKill);
     DOREPLIFETIME(ALastStandLegacyGameState, bIsAdrenalineActive);
+    DOREPLIFETIME(ALastStandLegacyGameState, bIsPowerOn);
+    DOREPLIFETIME_CONDITION(ALastStandLegacyGameState, bIsSoloMatch, COND_InitialOnly);
 }
 
 // ── فەنکشنە نوێیەکانی سیستەمی ڕاوەند ──

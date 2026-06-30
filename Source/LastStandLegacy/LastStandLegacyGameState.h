@@ -44,6 +44,13 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_InstaKill, BlueprintReadOnly, Category = "Abilities")
     bool bHasInstaKill = false;
 
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "GameState|Power")
+    bool bIsPowerOn = false;
+
+    // ئەمە لە GameModeـەوە دەیکەیت بە true ئەگەر تەنها ١ یاریزان لە سێرڤەرەکە بوو
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "GameState|Match")
+    bool bIsSoloMatch = false;
+
     void StartTeamAdrenaline(float Duration);
     bool IsTeamAdrenalineActive() const { return bIsAdrenalineActive; }
 

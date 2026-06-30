@@ -3,6 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Hama.h"
 #include "HamaPlayerState.h"
+#include "LastStandLegacyGameState.h"
 
 ABasePerk::ABasePerk()
 {
@@ -35,12 +36,42 @@ void ABasePerk::Interact(AHama* HamaChar)
 {
     if (!HamaChar || !HasAuthority()) return;
 
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    if (!GS) return;
+
+    bool bCanBuy = false;
+
+    if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
+    {
+        if (SoloUsesLeftForQuickRevive <= 0) return;
+
+        bCanBuy = true;
+    }
+    else
+    {
+        if (!GS->bIsPowerOn) return;
+
+        bCanBuy = true;
+    }
+
+    if (!bCanBuy) return;
     if (HamaChar->HasPerkID(PerkID)) return;
 
+    // ٣. بڕینی پارە و پێدانی پێرکەکە
     AHamaPlayerState* PS = HamaChar->GetPlayerState<AHamaPlayerState>();
     if (PS && PS->GetPoints() >= PerkCost)
     {
         PS->RemovePoints(PerkCost);
         HamaChar->Multicast_PlayDrinkPerkAnimation(this);
+
+        if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
+        {
+            SoloUsesLeftForQuickRevive--;
+            if (SoloUsesLeftForQuickRevive <= 0)
+            {
+                SetActorHiddenInGame(true);
+                SetActorEnableCollision(false);
+            }
+        }
     }
 }

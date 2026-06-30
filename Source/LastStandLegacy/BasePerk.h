@@ -24,18 +24,21 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Perk|Components")
     class UBoxComponent* TriggerBox;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Perk | Components")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Perk|Components")
     class UStaticMeshComponent* PerkMachineMesh;
 
     // --- داتای پێرک (Perk Configuration) ---
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk | Settings")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk|Settings")
     FName PerkID;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk | Settings")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk|Settings")
     int32 PerkCost;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk | Settings")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk|Settings")
     UStaticMesh* BottleMesh;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Perk|Settings")
+    int32 SoloUsesLeftForQuickRevive = 3;
 
 public:
     virtual void Interact(AHama* HamaChar) override;
