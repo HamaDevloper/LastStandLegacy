@@ -16,5 +16,5 @@ protected:
     virtual void ActivatePowerUp(AHama* Player) override;
 
     UPROPERTY(EditAnywhere, Category = "PowerUp")
-    float AddPoints = 100.f;
+    float AddPoints = 1000.f;
 };

@@ -322,7 +322,7 @@ protected:
 
     FName SnapSocketName = FName("spine_03");
 
-    float SnapInterpSpeed = 40.f;
+    float SnapInterpSpeed = 45.f;
     float SnapStopThreshold = 1.0f;
 
     //bool bIsStickyAiming = false;

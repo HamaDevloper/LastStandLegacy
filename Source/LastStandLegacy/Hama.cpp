@@ -1120,6 +1120,7 @@ void AHama::AddPerkByID(FName PerkID)
     if (PerkID == FName(TEXT("FastHands")))
     {
         bHasFastHands = true;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Fast Hands Perk Acquired!"));
         if (HasAuthority()) ForceNetUpdate();
     }
  
@@ -1128,6 +1129,7 @@ void AHama::AddPerkByID(FName PerkID)
         if (HealthComponent)
         {
             HealthComponent->UpgradeHealth(250.f);
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Juggernaut Perk Acquired! Health Increased!"));
         }
     }
    
@@ -1136,22 +1138,26 @@ void AHama::AddPerkByID(FName PerkID)
         if (HamaComponent)
         {
             HamaComponent->UpgradeMaxStamina(250.f);
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Stamina Up Perk Acquired! Stamina Increased!"));
         }
     }
 
     else if (PerkID == FName(TEXT("DoubleTap")))
     {
         bHasDoubleTap = true;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Double Tap Perk Acquired!"));
         if (HasAuthority())  ForceNetUpdate();
     }
     else if (PerkID == FName(TEXT("Deadshot")))
     {
         bHasDeadshot = true;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Deadshot Perk Acquired!"));
         if (HasAuthority()) ForceNetUpdate();
     }
     else if (PerkID == FName(TEXT("MuleKick")))
     {
         bHasMuleKick = true;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Mule Kick Perk Acquired!"));
         if (HasAuthority()) ForceNetUpdate();
     }
 }
@@ -1292,6 +1298,7 @@ void AHama::GamepadXActionPressed()
 {
     if (FocusedInteractable)
     {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Gamepad X Pressed: Interacting with Focused Interactable"));
         InteractActionPressed();
     }
     else
