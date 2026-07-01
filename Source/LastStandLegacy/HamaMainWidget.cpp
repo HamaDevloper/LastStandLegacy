@@ -1,11 +1,12 @@
 ﻿#include "HamaMainWidget.h"
 #include "Hama.h"
+#include "Components/TextBlock.h" // 🚀 هێدەرەکەمان هێنا بۆ ئێرە
 
 void UHamaMainWidget::UpdatePointsText(int32 NewPoints)
 {
     if (Points)
     {
-       Points->SetText(FText::AsNumber(NewPoints));
+        Points->SetText(FText::AsNumber(NewPoints));
     }
 }
 
@@ -36,10 +37,13 @@ void UHamaMainWidget::UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo)
 
     if (CachedHamaChar && CachedHamaChar->GetDeathMachine())
     {
-        Ammo->SetText(FText::FromString(TEXT("\u221E / \u221E")));
+        // 🚀 بەکارهێنانی static بۆ ئەوەی CPU پشوو بدات لە کاتی تەقەکردنی خێرا
+        static const FText InfinityText = FText::FromString(TEXT("\u221E / \u221E"));
+        Ammo->SetText(InfinityText);
         return;
     }
 
-    FString AmmoString = FString::Printf(TEXT("%d / %d"), CurrentAmmo, ReserveAmmo);
-    Ammo->SetText(FText::FromString(AmmoString));
+    // 🚀 ڕێگای ڕاستەوخۆ (Direct Formatting) بەبێ بەکارهێنانی FString
+    FText FormattedAmmo = FText::Format(FText::FromString(TEXT("{0} / {1}")), CurrentAmmo, ReserveAmmo);
+    Ammo->SetText(FormattedAmmo);
 }

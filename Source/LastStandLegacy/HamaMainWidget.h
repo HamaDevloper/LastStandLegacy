@@ -2,8 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "Components/TextBlock.h"
-#include "HamaMainWidget.generated.h"
+#include "HamaMainWidget.generated.h" // تێبینی بکە TextBlock لێرە سڕاوەتەوە
 
 class AHama;
 
@@ -13,7 +12,6 @@ class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
-    // ئەم دوو فەنکشنە لە دەرەوە (لەناو کارەکتەر) بانگ دەکرێن
     void UpdatePointsText(int32 NewPoints);
     void UpdateKillsText(int32 NewKills);
     void UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo);
@@ -26,13 +24,18 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "UI")
     void HideInteractMessage();
 
+    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+    void ShowAmmoWarning(const FString& WarningMessage);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+    void HideAmmoWarning();
+
 protected:
-    // مێتا بەیند: دەبێت لەناو بلوپرینتی شاشەکەتدا تێکستێک هەبێت ڕێک بە ناوی TXT_Points
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* Points;
+    class UTextBlock* Points;
 
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* Kills;
+    class UTextBlock* Kills;
 
     UPROPERTY(meta = (BindWidget))
     class UTextBlock* Ammo;

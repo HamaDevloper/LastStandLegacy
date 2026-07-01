@@ -257,4 +257,5 @@ public:
     bool IsReloading() const{ return bIsReloading; }
     int32 GetCurrentAmmo() const { return CurrentAmmo; }
     int32 GetReserveAmmo() const { return ReserveAmmo; }
+    int32 GetMaxClipAmmo() const { return MaxAmmoInClip; }
 };

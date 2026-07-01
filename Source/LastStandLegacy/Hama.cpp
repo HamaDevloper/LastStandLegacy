@@ -438,7 +438,7 @@ void AHama::OnRep_CurrentWeapon()
     if (IsLocallyControlled() && MainWidgetRef && CurrentWeapon)
     {
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
-        MainWidgetRef->UpdateAmmoText(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
+        HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
     }
 
     OnWeaponChanged.Broadcast(CurrentWeapon);
@@ -448,7 +448,31 @@ void AHama::HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo)
 {
     if (IsLocallyControlled() && MainWidgetRef)
     {
+        // ئەپدەیتکردنی ژمارەکانی فیشەک لە UI
         MainWidgetRef->UpdateAmmoText(CurrentAmmo, ReserveAmmo);
+
+        if (!CurrentWeapon) return;
+
+        // 🚀 وەرگرتنی قەبارەی سەرەکی مەخزەنی چەکەکە (دەبێت ئەو گۆڕاوە بەکاربهێنیت کە لە BaseWeapon هەتە)
+        int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo(); // ناوی گۆڕاوەکە بگۆڕە بەپێی کۆدی خۆت
+
+        // حیسابکردنی سنگی مەترسییەکە لەسەر بنەمای ٢٥٪ی مەخزەنەکە
+        int32 LowAmmoThreshold = FMath::RoundToInt(MaxClipSize * 0.25f);
+
+        // لۆژیکی بڕیاردان
+        if (CurrentAmmo == 0 && ReserveAmmo <= 0)
+        {
+            MainWidgetRef->ShowAmmoWarning(TEXT("NoAmmo!"));
+        }
+       
+        else if (CurrentAmmo <= LowAmmoThreshold && CurrentAmmo > 0)
+        {
+            MainWidgetRef->ShowAmmoWarning(TEXT("LOW AMMO"));
+        }
+        else
+        {
+            MainWidgetRef->HideAmmoWarning();
+        }
     }
 }
 
