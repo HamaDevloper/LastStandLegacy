@@ -7,7 +7,7 @@
 #include "InteractInterface.generated.h"
 
 class AHama;
-// This class does not need to be modified.
+
 UINTERFACE(MinimalAPI)
 class UInteractInterface : public UInterface
 {
@@ -23,4 +23,5 @@ class LASTSTANDLEGACY_API IInteractInterface
 
 public:
    virtual void Interact(AHama* Hama) = 0;
+   virtual FString GetInteractMessage() = 0;
 };

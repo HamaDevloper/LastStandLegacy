@@ -20,6 +20,12 @@ public:
     void UpdateRoundText(int32 NewRound);
     void InitializeWidget(class AHama* InHamaLat);
 
+    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+    void ShowInteractMessage(const FString& Message);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+    void HideInteractMessage();
+
 protected:
     // مێتا بەیند: دەبێت لەناو بلوپرینتی شاشەکەتدا تێکستێک هەبێت ڕێک بە ناوی TXT_Points
     UPROPERTY(meta = (BindWidget))

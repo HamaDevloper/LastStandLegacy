@@ -164,9 +164,6 @@ void AHama::OnRep_Controller()
 void AHama::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-
-    // لەبەر ئەوەی پۆست-پڕۆسێس و خاوکردنەوەمان بردووەتە ناو لۆژیکی Look، ئۆتۆماتیکی دەیبڕینەوە بۆ نزمکردنی لۆد
-    //SetActorTickEnabled(false);
 }
 
 void AHama::CheckForInteractables()
@@ -197,6 +194,10 @@ void AHama::CheckForInteractables()
             if (FocusedInteractable != InteractableActor)
             {
                 FocusedInteractable = InteractableActor;
+                if (MainWidgetRef)
+                {
+                    MainWidgetRef->ShowInteractMessage(FocusedInteractable->GetInteractMessage());
+                }
             }
         }
         else
@@ -204,6 +205,10 @@ void AHama::CheckForInteractables()
             if (FocusedInteractable)
             {
                 FocusedInteractable = nullptr;
+                if (MainWidgetRef)
+                {
+                    MainWidgetRef->HideInteractMessage();
+                }
             }
         }
     }
@@ -212,6 +217,10 @@ void AHama::CheckForInteractables()
         if (FocusedInteractable)
         {
             FocusedInteractable = nullptr;
+            if (MainWidgetRef)
+            {
+                MainWidgetRef->HideInteractMessage();
+            }
         }
     }
 }

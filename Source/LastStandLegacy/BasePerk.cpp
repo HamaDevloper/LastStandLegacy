@@ -63,7 +63,7 @@ void ABasePerk::Interact(AHama* HamaChar)
     {
         PS->RemovePoints(PerkCost);
         HamaChar->Multicast_PlayDrinkPerkAnimation(this);
-
+   
         if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
         {
             SoloUsesLeftForQuickRevive--;
@@ -74,4 +74,29 @@ void ABasePerk::Interact(AHama* HamaChar)
             }
         }
     }
+}
+
+FString ABasePerk::GetInteractMessage()
+{
+    // ئەگەر یارییەکە مۆڵتیپڵەیەر بێت و کارەبا نەهاتبێتەوە، نامەیەکی جیاواز دەدەین!
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+
+    if (GS)
+    {
+        // مەرجی سۆلۆ و Quick Revive
+        if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
+        {
+            if (SoloUsesLeftForQuickRevive <= 0) return FString(""); // ئەگەر تەواو ببوو، هیچ نیشان مەدە
+            return FString::Printf(TEXT("Press F to buy %s [Cost: %d]"), *PerkID.ToString(), PerkCost);
+        }
+
+        // مەرجی کارەبا
+        if (!GS->bIsPowerOn)
+        {
+            return FString(TEXT("You must turn on the power first!"));
+        }
+    }
+
+    // ئەگەر هەموو شتێک ئاسایی بوو، نامەی کڕینەکەی پێ بدە
+    return FString::Printf(TEXT("Press F to buy %s [Cost: %d]"), *PerkID.ToString(), PerkCost);
 }
