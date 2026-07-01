@@ -1,6 +1,6 @@
 ﻿#include "HamaMainWidget.h"
 #include "Hama.h"
-#include "Components/TextBlock.h" // 🚀 هێدەرەکەمان هێنا بۆ ئێرە
+#include "Components/TextBlock.h" 
 
 void UHamaMainWidget::UpdatePointsText(int32 NewPoints)
 {
@@ -37,13 +37,50 @@ void UHamaMainWidget::UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo)
 
     if (CachedHamaChar && CachedHamaChar->GetDeathMachine())
     {
-        // 🚀 بەکارهێنانی static بۆ ئەوەی CPU پشوو بدات لە کاتی تەقەکردنی خێرا
         static const FText InfinityText = FText::FromString(TEXT("\u221E / \u221E"));
         Ammo->SetText(InfinityText);
         return;
     }
 
-    // 🚀 ڕێگای ڕاستەوخۆ (Direct Formatting) بەبێ بەکارهێنانی FString
     FText FormattedAmmo = FText::Format(FText::FromString(TEXT("{0} / {1}")), CurrentAmmo, ReserveAmmo);
     Ammo->SetText(FormattedAmmo);
+}
+
+// -------------------------------------------------------------------------
+// 🚀 لۆژیکی نوێی تێکستەکان بە سەد لە سەد C++
+// -------------------------------------------------------------------------
+
+void UHamaMainWidget::ShowInteractMessage(const FString& Message)
+{
+    if (InteractText)
+    {
+        InteractText->SetText(FText::FromString(Message));
+        InteractText->SetVisibility(ESlateVisibility::HitTestInvisible);
+    }
+}
+
+void UHamaMainWidget::HideInteractMessage()
+{
+    if (InteractText)
+    {
+        InteractText->SetVisibility(ESlateVisibility::Hidden);
+    }
+}
+
+void UHamaMainWidget::ShowAmmoWarning(const FString& WarningMessage)
+{
+    if (AmmoWarningText)
+    {
+        AmmoWarningText->SetText(FText::FromString(WarningMessage));
+        AmmoWarningText->SetColorAndOpacity(FSlateColor(FLinearColor::Red));
+        AmmoWarningText->SetVisibility(ESlateVisibility::HitTestInvisible);
+    }
+}
+
+void UHamaMainWidget::HideAmmoWarning()
+{
+    if (AmmoWarningText)
+    {
+        AmmoWarningText->SetVisibility(ESlateVisibility::Hidden);
+    }
 }

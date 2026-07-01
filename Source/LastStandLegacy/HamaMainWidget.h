@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "HamaMainWidget.generated.h" // تێبینی بکە TextBlock لێرە سڕاوەتەوە
+#include "HamaMainWidget.generated.h" 
 
 class AHama;
 
@@ -18,16 +18,11 @@ public:
     void UpdateRoundText(int32 NewRound);
     void InitializeWidget(class AHama* InHamaLat);
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+    // 🚀 لابردنی BlueprintImplementableEvent و گۆڕینیان بۆ فەنکشنی ئاسایی
     void ShowInteractMessage(const FString& Message);
-
-    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
     void HideInteractMessage();
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
     void ShowAmmoWarning(const FString& WarningMessage);
-
-    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
     void HideAmmoWarning();
 
 protected:
@@ -42,6 +37,12 @@ protected:
 
     UPROPERTY(meta = (BindWidget))
     class UTextBlock* Round;
+
+    UPROPERTY(meta = (BindWidget))
+    class UTextBlock* InteractText;
+
+    UPROPERTY(meta = (BindWidget))
+    class UTextBlock* AmmoWarningText;
 
     UPROPERTY()
     TObjectPtr<AHama> CachedHamaChar;

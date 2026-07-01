@@ -314,6 +314,16 @@ protected:
 
     bool bIsHoldedTrigger = false;
     bool bIsAimButtonHold = false;
+    bool bIsAimSnapping = false;
+    FRotator TargetSnapRotation;
+
+    UPROPERTY()
+    TObjectPtr<AZombie> SnapTarget;
+
+    FName SnapSocketName = FName("spine_03");
+
+    float SnapInterpSpeed = 40.f;
+    float SnapStopThreshold = 1.0f;
 
     //bool bIsStickyAiming = false;
 

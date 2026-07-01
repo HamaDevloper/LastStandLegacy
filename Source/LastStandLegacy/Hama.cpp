@@ -25,11 +25,11 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer.SetDefaultSubobjectClass<UHamaMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.bStartWithTickEnabled = true;
+    PrimaryActorTick.bStartWithTickEnabled = false;
 
     bReplicates = true;
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(66.f);
+    SetNetUpdateFrequency(70.f);
     SetMinNetUpdateFrequency(33.f);
 
     if (GetCharacterMovement())
@@ -54,8 +54,6 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     FPCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FPCamera"));
     FPCamera->SetupAttachment(GetMesh(), FName("head"));
     FPCamera->bUsePawnControlRotation = true;
-
-    //bIsStickyAiming = false;
 }
 
 const float AHama::CrossHairTimer = 0.1f;
@@ -72,7 +70,6 @@ void AHama::BeginPlay()
     if (IsLocallyControlled() && PlayerCrossHairClass)
     {
         CrossHairRef = CreateWidget<UUserWidget>(GetWorld(), PlayerCrossHairClass);
-
         if (CrossHairRef)
         {
             CrossHairRef->AddToViewport();
@@ -121,6 +118,11 @@ void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
         CrossHairRef->RemoveFromParent();
         CrossHairRef = nullptr;
     }
+    if (MainWidgetRef)
+    {
+        MainWidgetRef->RemoveFromParent();
+        MainWidgetRef = nullptr;
+    }  
 }
 
 void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -164,6 +166,56 @@ void AHama::OnRep_Controller()
 void AHama::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+
+    if (!OwnerController || !SnapTarget)
+    {
+        SetActorTickEnabled(false);
+        return;
+    }
+
+    if (SnapTarget->IsDead())
+    {
+        SnapTarget = nullptr;
+        SetActorTickEnabled(false);
+        return;
+    }
+
+    USkeletalMeshComponent* TargetMesh = SnapTarget->GetMesh();
+    if (!TargetMesh)
+    {
+        SnapTarget = nullptr;
+        SetActorTickEnabled(false);
+        return;
+    }
+
+    FVector CurrentCamLoc;
+    FRotator CurrentCamRot;
+    OwnerController->GetPlayerViewPoint(CurrentCamLoc, CurrentCamRot);
+
+    FVector SnapLocation;
+    if (TargetMesh->DoesSocketExist(SnapSocketName))
+    {
+        FVector SocketLoc = TargetMesh->GetSocketLocation(SnapSocketName);
+        FVector ActorLoc = SnapTarget->GetActorLocation();
+
+        SnapLocation = FVector(ActorLoc.X, ActorLoc.Y, SocketLoc.Z);
+    }
+    else
+    {
+        SnapLocation = SnapTarget->GetActorLocation();
+    }
+
+    FRotator TargetRot = (SnapLocation - CurrentCamLoc).Rotation();
+    FRotator CurrentRot = OwnerController->GetControlRotation();
+    FRotator NewRot = FMath::RInterpConstantTo(CurrentRot, TargetRot, DeltaTime, SnapInterpSpeed);
+
+    OwnerController->SetControlRotation(NewRot);
+
+    if (CurrentRot.Equals(TargetRot, 0.1f))
+    {
+        SnapTarget = nullptr;
+        SetActorTickEnabled(false);
+    }
 }
 
 void AHama::CheckForInteractables()
@@ -365,6 +417,7 @@ void AHama::CreateDefaultWeapon()
 
         CurrentWeapon = SpawnedWeapon;
         CurrentWeapon->EquipWeapon(this);
+        OnRep_CurrentWeapon();
         AttachWeaponToMesh(CurrentWeapon);
         OnWeaponChanged.Broadcast(CurrentWeapon);
     }
@@ -418,6 +471,7 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
         CurrentWeapon = SpawnedWeapon;
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
+        OnRep_CurrentWeapon();
         OnWeaponChanged.Broadcast(CurrentWeapon);
     }
 }
@@ -451,7 +505,7 @@ void AHama::HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo)
         // ئەپدەیتکردنی ژمارەکانی فیشەک لە UI
         MainWidgetRef->UpdateAmmoText(CurrentAmmo, ReserveAmmo);
 
-        if (!CurrentWeapon) return;
+        if (!CurrentWeapon || bIsDeathMachineActive) return;
 
         // 🚀 وەرگرتنی قەبارەی سەرەکی مەخزەنی چەکەکە (دەبێت ئەو گۆڕاوە بەکاربهێنیت کە لە BaseWeapon هەتە)
         int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo(); // ناوی گۆڕاوەکە بگۆڕە بەپێی کۆدی خۆت
@@ -624,6 +678,7 @@ void AHama::CompleteWeaponSwap()
 
     CurrentWeapon->EquipWeapon(this);
     AttachWeaponToMesh(CurrentWeapon);
+    OnRep_CurrentWeapon();
 
     OnWeaponChanged.Broadcast(CurrentWeapon);
     PendingWeaponForSwap = nullptr;
@@ -662,6 +717,7 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
         CurrentWeapon = ActiveDeathMachine;
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
+        OnRep_CurrentWeapon();
         OnWeaponChanged.Broadcast(CurrentWeapon);
     }
     GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
@@ -687,6 +743,7 @@ void AHama::RemoveDeathMachine()
         CurrentWeapon->SetActorEnableCollision(true);
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
+        OnRep_CurrentWeapon();
         OnWeaponChanged.Broadcast(CurrentWeapon);
 
         PreDeathMachineWeapon = nullptr;
@@ -760,8 +817,29 @@ void AHama::AimActionPressed()
     HamaComponent->SetAiming(true);
     OnAim(true);
 
-    // یەکەم ڕاکێشان (Snap) لە کاتی داگرتنی دوگمەکە بەپێی مەودای ڕاستەقینە
-    AimPressedSitck();
+    bool bIsGamepadAiming = false;
+
+    if (OwnerController)
+    {
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(OwnerController->GetLocalPlayer()))
+        {
+            TArray<FKey> BoundKeys = Subsystem->QueryKeysMappedToAction(AimAction);
+
+            for (const FKey& Key : BoundKeys)
+            {
+                if (Key.IsGamepadKey() && OwnerController->IsInputKeyDown(Key))
+                {
+                    bIsGamepadAiming = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (bIsGamepadAiming)
+    {
+        AimPressedSitck();
+    }
 }
 
 void AHama::AimActionReleased()
@@ -771,22 +849,25 @@ void AHama::AimActionReleased()
 
     HamaComponent->SetAiming(false);
     OnAim(false);
+
+    SnapTarget = nullptr;
+    SetActorTickEnabled(false);
 }
 
 void AHama::AimPressedSitck()
 {
     if (!OwnerController || !CurrentWeapon) return;
 
-    FVector StartLocation;
+    FVector  StartLocation;
     FRotator StartRotation;
     OwnerController->GetPlayerViewPoint(StartLocation, StartRotation);
     FVector CameraForward = StartRotation.Vector();
 
     float WeaponRange = CurrentWeapon->GetWeaponMaxRange();
-    float BestDotProduct = 0.90f;
+    float BestDotProduct = 0.99f;
 
     AZombie* TargetToSnap = nullptr;
-    FVector FinalSnapLocation;
+    FVector  FinalSnapLocation;
 
     TArray<AActor*> OverlappedZombies;
     TArray<AActor*> ActorsToIgnore;
@@ -795,8 +876,7 @@ void AHama::AimPressedSitck()
     UKismetSystemLibrary::SphereOverlapActors(
         this, StartLocation, WeaponRange,
         TArray<TEnumAsByte<EObjectTypeQuery>>(),
-        AZombie::StaticClass(), ActorsToIgnore, OverlappedZombies
-    );
+        AZombie::StaticClass(), ActorsToIgnore, OverlappedZombies);
 
     FName TargetSocket = bHasDeadshot ? FName("head") : FName("spine_04");
 
@@ -805,24 +885,25 @@ void AHama::AimPressedSitck()
         AZombie* PotentialTarget = Cast<AZombie>(Actor);
         if (!PotentialTarget || PotentialTarget->IsDead()) continue;
 
-        FVector TargetLocation = PotentialTarget->GetActorLocation();
+        USkeletalMeshComponent* PotMesh = PotentialTarget->GetMesh();
+        if (!PotMesh) continue;
 
-        if (PotentialTarget->GetMesh() && PotentialTarget->GetMesh()->DoesSocketExist(TargetSocket))
-        {
-            TargetLocation = PotentialTarget->GetMesh()->GetSocketLocation(TargetSocket);
-        }
+        FVector TargetLocation = PotMesh->DoesSocketExist(TargetSocket)
+            ? PotMesh->GetSocketLocation(TargetSocket)
+            : PotentialTarget->GetActorLocation();
 
         FVector ToTargetDir = (TargetLocation - StartLocation).GetSafeNormal();
-        float CurrentDot = FVector::DotProduct(CameraForward, ToTargetDir);
+        float   CurrentDot = FVector::DotProduct(CameraForward, ToTargetDir);
 
         if (CurrentDot > BestDotProduct)
         {
-            FHitResult LineHit;
+            FHitResult           LineHit;
             FCollisionQueryParams QueryParams;
             QueryParams.AddIgnoredActor(this);
             QueryParams.AddIgnoredActor(PotentialTarget);
 
-            if (!GetWorld()->LineTraceSingleByChannel(LineHit, StartLocation, TargetLocation, ECC_Visibility, QueryParams))
+            if (!GetWorld()->LineTraceSingleByChannel(
+                LineHit, StartLocation, TargetLocation, ECC_Visibility, QueryParams))
             {
                 BestDotProduct = CurrentDot;
                 TargetToSnap = PotentialTarget;
@@ -833,10 +914,12 @@ void AHama::AimPressedSitck()
 
     if (TargetToSnap)
     {
-        FRotator DesiredRot = (FinalSnapLocation - StartLocation).Rotation();
-        OwnerController->SetControlRotation(DesiredRot);
+        SnapTarget = TargetToSnap;
+        SnapSocketName = TargetSocket;
+        SetActorTickEnabled(true);
     }
 }
+
 
 void AHama::ReloadActionPressed()
 {
