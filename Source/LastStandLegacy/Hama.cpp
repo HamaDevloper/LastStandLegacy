@@ -771,9 +771,14 @@ bool AHama::HasWeaponClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const
 {
     if (!WeaponClassToCheck) return false;
 
-    if (PrimaryWeapon && PrimaryWeapon->GetClass() == WeaponClassToCheck) return true;
-    if (SecondaryWeapon && SecondaryWeapon->GetClass() == WeaponClassToCheck) return true;
-    if (ThirdWeapon && ThirdWeapon->GetClass() == WeaponClassToCheck) return true;
+    // وەرگرتنی ناوی چەکەکەی دیوارەکە بە شێوەیەکی کاتی بۆ بەراوردکردن
+    ABaseWeapon* TempWeapon = WeaponClassToCheck.GetDefaultObject();
+    if (!TempWeapon) return false;
+    FName RowNameToFind = TempWeapon->GetWeaponRowName();
+
+    if (PrimaryWeapon && PrimaryWeapon->GetWeaponRowName() == RowNameToFind) return true;
+    if (SecondaryWeapon && SecondaryWeapon->GetWeaponRowName() == RowNameToFind) return true;
+    if (ThirdWeapon && ThirdWeapon->GetWeaponRowName() == RowNameToFind) return true;
 
     return false;
 }
@@ -782,15 +787,19 @@ void AHama::RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefil
 {
     if (!WeaponClassToRefill || !HasAuthority()) return;
 
-    if (PrimaryWeapon && PrimaryWeapon->GetClass() == WeaponClassToRefill)
+    ABaseWeapon* TempWeapon = WeaponClassToRefill.GetDefaultObject();
+    if (!TempWeapon) return;
+    FName RowToRefill = TempWeapon->GetWeaponRowName();
+
+    if (PrimaryWeapon && PrimaryWeapon->GetWeaponRowName() == RowToRefill)
     {
         PrimaryWeapon->RefillAmmo();
     }
-    else if (SecondaryWeapon && SecondaryWeapon->GetClass() == WeaponClassToRefill)
+    else if (SecondaryWeapon && SecondaryWeapon->GetWeaponRowName() == RowToRefill)
     {
         SecondaryWeapon->RefillAmmo();
     }
-    else if (ThirdWeapon && ThirdWeapon->GetClass() == WeaponClassToRefill)
+    else if (ThirdWeapon && ThirdWeapon->GetWeaponRowName() == RowToRefill)
     {
         ThirdWeapon->RefillAmmo();
     }

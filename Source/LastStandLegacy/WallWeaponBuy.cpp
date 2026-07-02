@@ -30,14 +30,33 @@ void AWallWeaponBuy::Interact(AHama* HamaChar)
 
     if (bHasWeapon)
     {
-        if (PS->GetPoints() >= AmmoCost)
+        // دۆزینەوەی ئەو چەکەی کە هەیەتی بۆ ئەوەی بزانین فیشەکی پێویستە
+        ABaseWeapon* TempWeapon = WeaponClass.GetDefaultObject();
+        if (!TempWeapon) return;
+        FName RowNameToFind = TempWeapon->GetWeaponRowName();
+
+        ABaseWeapon* TargetWeaponToRefill = nullptr;
+        if (HamaChar->PrimaryWeapon && HamaChar->PrimaryWeapon->GetWeaponRowName() == RowNameToFind) TargetWeaponToRefill = HamaChar->PrimaryWeapon;
+        else if (HamaChar->SecondaryWeapon && HamaChar->SecondaryWeapon->GetWeaponRowName() == RowNameToFind) TargetWeaponToRefill = HamaChar->SecondaryWeapon;
+        else if (HamaChar->ThirdWeapon && HamaChar->ThirdWeapon->GetWeaponRowName() == RowNameToFind) TargetWeaponToRefill = HamaChar->ThirdWeapon;
+
+        if (TargetWeaponToRefill && TargetWeaponToRefill->NeedsAmmo())
         {
-            PS->RemovePoints(AmmoCost);
-            HamaChar->RefillSpecificWeaponAmmo(WeaponClass);
+            if (PS->GetPoints() >= AmmoCost)
+            {
+                PS->RemovePoints(AmmoCost);
+                HamaChar->RefillSpecificWeaponAmmo(WeaponClass);
+            }
+        }
+        else
+        {
+            // فیشەکی پڕە، هیچ مەکە (دەتوانیت نامەیەکی بۆ دەربکەیت ئەگەر بتەوێت)
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow, TEXT("Ammo is already full!"));
         }
     }
     else
     {
+        // ئەگەر چەکەکەی نەبوو، چەکەکەی پێ دەفرۆشێت
         if (PS->GetPoints() >= WeaponCost)
         {
             PS->RemovePoints(WeaponCost);

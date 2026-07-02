@@ -217,13 +217,13 @@ protected:
 
     FTimerHandle PingUpdateTimerHandle;
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|UI")
     void OnUIUpdatePoints(int32 NewPoints);
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|UI")
     void OnUIUpdateKills(int32 NewKills);
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama | UI")
+    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|UI")
     void OnUIUpdatePing(int32 NewKills);
 
 public:

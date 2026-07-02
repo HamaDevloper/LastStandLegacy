@@ -263,4 +263,7 @@ public:
     int32 GetCurrentAmmo() const { return CurrentAmmo; }
     int32 GetReserveAmmo() const { return ReserveAmmo; }
     int32 GetMaxClipAmmo() const { return MaxAmmoInClip; }
+    FName GetWeaponRowName() const { return WeaponRowName; }
+    bool NeedsAmmo() const;
+    
 };
