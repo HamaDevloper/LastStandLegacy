@@ -44,26 +44,25 @@ void ABasePerk::Interact(AHama* HamaChar)
     if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
     {
         if (SoloUsesLeftForQuickRevive <= 0) return;
-
         bCanBuy = true;
     }
     else
     {
         if (!GS->bIsPowerOn) return;
-
         bCanBuy = true;
     }
 
     if (!bCanBuy) return;
     if (HamaChar->HasPerkID(PerkID)) return;
+    if (HamaChar->DrinkingPerkTimer()) return;
 
-    // ٣. بڕینی پارە و پێدانی پێرکەکە
     AHamaPlayerState* PS = HamaChar->GetPlayerState<AHamaPlayerState>();
     if (PS && PS->GetPoints() >= PerkCost)
     {
         PS->RemovePoints(PerkCost);
-        HamaChar->Multicast_PlayDrinkPerkAnimation(this);
-   
+
+        HamaChar->Server_StartPerkDrink(this);
+
         if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
         {
             SoloUsesLeftForQuickRevive--;

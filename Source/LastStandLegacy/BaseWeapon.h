@@ -113,7 +113,7 @@ class LASTSTANDLEGACY_API ABaseWeapon : public AActor
 
 public:
     ABaseWeapon();
-    
+
     FOnAmmoChangedSignature OnAmmoChanged;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Mesh")
@@ -126,6 +126,7 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Weapon")
     void RefillAmmo();
+
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
@@ -192,8 +193,12 @@ public:
 
     UFUNCTION(Server, Reliable)
     void Server_StopFire();
-    //FVector_NetQuantizeNormal ShootDir
+
     void Server_FireRoutine();
+
+    // 🚀 ناردنی دەمەیج لە کڵایەنتەوە بۆ سێرڤەر
+    UFUNCTION(Server, Reliable)
+    void Server_ApplyDamage(AActor* HitActor, float DamageToApply, FVector ShotDirection, FHitResult HitInfo);
 
     UFUNCTION()
     void OnRep_BurstCounter();
@@ -254,7 +259,7 @@ public:
     FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
     FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
     bool CanReload() const { return CurrentAmmo <= 0 && ReserveAmmo > 0; }
-    bool IsReloading() const{ return bIsReloading; }
+    bool IsReloading() const { return bIsReloading; }
     int32 GetCurrentAmmo() const { return CurrentAmmo; }
     int32 GetReserveAmmo() const { return ReserveAmmo; }
     int32 GetMaxClipAmmo() const { return MaxAmmoInClip; }

@@ -133,6 +133,9 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME(AHama, bHasFastHands);
     DOREPLIFETIME(AHama, bHasDoubleTap);
     DOREPLIFETIME(AHama, bHasMuleKick);
+    DOREPLIFETIME(AHama, PrimaryWeapon);
+    DOREPLIFETIME(AHama, SecondaryWeapon);
+    DOREPLIFETIME(AHama, ThirdWeapon);
     DOREPLIFETIME_CONDITION(AHama, OwnedPerks, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, bIsDeathMachineActive, COND_OwnerOnly);
 }
@@ -473,6 +476,23 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
         AttachWeaponToMesh(CurrentWeapon);
         OnRep_CurrentWeapon();
         OnWeaponChanged.Broadcast(CurrentWeapon);
+
+        // 🚀 دیبەگی سەرکەوتن: پێمان دەڵێت کە چەکەکە هاتە دەستمان و ناوی چەکەکەش دەهێنێت
+        if (GEngine)
+        {
+            FString WeaponName = CurrentWeapon->GetName();
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("SUCCESS: %s is now in hands!"), *WeaponName));
+        }
+        UE_LOG(LogTemp, Warning, TEXT("GiveWeapon Success: %s equipped."), *SpawnedWeapon->GetName());
+    }
+    else
+    {
+        // 🚀 دیبەگی شکست: ئەگەر کێشەیەک هەبوو لە بلوپرێنتی چەکەکە و دروست نەبوو
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("FAILED: Weapon did not spawn!"));
+        }
+        UE_LOG(LogTemp, Error, TEXT("GiveWeapon Failed: Weapon spawn returned null."));
     }
 }
 
@@ -540,6 +560,7 @@ void AHama::RefillAllWeapons()
 void AHama::SwapWeapon()
 {
     if (!SwapWeaponMontage) return;
+    if (IsDrinkingPerk()) return;
 
     ABaseWeapon* NextWeapon = nullptr;
     // ... لۆژیکی دۆزینەوەی چەکی داهاتووی خۆت لێرە جێگیرە ...
@@ -564,7 +585,6 @@ void AHama::SwapWeapon()
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
     if (!AnimInstance) return;
 
-    // [YY Logic]
     if (AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
     {
         AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
@@ -579,7 +599,7 @@ void AHama::SwapWeapon()
     {
         if (ALastStandLegacyGameState* GS = Cast<ALastStandLegacyGameState>(GetWorld()->GetGameState()))
         {
-            bIsAdrenalineActive = GS->IsTeamAdrenalineActive(); // دڵنیابەوە فەنکشنی IsTeamAdrenalineActive هەیە لە GS
+            bIsAdrenalineActive = GS->IsTeamAdrenalineActive();
         }
     }
 
@@ -594,7 +614,6 @@ void AHama::SwapWeapon()
     MontageEndedDelegate.BindUObject(this, &AHama::OnSwapWeaponMontageEnded);
     AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, SwapWeaponMontage);
 
-    // ٢. ناردنی سیگناڵ بۆ سێرڤەر
     if (IsLocallyControlled())
     {
         Server_SwapWeapon(NextWeapon);
@@ -615,7 +634,6 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
             AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
         }
 
-        // ١. حیسابکردنی خێرایی بنەڕەتی بەپێی پێرک و ئەدیناڵین
         float BasePlayRate = 1.0f;
 
         bool bIsAdrenalineActive = false;
@@ -634,7 +652,6 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 
         float ServerPlayRate = BasePlayRate * 1.15f;
 
-        // ٣. لێدانی ئەنیمەیشنەکە لای سێرڤەر بە خێراییە ئەپدیتکراوەکە
         AnimInstance->Montage_Play(SwapWeaponMontage, ServerPlayRate);
 
         FOnMontageEnded ServerMontageEndedDelegate;
@@ -649,13 +666,6 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 
 void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
-    if (bInterrupted)
-    {
-        PendingWeaponForSwap = nullptr;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Weapon Swap Interrupted!"));
-        return;
-    }
-
     if (HasAuthority())
     {
         CompleteWeaponSwap();
@@ -668,6 +678,11 @@ void AHama::CompleteWeaponSwap()
 
     if (CurrentWeapon)
     {
+        if (CurrentWeapon->IsReloading())
+        {
+            CurrentWeapon->CancelReload();
+        }
+
         CurrentWeapon->SetActorHiddenInGame(true);
         CurrentWeapon->SetActorEnableCollision(false);
     }
@@ -681,6 +696,8 @@ void AHama::CompleteWeaponSwap()
     OnRep_CurrentWeapon();
 
     OnWeaponChanged.Broadcast(CurrentWeapon);
+
+    // بەتاڵکردنەوەی پۆینتەرەکە بۆ گۆڕینی داهاتوو
     PendingWeaponForSwap = nullptr;
 }
 
@@ -750,6 +767,35 @@ void AHama::RemoveDeathMachine()
     }
 }
 
+bool AHama::HasWeaponClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const
+{
+    if (!WeaponClassToCheck) return false;
+
+    if (PrimaryWeapon && PrimaryWeapon->GetClass() == WeaponClassToCheck) return true;
+    if (SecondaryWeapon && SecondaryWeapon->GetClass() == WeaponClassToCheck) return true;
+    if (ThirdWeapon && ThirdWeapon->GetClass() == WeaponClassToCheck) return true;
+
+    return false;
+}
+
+void AHama::RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefill)
+{
+    if (!WeaponClassToRefill || !HasAuthority()) return;
+
+    if (PrimaryWeapon && PrimaryWeapon->GetClass() == WeaponClassToRefill)
+    {
+        PrimaryWeapon->RefillAmmo();
+    }
+    else if (SecondaryWeapon && SecondaryWeapon->GetClass() == WeaponClassToRefill)
+    {
+        SecondaryWeapon->RefillAmmo();
+    }
+    else if (ThirdWeapon && ThirdWeapon->GetClass() == WeaponClassToRefill)
+    {
+        ThirdWeapon->RefillAmmo();
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Input Binding
 // -----------------------------------------------------------------------------
@@ -793,6 +839,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AHama::FireActionPressed()
 {
     if (!HamaComponent || !CurrentWeapon) return;
+    if (IsDrinkingPerk()) return;
     bIsFireButtonHold = true;
     CurrentWeapon->StartFire();
 }
@@ -807,6 +854,7 @@ void AHama::FireActionReleased()
 void AHama::AimActionPressed()
 {
     if (!HamaComponent || !CurrentWeapon) return;
+    if (IsDrinkingPerk()) return;
     bIsAimButtonHold = true;
 
     if (HamaComponent->IsSprinting())
@@ -925,6 +973,7 @@ void AHama::ReloadActionPressed()
 {
     if (!CurrentWeapon || CurrentWeapon->ReserveAmmo <= 0) return;
     if (GetDeathMachine()) return;
+    if (IsDrinkingPerk()) return;
     if (HamaComponent && HamaComponent->IsSprinting())
     {
         HamaComponent->StopSprinting();
@@ -1069,12 +1118,13 @@ void AHama::SwitchCameraReleased()
 void AHama::SprintActionPressed()
 {
     if (!HamaComponent || HamaComponent->GetStamina() < 15.f || GetCharacterMovement()->IsFalling()) return;
-
+    if (IsDrinkingPerk()) return;
     if (HamaComponent->IsAiming())
     {
         HamaComponent->SetAiming(false);
         OnAim(false);
     }
+    if (HamaComponent->IsSlide()) return;
     if (bIsFireButtonHold && CurrentWeapon) CurrentWeapon->StopFire();
     if (CurrentWeapon && CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
     if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching()) UnCrouch();
@@ -1085,6 +1135,7 @@ void AHama::SprintActionPressed()
 void AHama::AbilityActionPressed()
 {
     if (HamaComponent && HamaComponent->IsDowned()) return;
+    if (IsDrinkingPerk()) return;
     if (!HamaAbilityComponent || !HamaAbilityComponent->IsPowerFull()) return;
     HamaAbilityComponent->Server_ActivateAbility();
 }
@@ -1103,6 +1154,28 @@ void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
         {
             GetMesh()->SetAnimInstanceClass(VisualData->RoleAnimBP);
         }
+    }
+}
+
+void AHama::Server_StartPerkDrink(ABasePerk* TargetPerk)
+{
+    if (!TargetPerk || !HasAuthority()) return;
+    if (GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle)) return;
+
+    PendingPerkID = TargetPerk->GetPerkID();
+
+    Multicast_PlayDrinkPerkAnimation(TargetPerk);
+
+    float DrinkDuration = DrinkPerkMontage ? DrinkPerkMontage->GetPlayLength() : 2.0f;
+
+    GetWorldTimerManager().SetTimer(PerkDrinkTimerHandle, this, &AHama::GivePendingPerk, DrinkDuration, false);
+}
+
+void AHama::GivePendingPerk()
+{
+    if (HasAuthority())
+    {
+        AddPerkByID(PendingPerkID);
     }
 }
 
@@ -1166,6 +1239,31 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
 {
     if (!TargetPerk || !DrinkPerkMontage) return;
 
+    if (CurrentWeapon)
+    {
+        CurrentWeapon->StopFire();
+        if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+    }
+
+    if (HamaComponent)
+    {
+        if (HamaComponent->IsAiming())
+        {
+            HamaComponent->SetAiming(false);
+            OnAim(false);
+            SnapTarget = nullptr;
+            SetActorTickEnabled(false);
+        }
+
+        if (IsSprinting())
+        {
+            HamaComponent->StopSprinting();
+        }
+    }
+   
+
+    // -------------------------------------------------------------------------
+
     UStaticMesh* BottleMesh = TargetPerk->GetBottleMesh();
 
     if (BottleMesh)
@@ -1179,11 +1277,6 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
             CurrentSpawnedBottle->GetStaticMeshComponent()->SetStaticMesh(BottleMesh);
             CurrentSpawnedBottle->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetIncludingScale, TEXT("PerkBottleSocket"));
         }
-    }
-
-    if (HasAuthority())
-    {
-        PendingPerkID = TargetPerk->GetPerkID();
     }
 
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
@@ -1203,17 +1296,6 @@ void AHama::OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool 
     {
         CurrentSpawnedBottle->Destroy();
         CurrentSpawnedBottle = nullptr;
-    }
-
-    if (bInterrupted)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Perk Drinking Interrupted! No Perk Granted."));
-        return;
-    }
-
-    if (HasAuthority())
-    {
-        AddPerkByID(PendingPerkID);
     }
 }
 
@@ -1284,6 +1366,7 @@ void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
 
 void AHama::InteractActionPressed()
 {
+    if (IsDrinkingPerk()) return;
     if (FocusedInteractable)
     {
         AActor* InteractActor = Cast<AActor>(FocusedInteractable);
@@ -1296,6 +1379,7 @@ void AHama::InteractActionPressed()
 
 void AHama::GamepadXActionPressed()
 {
+    if (IsDrinkingPerk()) return;
     if (FocusedInteractable)
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Gamepad X Pressed: Interacting with Focused Interactable"));

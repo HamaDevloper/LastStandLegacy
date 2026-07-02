@@ -92,17 +92,21 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_CurrentWeapon, BlueprintReadOnly, Category = "Hama|Weapons")
     TObjectPtr<ABaseWeapon> CurrentWeapon;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
     TObjectPtr<ABaseWeapon> PrimaryWeapon;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
     TObjectPtr<ABaseWeapon> SecondaryWeapon;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Hama|Weapons")
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Weapons")
     TObjectPtr<ABaseWeapon> ThirdWeapon;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
     FName SocketName;
+
+public:
+    bool HasWeaponClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;
+    void RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefill);
 
 protected:
     UPROPERTY(Transient)
@@ -343,10 +347,12 @@ public:
     FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
     FORCEINLINE bool GetDeathMachine() const { return bIsDeathMachineActive; }
-    
+    bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
     bool GetDoubleTap() { return bHasDoubleTap; }
     bool HasDeadshot() const { return bHasDeadshot; }
     bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
+    bool IsDrinkingPerk() const { return CurrentSpawnedBottle != nullptr; }
+
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
     float NormalSensitivity = 1.f;
@@ -406,11 +412,15 @@ public:
     void OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool bInterrupted);
 
     void AddPerkByID(FName PerkID);
+    void Server_StartPerkDrink(ABasePerk* TargetPerk);
 
     bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
     bool HasFastHands() const { return bHasFastHands; }
+   
 
-
+protected:
+    FTimerHandle PerkDrinkTimerHandle;
+    void GivePendingPerk();
 
 public:
     UFUNCTION(Client, Unreliable)
