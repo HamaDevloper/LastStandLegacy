@@ -562,7 +562,7 @@ ALastStandLegacyGameState* ABaseWeapon::GetGameStateCache()
 
 bool ABaseWeapon::NeedsAmmo() const
 {
-    return (CurrentAmmo < MaxAmmoInClip) || (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
+    return (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
 }
 
 void ABaseWeapon::OnRep_BurstCounter()

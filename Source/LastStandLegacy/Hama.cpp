@@ -522,34 +522,30 @@ void AHama::HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo)
 {
     if (IsLocallyControlled() && MainWidgetRef)
     {
-        // ئەپدەیتکردنی ژمارەکانی فیشەک لە UI
-        MainWidgetRef->UpdateAmmoText(CurrentAmmo, ReserveAmmo);
-
-        if (!CurrentWeapon || bIsDeathMachineActive) return;
-
-        // 🚀 وەرگرتنی قەبارەی سەرەکی مەخزەنی چەکەکە (دەبێت ئەو گۆڕاوە بەکاربهێنیت کە لە BaseWeapon هەتە)
-        int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo(); // ناوی گۆڕاوەکە بگۆڕە بەپێی کۆدی خۆت
-
-        // حیسابکردنی سنگی مەترسییەکە لەسەر بنەمای ٢٥٪ی مەخزەنەکە
-        int32 LowAmmoThreshold = FMath::RoundToInt(MaxClipSize * 0.25f);
-
-        // لۆژیکی بڕیاردان
-        if (CurrentAmmo == 0 && ReserveAmmo <= 0)
+        if (CurrentWeapon)
         {
-            MainWidgetRef->ShowAmmoWarning(TEXT("NoAmmo!"));
-        }
-       
-        else if (CurrentAmmo <= LowAmmoThreshold && CurrentAmmo > 0)
-        {
-            MainWidgetRef->ShowAmmoWarning(TEXT("LOW AMMO"));
-        }
-        else
-        {
-            MainWidgetRef->HideAmmoWarning();
+            MainWidgetRef->UpdateAmmoText(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
+
+            if (bIsDeathMachineActive) return;
+
+            int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo();
+            int32 LowAmmoThreshold = FMath::RoundToInt(MaxClipSize * 0.25f);
+
+            if (CurrentWeapon->GetCurrentAmmo() == 0 && CurrentWeapon->GetReserveAmmo() <= 0)
+            {
+                MainWidgetRef->ShowAmmoWarning(TEXT("NoAmmo!"));
+            }
+            else if (CurrentWeapon->GetCurrentAmmo() <= LowAmmoThreshold && CurrentWeapon->GetCurrentAmmo() > 0)
+            {
+                MainWidgetRef->ShowAmmoWarning(TEXT("LOW AMMO"));
+            }
+            else
+            {
+                MainWidgetRef->HideAmmoWarning();
+            }
         }
     }
 }
-
 void AHama::RefillAllWeapons()
 {
     if (PrimaryWeapon) PrimaryWeapon->RefillAmmo();
@@ -563,7 +559,7 @@ void AHama::SwapWeapon()
     if (IsDrinkingPerk()) return;
 
     ABaseWeapon* NextWeapon = nullptr;
-    // ... لۆژیکی دۆزینەوەی چەکی داهاتووی خۆت لێرە جێگیرە ...
+   
     if (CurrentWeapon == PrimaryWeapon)
     {
         if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
@@ -767,39 +763,30 @@ void AHama::RemoveDeathMachine()
     }
 }
 
-bool AHama::HasWeaponClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const
+ABaseWeapon* AHama::GetWeaponByClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const
 {
-    if (!WeaponClassToCheck) return false;
+    if (!WeaponClassToCheck) return nullptr;
 
-    // وەرگرتنی ناوی چەکەکەی دیوارەکە بە شێوەیەکی کاتی بۆ بەراوردکردن
-    ABaseWeapon* TempWeapon = WeaponClassToCheck.GetDefaultObject();
-    if (!TempWeapon) return false;
-    FName RowNameToFind = TempWeapon->GetWeaponRowName();
+    if (PrimaryWeapon && PrimaryWeapon->GetClass() == WeaponClassToCheck) return PrimaryWeapon;
+    if (SecondaryWeapon && SecondaryWeapon->GetClass() == WeaponClassToCheck) return SecondaryWeapon;
+    if (ThirdWeapon && ThirdWeapon->GetClass() == WeaponClassToCheck) return ThirdWeapon;
 
-    if (PrimaryWeapon && PrimaryWeapon->GetWeaponRowName() == RowNameToFind) return true;
-    if (SecondaryWeapon && SecondaryWeapon->GetWeaponRowName() == RowNameToFind) return true;
-    if (ThirdWeapon && ThirdWeapon->GetWeaponRowName() == RowNameToFind) return true;
-
-    return false;
+    return nullptr;
 }
 
 void AHama::RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefill)
 {
     if (!WeaponClassToRefill || !HasAuthority()) return;
 
-    ABaseWeapon* TempWeapon = WeaponClassToRefill.GetDefaultObject();
-    if (!TempWeapon) return;
-    FName RowToRefill = TempWeapon->GetWeaponRowName();
-
-    if (PrimaryWeapon && PrimaryWeapon->GetWeaponRowName() == RowToRefill)
+    if (PrimaryWeapon && PrimaryWeapon->GetClass() == WeaponClassToRefill)
     {
         PrimaryWeapon->RefillAmmo();
     }
-    else if (SecondaryWeapon && SecondaryWeapon->GetWeaponRowName() == RowToRefill)
+    else if (SecondaryWeapon && SecondaryWeapon->GetClass() == WeaponClassToRefill)
     {
         SecondaryWeapon->RefillAmmo();
     }
-    else if (ThirdWeapon && ThirdWeapon->GetWeaponRowName() == RowToRefill)
+    else if (ThirdWeapon && ThirdWeapon->GetClass() == WeaponClassToRefill)
     {
         ThirdWeapon->RefillAmmo();
     }

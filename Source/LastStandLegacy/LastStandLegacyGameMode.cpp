@@ -11,6 +11,8 @@
 #include "ZombieSpawnPoint.h"
 #include "LastStandLegacyGameState.h"
 #include "HamaAbilityComponent.h"
+#include "PerkSpawnPoint.h"
+#include "BasePerk.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -89,6 +91,9 @@ void ALastStandLegacyGameMode::BeginPlay()
         UE_LOG(LogTemp, Warning, TEXT("No SpawnPoint found! Add 'ZombieSpawn' tag."));
     }
 
+   
+    SpawnRandomPerks();
+
     CurrentRound = 1;
     DeadZombiesCount = 0;
     ActiveZombiesCount = 0;
@@ -107,6 +112,58 @@ void ALastStandLegacyGameMode::BeginPlay()
     }
 
     GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, 1.5f, true);
+}
+
+void ALastStandLegacyGameMode::MyShufflePerks(TArray<TSubclassOf<ABasePerk>>& ArrayToShuffle)
+{
+    if (ArrayToShuffle.Num() <= 1) return;
+
+    for (int32 i = ArrayToShuffle.Num() - 1; i > 0; i--)
+    {
+        int32 RandomIndex = FMath::RandRange(0, i);
+
+        if (i != RandomIndex)
+        {
+            ArrayToShuffle.Swap(i, RandomIndex);
+        }
+    }
+}
+
+void ALastStandLegacyGameMode::SpawnRandomPerks()
+{
+    if (PerkClasses.IsEmpty()) return;
+
+    TArray<APerkSpawnPoint*> FoundPerkPoints;
+    for (TActorIterator<APerkSpawnPoint> It(GetWorld()); It; ++It)
+    {
+        FoundPerkPoints.Add(*It);
+    }
+
+    if (FoundPerkPoints.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("No PerkSpawnPoints found in the map!"));
+        return;
+    }
+
+    MyShufflePerks(PerkClasses);
+
+    int32 SpawnsCount = FMath::Min(PerkClasses.Num(), FoundPerkPoints.Num());
+
+    for (int32 i = 0; i < SpawnsCount; i++)
+    {
+        if (FoundPerkPoints[i] && PerkClasses[i])
+        {
+            FActorSpawnParameters SpawnParams;
+            SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+            GetWorld()->SpawnActor<ABasePerk>(
+                PerkClasses[i],
+                FoundPerkPoints[i]->GetActorLocation(),
+                FoundPerkPoints[i]->GetActorRotation(),
+                SpawnParams
+            );
+        }
+    }
 }
 
 void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AController* KillerController)

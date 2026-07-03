@@ -8,6 +8,8 @@ class AZombie;
 class AZombieSpawnPoint;
 class ABasePowerUp;
 class AController;
+class ABasePerk;
+class APerkSpawnPoint; // 🚀 دڵنیابەوە لەم فۆروەرد دێکلەرەیشنە
 enum class EHamaAbilityType : uint8;
 
 UCLASS()
@@ -31,6 +33,10 @@ protected:
     void ProcessSpawning();
     AActor* PickWeightedSpawnPoint();
 
+    // 🚀 فەنکشنەکانی شەفڵ و سپاونی تایبەت بە پێرک
+    void MyShufflePerks(TArray<TSubclassOf<ABasePerk>>& ArrayToShuffle);
+    void SpawnRandomPerks();
+
 public:
     // [Zombie Settings] 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
@@ -50,17 +56,19 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     int32 ZombiesToKill = 10;
 
-    // لێرەدا لۆکاڵی تەنها بۆ سێرڤەر بەکاری دەهێنین، پێویستی بە OnRep نییە
     int32 CurrentRound = 1;
-
     int32 ZombiesSpawnedThisRound = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     int32 ZombiesSpawnLimit = 24;
 
-    // [PowerUp Settings]
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|PowerUp")
+    // [PowerUp & Perk Settings]
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|PowerUp")
     TArray<TSubclassOf<ABasePowerUp>> PowerUpClasses;
+
+    // 🚀 کڵاسی ئەو پێرکانەی دەتەوێت لەم نەخشەیەدا سپاون ببن (لە بلوپرێنت پڕی بکەرەوە)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|Perks")
+    TArray<TSubclassOf<ABasePerk>> PerkClasses;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|PowerUp")
     int32 MaxPowerSpawn = 5;

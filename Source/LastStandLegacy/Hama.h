@@ -107,7 +107,7 @@ public:
 public:
     bool HasWeaponClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;
     void RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefill);
-
+    ABaseWeapon* GetWeaponByClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;
 protected:
     UPROPERTY(Transient)
     TObjectPtr<ABaseWeapon> PreDeathMachineWeapon;

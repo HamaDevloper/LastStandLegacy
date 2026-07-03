@@ -16,7 +16,7 @@ AWallWeaponBuy::AWallWeaponBuy()
 
     WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
     WeaponMesh->SetupAttachment(RootComponent);
-    WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision); // مەشەکە پێویست بە کۆلیژن ناکات
+    WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AWallWeaponBuy::Interact(AHama* HamaChar)
@@ -26,37 +26,31 @@ void AWallWeaponBuy::Interact(AHama* HamaChar)
     AHamaPlayerState* PS = HamaChar->GetPlayerState<AHamaPlayerState>();
     if (!PS) return;
 
-    bool bHasWeapon = HamaChar->HasWeaponClass(WeaponClass);
+    ABaseWeapon* TargetWeaponToRefill = HamaChar->GetWeaponByClass(WeaponClass);
 
-    if (bHasWeapon)
+    if (TargetWeaponToRefill)
     {
-        // دۆزینەوەی ئەو چەکەی کە هەیەتی بۆ ئەوەی بزانین فیشەکی پێویستە
-        ABaseWeapon* TempWeapon = WeaponClass.GetDefaultObject();
-        if (!TempWeapon) return;
-        FName RowNameToFind = TempWeapon->GetWeaponRowName();
-
-        ABaseWeapon* TargetWeaponToRefill = nullptr;
-        if (HamaChar->PrimaryWeapon && HamaChar->PrimaryWeapon->GetWeaponRowName() == RowNameToFind) TargetWeaponToRefill = HamaChar->PrimaryWeapon;
-        else if (HamaChar->SecondaryWeapon && HamaChar->SecondaryWeapon->GetWeaponRowName() == RowNameToFind) TargetWeaponToRefill = HamaChar->SecondaryWeapon;
-        else if (HamaChar->ThirdWeapon && HamaChar->ThirdWeapon->GetWeaponRowName() == RowNameToFind) TargetWeaponToRefill = HamaChar->ThirdWeapon;
-
-        if (TargetWeaponToRefill && TargetWeaponToRefill->NeedsAmmo())
+        if (TargetWeaponToRefill->NeedsAmmo())
         {
             if (PS->GetPoints() >= AmmoCost)
             {
                 PS->RemovePoints(AmmoCost);
                 HamaChar->RefillSpecificWeaponAmmo(WeaponClass);
+
+                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Green, TEXT("AMMO BOUGHT!"));
+            }
+            else
+            {
+                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Not enough points!"));
             }
         }
         else
         {
-            // فیشەکی پڕە، هیچ مەکە (دەتوانیت نامەیەکی بۆ دەربکەیت ئەگەر بتەوێت)
-            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow, TEXT("Ammo is already full!"));
+            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Yellow, TEXT("Ammo is already full!"));
         }
     }
     else
     {
-        // ئەگەر چەکەکەی نەبوو، چەکەکەی پێ دەفرۆشێت
         if (PS->GetPoints() >= WeaponCost)
         {
             PS->RemovePoints(WeaponCost);
