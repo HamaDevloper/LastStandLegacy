@@ -196,7 +196,6 @@ public:
 
     void Server_FireRoutine();
 
-    // 🚀 ناردنی دەمەیج لە کڵایەنتەوە بۆ سێرڤەر
     UFUNCTION(Server, Reliable)
     void Server_ApplyDamage(AActor* HitActor, float DamageToApply, FVector ShotDirection, FHitResult HitInfo);
 
@@ -212,7 +211,7 @@ public:
     void Reload();
 
     UFUNCTION(Client, Reliable)
-    void Client_ForceReload();
+    void Client_ForceReload(int32 NewReserveAmmo);
 
     UFUNCTION(Server, Reliable)
     void ServerReload(float InReloadTime);
@@ -222,8 +221,14 @@ public:
     UFUNCTION(Server, Reliable)
     void Server_CancelReload();
 
+    UFUNCTION(Client, Reliable)
+    void Client_CancelReload();
+
     UFUNCTION()
     void OnRep_Reload();
+
+    UFUNCTION(Client, Reliable)
+    void Client_ApplyPackAPunchFX(int32 NewReserveAmmo);
 
 protected:
     void Local_ReloadComplete();

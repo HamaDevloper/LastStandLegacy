@@ -16,7 +16,8 @@
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "BasePerk.h"
-#include "InteractInterface.h"
+#include "InteractInterface.h" 
+#include "DrawDebugHelpers.h"
 
 // -----------------------------------------------------------------------------
 // Constructor
@@ -226,20 +227,34 @@ void AHama::CheckForInteractables()
     if (!IsLocallyControlled()) return;
     if (!OwnerController) return;
 
-    FVector StartLocation;
+    FVector CameraLocation;
     FRotator ViewRotation;
+    OwnerController->GetPlayerViewPoint(CameraLocation, ViewRotation);
 
-    OwnerController->GetPlayerViewPoint(StartLocation, ViewRotation);
-
+    FVector StartLocation = GetActorLocation() + FVector(0.0f, 0.0f, 50.0f);
     FVector EndLocation = StartLocation + (ViewRotation.Vector() * 250.0f);
 
     FHitResult HitResult;
-    FCollisionShape SphereShape = FCollisionShape::MakeSphere(15.0f);
-    FCollisionQueryParams QueryParams;
-    QueryParams.AddIgnoredActor(this);
+    float SphereRadius = 45.0f;
 
-    bool bHit = GetWorld()->SweepSingleByChannel(HitResult, StartLocation, EndLocation, FQuat::Identity, ECC_Intract, SphereShape, QueryParams);
+    // 🚀 He function blueprint sarkha real sphere sweep dakhvte:
+    bool bHit = UKismetSystemLibrary::SphereTraceSingle(
+        GetWorld(),
+        StartLocation,
+        EndLocation,
+        SphereRadius,
+        UEngineTypes::ConvertToTraceType(ECC_Intract),
+        false,
+        TArray<AActor*>{this}, // Ignore list
+        EDrawDebugTrace::ForOneFrame, // 🚀 He real sphere sweep dakhvte!
+        HitResult,
+        true,
+        FLinearColor::Red,   // Jar hit nahi zale tar red color
+        FLinearColor::Green, // Jar hit zale tar green color
+        0.1f                 // Duration
+    );
 
+    // --- Khali tumcha Widget cha code tawayach rahel ---
     if (bHit && HitResult.GetActor())
     {
         IInteractInterface* InteractableActor = Cast<IInteractInterface>(HitResult.GetActor());

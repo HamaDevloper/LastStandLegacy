@@ -46,7 +46,6 @@ void ABaseWeapon::Tick(float DeltaTime)
 
     FRotator PreviousRecoil = CurrentRecoilOffset;
 
-    // 15.0f خێرایی نەرمکردنەوەکەیە (Interpolation Speed). تا بچووکتر بێت نەرمتر دەبێت.
     CurrentRecoilOffset = FMath::RInterpTo(CurrentRecoilOffset, TargetRecoilOffset, DeltaTime, 15.0f);
 
     float DeltaPitch = CurrentRecoilOffset.Pitch - PreviousRecoil.Pitch;
@@ -130,15 +129,37 @@ void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
 {
     if (!HasAuthority()) return;
 
+    // ١. بەرزکردنەوەی هێز و قەبارەکان
     Damage *= 2.f;
-    MaxAmmoInClip = FMath::RoundToInt(MaxAmmoInClip * 1.5f);
-    ReserveAmmo = CurrentWeaponData.MaxReserveAmmo * 2;
-    CurrentWeaponData.MaxReserveAmmo = ReserveAmmo;
+    MaxAmmoInClip = FMath::RoundToInt(MaxAmmoInClip * 2.f);
+
+    CurrentWeaponData.MaxReserveAmmo *= 2;
+    ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+
+    // ٣. جیاکردنەوەی سێرڤەر و کلایێنت بۆ ئەپدەیتی شاشە و ڕووکار
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        // ئەگەر خۆمان (هۆست) بوین، ڕاستەوخۆ شاشەکە ئەپدەیت دەکەین
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
+    else
+    {
+        // ئەگەر کلایێنت بوو، Client RPC دەنێرین تا شاشەکەی ئەپدەیت بکات
+        Client_ApplyPackAPunchFX(ReserveAmmo);
+    }
+}
+
+// ئەمە لەسەر شاشەی کلایێنتەکە کار دەکات
+void ABaseWeapon::Client_ApplyPackAPunchFX_Implementation(int32 NewReserveAmmo)
+{
+    ReserveAmmo = NewReserveAmmo;
 
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
+
+    // 💡 دواتر دەتوانیت لێرەدا فەنکشنی گۆڕینی ماتێریاڵ (Camo) یان دەنگی Pack-A-Punch لێبدەیت
 }
 
 void ABaseWeapon::RefillAmmo()
@@ -149,14 +170,25 @@ void ABaseWeapon::RefillAmmo()
 
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
 
+    // ٢. ئەپدەیتکردنی شاشەی هۆست (ئەگەر سێرڤەرەکە خۆی یاریزان بوو)
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 
+    // ٣. بڕیاردان لەسەر جۆری ڕیلۆدەکە
     if (bWasEmpty)
     {
-        Client_ForceReload();
+        if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+        {
+            // ئەگەر خۆمانین (هۆستین)، ڕاستەوخۆ فەنکشنە لۆکاڵییەکە بەکاربهێنە بەبێ RPC
+            Reload();
+        }
+        else
+        {
+            // ئەگەر میوانە (کلایێنتە)، بە زۆر فیشەکەکەی بۆ بنێرە و پێی بڵێ ڕیلۆد بکات
+            Client_ForceReload(ReserveAmmo);
+        }
     }
 }
 
@@ -575,8 +607,15 @@ void ABaseWeapon::PlayWeaponEffects()
     // VFX و دەنگ
 }
 
-void ABaseWeapon::Client_ForceReload_Implementation()
+void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
 {
+    ReserveAmmo = NewReserveAmmo;
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
+
     Reload();
 }
 
@@ -700,11 +739,26 @@ void ABaseWeapon::CancelReload()
         {
             Server_CancelReload();
         }
+        else if (HasAuthority() && !OwnerCharacter->IsLocallyControlled())
+        {
+            Client_CancelReload();
+            OnRep_Reload(); 
+        }
     }
+}
 
-    if (HasAuthority() && OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
+void ABaseWeapon::Client_CancelReload_Implementation()
+{
+    GetWorldTimerManager().ClearTimer(ReloadTimerHandle);
+    bIsReloading = false;
+
+    if (OwnerCharacter)
     {
-        OnRep_Reload();
+        USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
+        if (MeshComp && MeshComp->GetAnimInstance() && CurrentWeaponData.ReloadMontage)
+        {
+            MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
+        }
     }
 }
 
