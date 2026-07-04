@@ -56,6 +56,7 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     bIsAiming = HamaCharacter->IsAiming();
     bIsSprinting = HamaCharacter->IsSprinting();
+    bIsDowned = HamaCharacter->IsDowned();
 }
 
 void UHamaAnimInstance::OnWeaponChanged(ABaseWeapon* NewWeapon)

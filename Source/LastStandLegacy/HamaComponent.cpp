@@ -231,6 +231,15 @@ void UHamaComponent::ResetStamina()
 
 // ================= ON_REP FUNCTIONS (SIMULATED PROXIES) =================
 
+void UHamaComponent::SetDowned(bool NewValue)
+{
+    if(OwnerCharacter && OwnerCharacter->HasAuthority())
+    {
+        bIsDowned = NewValue;
+        OwnerCharacter->ForceNetUpdate();
+    }
+}
+
 void UHamaComponent::OnRep_Sprinting()
 {
 	if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;

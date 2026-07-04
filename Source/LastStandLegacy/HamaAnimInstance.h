@@ -48,6 +48,9 @@ protected:
     bool bIsAiming = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "State Data")
+    bool bIsDowned = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "State Data")
     FVector PlayerVelocity;
 
     // ── Movement Data ─────────────────────────────

@@ -84,6 +84,7 @@ public:
     bool IsSlide() const { return bIsSlide; }
     bool IsAiming() const { return bIsAiming; }
     bool IsDowned() const { return bIsDowned; }
+    void SetDowned(bool NewValue);
 
 private:
 	FTimerHandle StaminaDrainTimerHandle;

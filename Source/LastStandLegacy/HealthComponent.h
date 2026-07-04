@@ -46,4 +46,7 @@ private:
     UPROPERTY()
     TObjectPtr<UHamaComponent> OwnerComponent;
     FTimerHandle RegenerateHealthTimer;
+
+    FTimerHandle ReviveTimerHandle;
+    FTimerHandle DownTimerHandle;
 };

@@ -9,6 +9,7 @@
 #include "LastStandLegacyGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "HamaPlayerState.h"
+#include "MeleeDamageType.h"
 
 AZombie::AZombie()
 {
@@ -130,14 +131,14 @@ void AZombie::CheckAttackRange()
     }
 }
 
-float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
-    AController* EventInstigator, AActor* DamageCauser)
+float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
     if (!HasAuthority() || bIsDead) return 0.f;
 
     float DamageApplied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 
-    // ── CachedGS بەکاردێت لێرەشدا ──
+    bool bIsMeleeDamage = DamageEvent.DamageTypeClass && DamageEvent.DamageTypeClass->IsChildOf(UMeleeDamageType::StaticClass());
+
     bool bDoublePoints = false;
     if (CachedGS)
     {
@@ -150,14 +151,16 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
 
     Health -= DamageApplied;
     GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::Printf(TEXT("Current Zombie Health Is %f"), Health));
-    AHamaPlayerState* AttackerPS =
-        EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
+
+    AHamaPlayerState* AttackerPS = EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
 
     if (Health <= 0.f)
     {
         if (AttackerPS)
         {
-            AttackerPS->AddPoints(bDoublePoints ? 200 : 100);
+            int32 KillPoints = bIsMeleeDamage ? 130 : 100;
+            AttackerPS->AddPoints(bDoublePoints ? (KillPoints * 2) : KillPoints);
+
             AttackerPS->AddKills(1);
         }
         Die(EventInstigator);
@@ -166,7 +169,8 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
     {
         if (AttackerPS)
         {
-            AttackerPS->AddPoints(bDoublePoints ? 20 : 10);
+            int32 HitPoints = bIsMeleeDamage ? 20 : 10;
+            AttackerPS->AddPoints(bDoublePoints ? (HitPoints * 2) : HitPoints);
         }
     }
 

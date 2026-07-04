@@ -82,7 +82,10 @@ void UHealthComponent::RegenerateHealth()
 
 void UHealthComponent::DownPlayer()
 {
-    // لێرەدا فەنکشنەکانی داونبوون بانگ دەکەین
+   GetWorld()->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+   GetWorld()->GetTimerManager().ClearTimer(DownTimerHandle);
+
+   if (OwnerComponent) OwnerComponent->SetDowned(true);
 }
 
 void UHealthComponent::Revive()

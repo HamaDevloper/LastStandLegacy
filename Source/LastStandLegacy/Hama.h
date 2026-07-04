@@ -181,20 +181,23 @@ public:
     TObjectPtr<UInputAction> SwapWeaponAction;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-    UInputAction* InteractAction;
-
+    TObjectPtr<UInputAction> InteractAction;
+    
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-    UInputAction* GamepadXAction;
+    TObjectPtr<UInputAction> GamepadXAction;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Hama | Input")
+    TObjectPtr<UInputAction> MeleeAction;
 
 public:
     // -----------------------------------------------------------------------------
     // UI & HUD
     // -----------------------------------------------------------------------------
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama | UI")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
     TSubclassOf<class UHamaMainWidget> MainWidgetClass;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Hama | UI")
+    UPROPERTY(BlueprintReadOnly, Category = "Hama|UI")
     class UHamaMainWidget* MainWidgetRef;
 
 protected:
@@ -246,6 +249,12 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
     UAnimMontage* SwapWeaponMontage;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
+    UAnimMontage* RevivingAnimationMontage;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+    UAnimMontage* MeleeAttackMontage;
 
 public:
     // -----------------------------------------------------------------------------
@@ -305,7 +314,8 @@ protected:
     void ReloadActionPressed();
     void AimPressedSitck();
     void AbilityActionPressed();
-
+    void MeleeActionPressed();
+       
 protected:
     static const float CrossHairTimer;
 
@@ -448,4 +458,23 @@ public:
 protected:
     UPROPERTY(EditAnywhere,BlueprintReadOnly, Category = "Hama|Setting")
     float SetIntractDistance = 100.f;
+
+
+
+    UFUNCTION(Server, Reliable)
+    void Server_ExecuteMelee();
+
+    UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+    float MeleeDamage = 150.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+    float MeleeRange = 150.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+    float MeleeRadius = 40.0f;
+
+    bool IsMeleeing() const;
+
+public:
+    void PerformMeleeHitDetection();
 };

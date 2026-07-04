@@ -17,6 +17,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "BasePerk.h"
 #include "InteractInterface.h" 
+#include "Engine/DamageEvents.h"
+#include "MeleeDamageType.h"
 #include "DrawDebugHelpers.h"
 
 // -----------------------------------------------------------------------------
@@ -226,7 +228,6 @@ void AHama::CheckForInteractables()
 
     FCollisionShape Sphere = FCollisionShape::MakeSphere(45.f);
 
-    // Async — فریم بلۆک ناکات
     FTraceDelegate TraceDelegate;
     TraceDelegate.BindUObject(this, &AHama::OnInteractTraceCompleted);
 
@@ -836,6 +837,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &AHama::InteractActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Triggered, this, &AHama::GamepadXActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Completed, this, &AHama::GamepadXActionReleased);
+        EnhancedInput->BindAction(MeleeAction, ETriggerEvent::Started, this, &AHama::MeleeActionPressed);
     }
 }
 
@@ -1433,5 +1435,94 @@ void AHama::Server_Interact_Implementation(AActor* InteractTarget)
     if (Interface)
     {
         Interface->Interact(this);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Melee System Implementation
+// -----------------------------------------------------------------------------
+
+bool AHama::IsMeleeing() const
+{
+    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    return AnimInstance ? AnimInstance->Montage_IsPlaying(MeleeAttackMontage) : false;
+}
+
+void AHama::MeleeActionPressed()
+{
+    if (IsMeleeing() || IsDrinkingPerk()) return;
+    if (MeleeAttackMontage)
+    {
+        PlayAnimMontage(MeleeAttackMontage);
+    }
+
+    Server_ExecuteMelee();
+}
+
+void AHama::Server_ExecuteMelee_Implementation()
+{
+    if (IsDrinkingPerk()) return;
+
+    if (MeleeAttackMontage && !IsLocallyControlled())
+        PlayAnimMontage(MeleeAttackMontage);
+}
+
+void AHama::PerformMeleeHitDetection()
+{
+    if (!HasAuthority()) return;
+
+    FVector CameraLocation;
+    FRotator ViewRotation;
+
+    if (OwnerController)
+    {
+        OwnerController->GetPlayerViewPoint(CameraLocation, ViewRotation);
+    }
+    else
+    {
+        CameraLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f);
+        ViewRotation = GetActorRotation();
+    }
+
+    FVector StartLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f);
+    FVector EndLocation = StartLocation + (ViewRotation.Vector() * MeleeRange);
+
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+    if (CurrentWeapon)
+    {
+        Params.AddIgnoredActor(CurrentWeapon);
+    }
+
+    FHitResult HitResult;
+    FCollisionShape MeleeSphere = FCollisionShape::MakeSphere(MeleeRadius);
+
+    bool bHit = GetWorld()->SweepSingleByChannel(
+        HitResult,
+        StartLocation,
+        EndLocation,
+        FQuat::Identity,
+        ECC_Bullet,
+        MeleeSphere,
+        Params
+    );
+
+    if (bHit && HitResult.GetActor())
+    {
+        if(AZombie* HitZombie = Cast<AZombie>(HitResult.GetActor()))
+        {
+            if (HitZombie->IsDead()) return;
+
+            AActor* HitActor = HitResult.GetActor();
+            FVector ShotDirection = ViewRotation.Vector();
+
+            FPointDamageEvent PointDamageEvent;
+            PointDamageEvent.Damage = MeleeDamage;
+            PointDamageEvent.HitInfo = HitResult;
+            PointDamageEvent.ShotDirection = ShotDirection;
+            PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
+
+            HitActor->TakeDamage(MeleeDamage, PointDamageEvent, OwnerController, this);
+        }
     }
 }
