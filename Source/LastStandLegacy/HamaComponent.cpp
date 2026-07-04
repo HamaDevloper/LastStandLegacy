@@ -223,6 +223,11 @@ void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
     }
 }
 
+void UHamaComponent::ResetStamina()
+{
+    MaxStamina = 100.f;
+}
+
 
 // ================= ON_REP FUNCTIONS (SIMULATED PROXIES) =================
 

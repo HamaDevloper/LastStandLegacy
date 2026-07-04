@@ -77,15 +77,14 @@ void ABasePerk::Interact(AHama* HamaChar)
 
 FString ABasePerk::GetInteractMessage()
 {
-    // ئەگەر یارییەکە مۆڵتیپڵەیەر بێت و کارەبا نەهاتبێتەوە، نامەیەکی جیاواز دەدەین!
+   
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
     if (GS)
     {
-        // مەرجی سۆلۆ و Quick Revive
         if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
         {
-            if (SoloUsesLeftForQuickRevive <= 0) return FString(""); // ئەگەر تەواو ببوو، هیچ نیشان مەدە
+            if (SoloUsesLeftForQuickRevive <= 0) return FString("");
             return FString::Printf(TEXT("Press F to buy %s [Cost: %d]"), *PerkID.ToString(), PerkCost);
         }
 
@@ -96,6 +95,26 @@ FString ABasePerk::GetInteractMessage()
         }
     }
 
-    // ئەگەر هەموو شتێک ئاسایی بوو، نامەی کڕینەکەی پێ بدە
     return FString::Printf(TEXT("Press F to buy %s [Cost: %d]"), *PerkID.ToString(), PerkCost);
+}
+
+bool ABasePerk::CanInteract(AHama* InteractingPlayer)
+{
+    if (!InteractingPlayer) return false;
+
+    if (InteractingPlayer->HasPerkID(PerkID))
+    {
+        return false;
+    }
+
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    if (GS && PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
+    {
+        if (SoloUsesLeftForQuickRevive <= 0)
+        {
+            return false;
+        }
+    }
+
+    return true;
 }

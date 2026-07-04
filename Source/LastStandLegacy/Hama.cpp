@@ -137,6 +137,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME(AHama, PrimaryWeapon);
     DOREPLIFETIME(AHama, SecondaryWeapon);
     DOREPLIFETIME(AHama, ThirdWeapon);
+    DOREPLIFETIME(AHama, bIsDead);
     DOREPLIFETIME_CONDITION(AHama, OwnedPerks, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, bIsDeathMachineActive, COND_OwnerOnly);
 }
@@ -254,27 +255,23 @@ void AHama::CheckForInteractables()
         0.1f                 // Duration
     );
 
-    // --- Khali tumcha Widget cha code tawayach rahel ---
     if (bHit && HitResult.GetActor())
     {
         IInteractInterface* InteractableActor = Cast<IInteractInterface>(HitResult.GetActor());
 
         if (InteractableActor)
         {
-            if (FocusedInteractable != InteractableActor)
+            FocusedInteractable = InteractableActor;
+
+            if (FocusedInteractable->CanInteract(this))
             {
-                FocusedInteractable = InteractableActor;
                 if (MainWidgetRef)
                 {
                     MainWidgetRef->ShowInteractMessage(FocusedInteractable->GetInteractMessage());
                 }
             }
-        }
-        else
-        {
-            if (FocusedInteractable)
+            else
             {
-                FocusedInteractable = nullptr;
                 if (MainWidgetRef)
                 {
                     MainWidgetRef->HideInteractMessage();
@@ -840,7 +837,8 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(AbilityAction, ETriggerEvent::Started, this, &AHama::AbilityActionPressed);
         EnhancedInput->BindAction(SwapWeaponAction, ETriggerEvent::Started, this, &AHama::SwapWeapon);
         EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &AHama::InteractActionPressed);
-        EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Started, this, &AHama::GamepadXActionPressed);
+        EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Triggered, this, &AHama::GamepadXActionPressed);
+        EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Completed, this, &AHama::GamepadXActionReleased);
     }
 }
 
@@ -1182,6 +1180,7 @@ void AHama::Server_StartPerkDrink(ABasePerk* TargetPerk)
     GetWorldTimerManager().SetTimer(PerkDrinkTimerHandle, this, &AHama::GivePendingPerk, DrinkDuration, false);
 }
 
+
 void AHama::GivePendingPerk()
 {
     if (HasAuthority())
@@ -1245,6 +1244,17 @@ void AHama::AddPerkByID(FName PerkID)
         if (HasAuthority()) ForceNetUpdate();
     }
 }
+
+void AHama::HandleDeath()
+{
+    OwnedPerks.Empty();
+    bHasFastHands = false;
+    bHasDoubleTap = false;
+    bHasDeadshot = false;
+    bHasMuleKick = false;
+    if (HamaComponent) HamaComponent->ResetStamina();
+}
+
 
 void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPerk)
 {
@@ -1378,7 +1388,7 @@ void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
 void AHama::InteractActionPressed()
 {
     if (IsDrinkingPerk()) return;
-    if (FocusedInteractable)
+    if (FocusedInteractable && FocusedInteractable->CanInteract(this))
     {
         AActor* InteractActor = Cast<AActor>(FocusedInteractable);
         if (InteractActor)
@@ -1388,19 +1398,39 @@ void AHama::InteractActionPressed()
     }
 }
 
-void AHama::GamepadXActionPressed()
+void AHama::GamepadXActionPressed(const FInputActionInstance& Instance)
 {
     if (IsDrinkingPerk()) return;
-    if (FocusedInteractable)
+
+    if (!bIsxButtonHolded && Instance.GetElapsedTime() >= 0.5f)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Gamepad X Pressed: Interacting with Focused Interactable"));
-        InteractActionPressed();
-    }
-    else
-    {
+        bIsxButtonHolded = true;
         ReloadActionPressed();
     }
 }
+
+void AHama::GamepadXActionReleased()
+{
+    if (IsDrinkingPerk()) return;
+
+    if (bIsxButtonHolded)
+    {
+        bIsxButtonHolded = false;
+    }
+    else
+    {
+        if (FocusedInteractable && FocusedInteractable->CanInteract(this))
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Gamepad X: Interacting"));
+            InteractActionPressed();
+        }
+        else
+        {
+            ReloadActionPressed();
+        }
+    }
+}
+
 void AHama::Server_Interact_Implementation(AActor* InteractTarget)
 {
     if (!InteractTarget) return;

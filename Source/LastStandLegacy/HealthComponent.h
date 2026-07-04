@@ -38,6 +38,7 @@ protected:
     void DownPlayer();
     void RegenerateHealth();
     void Revive();
+    void HandlePlayerDeath();
 
 private:
     UPROPERTY()

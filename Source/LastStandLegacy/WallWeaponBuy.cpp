@@ -63,3 +63,18 @@ FString AWallWeaponBuy::GetInteractMessage()
 {
     return FString::Printf(TEXT("Press F to Buy %s [Cost: %d] / Ammo [Cost: %d]"), *WeaponName, WeaponCost, AmmoCost);
 }
+
+bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
+{
+    if (!InteractingPlayer || !WeaponClass) return false;
+
+    ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponByClass(WeaponClass);
+
+    if (OwnedWeapon)
+    {
+        return OwnedWeapon->NeedsAmmo();
+    }
+
+    return true;
+}
+

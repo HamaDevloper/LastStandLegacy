@@ -416,7 +416,7 @@ public:
 
     bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
     bool HasFastHands() const { return bHasFastHands; }
-   
+    void HandleDeath();
 
 protected:
     FTimerHandle PerkDrinkTimerHandle;
@@ -438,8 +438,15 @@ protected:
     class IInteractInterface* FocusedInteractable;
     
     void InteractActionPressed();
-    void GamepadXActionPressed();
-  
+    void GamepadXActionPressed(const FInputActionInstance& Instance);
+    void GamepadXActionReleased();
+
+    bool bIsxButtonHolded = false;
+
     UFUNCTION(Server, Reliable)
     void Server_Interact(AActor* InteractTarget);
+
+public:
+    UPROPERTY(Replicated, BlueprintReadOnly)
+    bool bIsDead = false;
 };

@@ -63,7 +63,7 @@ protected:
 
 public:
     void UpgradeMaxStamina(float NewMaxStamina);
-	
+    void ResetStamina();
 
 	void SetAiming(bool bNewAiming);
     void SetDown(bool NewValue);

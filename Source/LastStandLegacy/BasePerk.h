@@ -43,6 +43,7 @@ protected:
 public:
     virtual void Interact(AHama* HamaChar) override;
     virtual FString GetInteractMessage() override;
+    virtual bool CanInteract(AHama* InteractingPlayer) override;
 
     FName GetPerkID() const { return PerkID; }
     int32 GetPerkCost() const { return PerkCost; }

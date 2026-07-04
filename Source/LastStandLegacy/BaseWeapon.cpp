@@ -117,7 +117,7 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_SkipOwner);
     DOREPLIFETIME_CONDITION(ABaseWeapon, ReserveAmmo, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, Damage, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(ABaseWeapon, MaxAmmoInClip, COND_OwnerOnly);

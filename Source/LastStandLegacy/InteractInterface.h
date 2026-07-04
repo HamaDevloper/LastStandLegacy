@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -24,4 +24,5 @@ class LASTSTANDLEGACY_API IInteractInterface
 public:
    virtual void Interact(AHama* Hama) = 0;
    virtual FString GetInteractMessage() = 0;
+   virtual bool CanInteract(AHama* InteractingPlayer) { return true; }
 };

@@ -2,6 +2,7 @@
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "EngineUtils.h"
 
 UHealthComponent::UHealthComponent()
 {
@@ -86,4 +87,45 @@ void UHealthComponent::DownPlayer()
 
 void UHealthComponent::Revive()
 {
+}
+
+void UHealthComponent::HandlePlayerDeath()
+{
+    if (!GetOwner()->HasAuthority()) return;
+    if (!OwnerCharacter) return;
+    if (OwnerCharacter->bIsDead) return;
+  
+        OwnerCharacter->HandleDeath();
+        MaxHealth = 100.f;
+        CurrentHealth = 100;
+
+        APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
+
+        if (PC)
+        {
+            PC->UnPossess();
+
+            AHama* PlayerToSpectate = nullptr;
+            for (TActorIterator<AHama> ActorItr(GetWorld()); ActorItr; ++ActorItr)
+            {
+                AHama* OtherPlayer = *ActorItr;
+
+                if (OtherPlayer && OtherPlayer != OwnerCharacter && !OtherPlayer->bIsDead)
+                {
+                    PlayerToSpectate = OtherPlayer;
+                    break;
+                }
+            }
+
+            PC->ChangeState(NAME_Spectating);
+            PC->ClientGotoState(NAME_Spectating);
+
+            if (PlayerToSpectate)
+            {
+                PC->SetViewTargetWithBlend(PlayerToSpectate, 0.5f);
+            }
+        }
+
+        OwnerCharacter->ForceNetUpdate();
+        OwnerCharacter->Destroy();
 }
