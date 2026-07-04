@@ -68,15 +68,6 @@ void AHama::BeginPlay()
 
     OwnerController = Cast<APlayerController>(GetController());
 
-    if (IsLocallyControlled() && PlayerCrossHairClass)
-    {
-        CrossHairRef = CreateWidget<UUserWidget>(GetWorld(), PlayerCrossHairClass);
-        if (CrossHairRef)
-        {
-            CrossHairRef->AddToViewport();
-        }
-    }
-
     if (IsLocallyControlled() && MainWidgetClass)
     {
         MainWidgetRef = CreateWidget<UHamaMainWidget>(GetWorld(), MainWidgetClass);
@@ -114,11 +105,6 @@ void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
     GetWorldTimerManager().ClearTimer(CrossHairTimerHandle);
 
-    if (CrossHairRef)
-    {
-        CrossHairRef->RemoveFromParent();
-        CrossHairRef = nullptr;
-    }
     if (MainWidgetRef)
     {
         MainWidgetRef->RemoveFromParent();
@@ -225,70 +211,77 @@ void AHama::Tick(float DeltaTime)
 
 void AHama::CheckForInteractables()
 {
-    if (!IsLocallyControlled()) return;
-    if (!OwnerController) return;
+    if (!IsLocallyControlled() || !OwnerController) return;
 
     FVector CameraLocation;
     FRotator ViewRotation;
     OwnerController->GetPlayerViewPoint(CameraLocation, ViewRotation);
 
-    FVector StartLocation = GetActorLocation() + FVector(0.0f, 0.0f, 50.0f);
-    FVector EndLocation = StartLocation + (ViewRotation.Vector() * 250.0f);
+    FVector StartLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f);
+    FVector EndLocation = StartLocation + (ViewRotation.Vector() * SetIntractDistance);
 
-    FHitResult HitResult;
-    float SphereRadius = 45.0f;
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+    Params.bReturnPhysicalMaterial = false;
 
-    // 🚀 He function blueprint sarkha real sphere sweep dakhvte:
-    bool bHit = UKismetSystemLibrary::SphereTraceSingle(
-        GetWorld(),
+    FCollisionShape Sphere = FCollisionShape::MakeSphere(45.f);
+
+    // Async — فریم بلۆک ناکات
+    FTraceDelegate TraceDelegate;
+    TraceDelegate.BindUObject(this, &AHama::OnInteractTraceCompleted);
+
+    GetWorld()->AsyncSweepByChannel(
+        EAsyncTraceType::Single,
         StartLocation,
         EndLocation,
-        SphereRadius,
-        UEngineTypes::ConvertToTraceType(ECC_Intract),
-        false,
-        TArray<AActor*>{this}, // Ignore list
-        EDrawDebugTrace::ForOneFrame, // 🚀 He real sphere sweep dakhvte!
-        HitResult,
-        true,
-        FLinearColor::Red,   // Jar hit nahi zale tar red color
-        FLinearColor::Green, // Jar hit zale tar green color
-        0.1f                 // Duration
+        FQuat::Identity,
+        ECC_Intract,
+        Sphere,
+        Params,
+        FCollisionResponseParams::DefaultResponseParam,
+        &TraceDelegate
     );
+}
 
-    if (bHit && HitResult.GetActor())
-    {
-        IInteractInterface* InteractableActor = Cast<IInteractInterface>(HitResult.GetActor());
-
-        if (InteractableActor)
-        {
-            FocusedInteractable = InteractableActor;
-
-            if (FocusedInteractable->CanInteract(this))
-            {
-                if (MainWidgetRef)
-                {
-                    MainWidgetRef->ShowInteractMessage(FocusedInteractable->GetInteractMessage());
-                }
-            }
-            else
-            {
-                if (MainWidgetRef)
-                {
-                    MainWidgetRef->HideInteractMessage();
-                }
-            }
-        }
-    }
-    else
+void AHama::OnInteractTraceCompleted(
+    const FTraceHandle& Handle, FTraceDatum& Datum)
+{
+    // ئەگەر هیچ Hit نەبوو
+    if (Datum.OutHits.IsEmpty() || !Datum.OutHits[0].GetActor())
     {
         if (FocusedInteractable)
         {
             FocusedInteractable = nullptr;
-            if (MainWidgetRef)
-            {
-                MainWidgetRef->HideInteractMessage();
-            }
+            if (MainWidgetRef) MainWidgetRef->HideInteractMessage();
         }
+        return;
+    }
+
+    IInteractInterface* NewFocus = Cast<IInteractInterface>(
+        Datum.OutHits[0].GetActor());
+
+    if (!NewFocus)
+    {
+        if (FocusedInteractable)
+        {
+            FocusedInteractable = nullptr;
+            if (MainWidgetRef) MainWidgetRef->HideInteractMessage();
+        }
+        return;
+    }
+
+    if (NewFocus != FocusedInteractable)
+    {
+        FocusedInteractable = NewFocus;
+    }
+
+    if (MainWidgetRef)
+    {
+        if (FocusedInteractable->CanInteract(this))
+            MainWidgetRef->ShowInteractMessage(
+                FocusedInteractable->GetInteractMessage());
+        else
+            MainWidgetRef->HideInteractMessage();
     }
 }
 
@@ -339,7 +332,11 @@ void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDat
     if (bHit != bLastCrossHairState)
     {
         bLastCrossHairState = bHit;
-        CrossHairUpdate(bHit);
+
+        if (MainWidgetRef)
+        {
+            MainWidgetRef->UpdateCrosshairState(bHit);
+        }
     }
 }
 
@@ -1401,11 +1398,13 @@ void AHama::InteractActionPressed()
 void AHama::GamepadXActionPressed(const FInputActionInstance& Instance)
 {
     if (IsDrinkingPerk()) return;
-
-    if (!bIsxButtonHolded && Instance.GetElapsedTime() >= 0.5f)
+    if (!bIsxButtonHolded && Instance.GetElapsedTime() >= 0.3f)
     {
-        bIsxButtonHolded = true;
-        ReloadActionPressed();
+        if (FocusedInteractable && FocusedInteractable->CanInteract(this))
+        {
+            bIsxButtonHolded = true;
+            InteractActionPressed();
+        }
     }
 }
 
@@ -1419,15 +1418,7 @@ void AHama::GamepadXActionReleased()
     }
     else
     {
-        if (FocusedInteractable && FocusedInteractable->CanInteract(this))
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Gamepad X: Interacting"));
-            InteractActionPressed();
-        }
-        else
-        {
-            ReloadActionPressed();
-        }
+        ReloadActionPressed();
     }
 }
 

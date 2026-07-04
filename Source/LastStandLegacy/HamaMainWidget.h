@@ -2,9 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "HamaMainWidget.generated.h" 
+#include "HamaMainWidget.generated.h"
 
+// ناساندنی کڵاسەکان لە سەرەوە بۆ خاوێنی کۆدەکە
 class AHama;
+class UTextBlock;
+class UImage;
 
 UCLASS()
 class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
@@ -12,38 +15,46 @@ class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
+    // --- بەشی سەرەتایی (Initialization) ---
+    void InitializeWidget(AHama* InHama);
+
+    // --- بەشی نوێکردنەوەی زانیارییەکانی شاشە (HUD Updates) ---
     void UpdatePointsText(int32 NewPoints);
     void UpdateKillsText(int32 NewKills);
     void UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo);
     void UpdateRoundText(int32 NewRound);
-    void InitializeWidget(class AHama* InHamaLat);
+    void UpdateCrosshairState(bool bIsAimingAtEnemy);
 
-    // 🚀 لابردنی BlueprintImplementableEvent و گۆڕینیان بۆ فەنکشنی ئاسایی
+    // --- بەشی نامە و ئاگادارکردنەوەکان (Messages & Warnings) ---
     void ShowInteractMessage(const FString& Message);
     void HideInteractMessage();
-
     void ShowAmmoWarning(const FString& WarningMessage);
     void HideAmmoWarning();
 
 protected:
+    // --- پێکهاتەکانی دیزاین (UI Components) ---
     UPROPERTY(meta = (BindWidget))
-    class UTextBlock* Points;
+    UTextBlock* Points;
 
     UPROPERTY(meta = (BindWidget))
-    class UTextBlock* Kills;
+    UTextBlock* Kills;
 
     UPROPERTY(meta = (BindWidget))
-    class UTextBlock* Ammo;
+    UTextBlock* Ammo;
 
     UPROPERTY(meta = (BindWidget))
-    class UTextBlock* Round;
+    UTextBlock* Round;
 
     UPROPERTY(meta = (BindWidget))
-    class UTextBlock* InteractText;
+    UTextBlock* InteractText;
 
     UPROPERTY(meta = (BindWidget))
-    class UTextBlock* AmmoWarningText;
+    UTextBlock* AmmoWarningText;
 
+    UPROPERTY(meta = (BindWidget))
+    UImage* CrosshairImage;
+
+    // --- داتای هەڵگیراو (Cached Data) ---
     UPROPERTY()
     TObjectPtr<AHama> CachedHamaChar;
 };

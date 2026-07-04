@@ -190,11 +190,6 @@ public:
     // -----------------------------------------------------------------------------
     // UI & HUD
     // -----------------------------------------------------------------------------
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
-    TSubclassOf<UUserWidget> PlayerCrossHairClass;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Hama|UI")
-    TObjectPtr<UUserWidget> CrossHairRef;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama | UI")
     TSubclassOf<class UHamaMainWidget> MainWidgetClass;
@@ -256,8 +251,6 @@ public:
     // -----------------------------------------------------------------------------
     // Blueprint Events
     // -----------------------------------------------------------------------------
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
-    void CrossHairUpdate(bool bInRange);
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
     void OnAim(bool InAiming);
@@ -431,6 +424,8 @@ public:
 
 protected:
     void CheckForInteractables();
+  
+    void OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Datum);
     
     UPROPERTY()
     FTimerHandle InteractTimerHandle;
@@ -449,4 +444,8 @@ protected:
 public:
     UPROPERTY(Replicated, BlueprintReadOnly)
     bool bIsDead = false;
+
+protected:
+    UPROPERTY(EditAnywhere,BlueprintReadOnly, Category = "Hama|Setting")
+    float SetIntractDistance = 100.f;
 };

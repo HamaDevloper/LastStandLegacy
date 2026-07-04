@@ -1,7 +1,19 @@
 ﻿#include "HamaMainWidget.h"
 #include "Hama.h"
-#include "Components/TextBlock.h" 
+#include "Components/TextBlock.h"
+#include "Components/Image.h" // 🚀 چارەسەری ئێرۆرەکە لێرەدایە!
 
+// -------------------------------------------------------------------------
+// Initialization
+// -------------------------------------------------------------------------
+void UHamaMainWidget::InitializeWidget(AHama* InHama)
+{
+    CachedHamaChar = InHama;
+}
+
+// -------------------------------------------------------------------------
+// HUD Updates
+// -------------------------------------------------------------------------
 void UHamaMainWidget::UpdatePointsText(int32 NewPoints)
 {
     if (Points)
@@ -26,11 +38,6 @@ void UHamaMainWidget::UpdateRoundText(int32 NewRound)
     }
 }
 
-void UHamaMainWidget::InitializeWidget(AHama* InHama)
-{
-    CachedHamaChar = InHama;
-}
-
 void UHamaMainWidget::UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo)
 {
     if (!Ammo) return;
@@ -46,10 +53,23 @@ void UHamaMainWidget::UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo)
     Ammo->SetText(FormattedAmmo);
 }
 
-// -------------------------------------------------------------------------
-// 🚀 لۆژیکی نوێی تێکستەکان بە سەد لە سەد C++
-// -------------------------------------------------------------------------
+void UHamaMainWidget::UpdateCrosshairState(bool bIsAimingAtEnemy)
+{
+    if (!CrosshairImage) return;
 
+    if (bIsAimingAtEnemy)
+    {
+        CrosshairImage->SetColorAndOpacity(FLinearColor::Red);
+    }
+    else
+    {
+        CrosshairImage->SetColorAndOpacity(FLinearColor::White);
+    }
+}
+
+// -------------------------------------------------------------------------
+// Messages & Warnings
+// -------------------------------------------------------------------------
 void UHamaMainWidget::ShowInteractMessage(const FString& Message)
 {
     if (InteractText)
