@@ -73,62 +73,78 @@ void UHealthComponent::RegenerateHealth()
         CurrentHealth = MaxHealth;
         GetWorld()->GetTimerManager().ClearTimer(RegenerateHealthTimer);
     }
-
-    if (OwnerCharacter)
-    {
-        OwnerCharacter->ForceNetUpdate();
-    }
 }
 
 void UHealthComponent::DownPlayer()
 {
-   GetWorld()->GetTimerManager().ClearTimer(RegenerateHealthTimer);
-   GetWorld()->GetTimerManager().ClearTimer(DownTimerHandle);
+    if (!OwnerCharacter || !OwnerCharacter->HasAuthority()) return;
 
-   if (OwnerComponent) OwnerComponent->SetDowned(true);
+    GetWorld()->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+    GetWorld()->GetTimerManager().ClearTimer(DownTimerHandle);
+
+    if (OwnerComponent)
+    {
+        OwnerComponent->SetDowned(true);
+    }
+
+    GetWorld()->GetTimerManager().SetTimer(
+        DownTimerHandle,
+        this,
+        &UHealthComponent::HandlePlayerDeath,
+        45.0f,
+        false
+    );
 }
 
 void UHealthComponent::Revive()
 {
+    if (!OwnerCharacter || !OwnerCharacter->HasAuthority()) return;
+
+    GetWorld()->GetTimerManager().ClearTimer(DownTimerHandle);
+
+    CurrentHealth = MaxHealth;
+
+    if (OwnerComponent)
+    {
+        OwnerComponent->SetDowned(false);
+    }
+
+    OwnerCharacter->ForceNetUpdate();
 }
 
 void UHealthComponent::HandlePlayerDeath()
 {
-    if (!GetOwner()->HasAuthority()) return;
-    if (!OwnerCharacter) return;
-    if (OwnerCharacter->bIsDead) return;
-  
-        OwnerCharacter->HandleDeath();
-        MaxHealth = 100.f;
-        CurrentHealth = 100;
+    if (!GetOwner()->HasAuthority() || !OwnerCharacter || OwnerCharacter->bIsDead) return;
 
-        APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
+    OwnerCharacter->HandleDeath();
 
-        if (PC)
+    APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
+
+    if (PC)
+    {
+        PC->UnPossess();
+
+        AHama* PlayerToSpectate = nullptr;
+        for (TActorIterator<AHama> ActorItr(GetWorld()); ActorItr; ++ActorItr)
         {
-            PC->UnPossess();
+            AHama* OtherPlayer = *ActorItr;
 
-            AHama* PlayerToSpectate = nullptr;
-            for (TActorIterator<AHama> ActorItr(GetWorld()); ActorItr; ++ActorItr)
+            if (OtherPlayer && OtherPlayer != OwnerCharacter && !OtherPlayer->bIsDead)
             {
-                AHama* OtherPlayer = *ActorItr;
-
-                if (OtherPlayer && OtherPlayer != OwnerCharacter && !OtherPlayer->bIsDead)
-                {
-                    PlayerToSpectate = OtherPlayer;
-                    break;
-                }
-            }
-
-            PC->ChangeState(NAME_Spectating);
-            PC->ClientGotoState(NAME_Spectating);
-
-            if (PlayerToSpectate)
-            {
-                PC->SetViewTargetWithBlend(PlayerToSpectate, 0.5f);
+                PlayerToSpectate = OtherPlayer;
+                break;
             }
         }
 
-        OwnerCharacter->ForceNetUpdate();
-        OwnerCharacter->Destroy();
+        PC->ChangeState(NAME_Spectating);
+        PC->ClientGotoState(NAME_Spectating);
+
+        if (PlayerToSpectate)
+        {
+            PC->SetViewTargetWithBlend(PlayerToSpectate, 0.5f);
+        }
+    }
+
+    OwnerCharacter->ForceNetUpdate();
+    OwnerCharacter->Destroy();
 }

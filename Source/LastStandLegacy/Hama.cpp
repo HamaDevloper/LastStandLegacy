@@ -1380,27 +1380,44 @@ void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
     float AngleRads = FMath::Atan2(RightDot, ForwardDot);
     float AngleDegrees = FMath::RadiansToDegrees(AngleRads);
 
-    // ناردنی گۆشە ئامادەکراوەکە بۆ بلوپرێنت
     OnDamageIndicatorUpdate(AngleDegrees);
 }
 
 void AHama::InteractActionPressed()
 {
     if (IsDrinkingPerk()) return;
+
     if (FocusedInteractable && FocusedInteractable->CanInteract(this))
     {
         AActor* InteractActor = Cast<AActor>(FocusedInteractable);
         if (InteractActor)
         {
-            Server_Interact(InteractActor);
+            if (AHama* DownedPlayer = Cast<AHama>(InteractActor))
+            {
+                bIsCurrentlyReviving = true;
+                Server_BeginRevive(DownedPlayer);
+            }
+            else
+            {
+                Server_Interact(InteractActor);
+            }
         }
+    }
+}
+
+void AHama::InteractActionReleased()
+{
+    if (bIsCurrentlyReviving)
+    {
+        bIsCurrentlyReviving = false;
+        Server_CancelRevive();
     }
 }
 
 void AHama::GamepadXActionPressed(const FInputActionInstance& Instance)
 {
     if (IsDrinkingPerk()) return;
-    if (!bIsxButtonHolded && Instance.GetElapsedTime() >= 0.3f)
+    if (!bIsxButtonHolded && Instance.GetElapsedTime() >= 0.2f)
     {
         if (FocusedInteractable && FocusedInteractable->CanInteract(this))
         {
@@ -1417,6 +1434,12 @@ void AHama::GamepadXActionReleased()
     if (bIsxButtonHolded)
     {
         bIsxButtonHolded = false;
+
+        if (bIsCurrentlyReviving)
+        {
+            bIsCurrentlyReviving = false;
+            Server_CancelRevive();
+        }
     }
     else
     {
@@ -1523,6 +1546,69 @@ void AHama::PerformMeleeHitDetection()
             PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
 
             HitActor->TakeDamage(MeleeDamage, PointDamageEvent, OwnerController, this);
+        }
+    }
+}
+
+bool AHama::CanInteract(AHama* InteractingPlayer)
+{
+    return HamaComponent && HamaComponent->IsDowned() && !bIsDead;
+}
+
+FString AHama::GetInteractMessage()
+{
+    return FString(TEXT("Hold [F/X] To Revive"));
+}
+
+void AHama::Interact(AHama* InteractingPlayer)
+{
+}
+
+void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
+{
+    // پشکنینی ئاسایش: ئایا یاریزانەکە بوونی هەیە و بەڕاستی کەوتووە؟
+    if (!DownedPlayer || !DownedPlayer->HealthComponent || !DownedPlayer->HamaComponent->IsDowned()) return;
+
+    // ڕێگری کردن لەوەی دوو کەس لە یەک کاتدا هەڵیبستێننەوە
+    if (GetWorldTimerManager().IsTimerActive(ReviveTimerHandle)) return;
+
+    float ReviveTime = DefaultReviveTime;
+
+    // ١. ئایا خۆم پزیشکم؟
+    UHamaAbilityComponent* MyAbilityComp = FindComponentByClass<UHamaAbilityComponent>();
+    if (MyAbilityComp && MyAbilityComp->GetAssignedAbility() == EHamaAbilityType::MedicalSupport)
+    {
+        ReviveTime /= 2.0f;
+    }
+
+    // ٢. ئایا Blitz کارایە؟
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    if (GS && GS->IsTeamAdrenalineActive())
+    {
+        ReviveTime /= 2.0f;
+    }
+
+    // دەستپێکردنی تایمەر لەسەر سێرڤەر (هیچ کلایێنتێک ناتوانێت فێڵ بکات)
+    FTimerDelegate ReviveDel;
+    ReviveDel.BindUFunction(this, FName("Server_CompleteRevive"), DownedPlayer);
+
+    GetWorldTimerManager().SetTimer(ReviveTimerHandle, ReviveDel, ReviveTime, false);
+}
+
+void AHama::Server_CancelRevive_Implementation()
+{
+    GetWorldTimerManager().ClearTimer(ReviveTimerHandle);
+}
+
+void AHama::Server_CompleteRevive(AHama* DownedPlayer)
+{
+    if (DownedPlayer && DownedPlayer->HealthComponent && DownedPlayer->HamaComponent->IsDowned())
+    {
+        DownedPlayer->HealthComponent->Revive();
+
+        if (AHamaPlayerState* MyPS = GetPlayerState<AHamaPlayerState>())
+        {
+            MyPS->AddPoints(100);
         }
     }
 }

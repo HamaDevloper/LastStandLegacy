@@ -5,6 +5,7 @@
 #include "CollisionQueryParams.h"
 #include "HamaPlayerState.h"
 #include "Engine/OverlapResult.h"
+#include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 
 UHamaAbilityComponent::UHamaAbilityComponent()
@@ -194,13 +195,24 @@ void UHamaAbilityComponent::ActivateGhostMode()
     OnRep_IsGhost();
 }
 
-void UHamaAbilityComponent::DeactivateGhostMode()
+void UHamaAbilityComponent::OnRep_IsGhost()
 {
-    bIsGhost = false;
+    AHama* OwnerChar = Cast<AHama>(GetOwner());
+    if (!OwnerChar || !OwnerChar->GetCapsuleComponent()) return;
 
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Ghost Mode Deactivated!"));
+    if (bIsGhost)
+    {
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Purple, TEXT("Visuals: Player became a Ghost"));
+        OwnerChar->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 
-    OnRep_IsGhost();
+    }
+    else
+    {
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Visuals: Player returned to Normal"));
+
+        // 🚶‍♂️ گەڕانەوە بۆ دۆخی ئاسایی: کارەکتەرەکە جارێکی تر بەر زۆمبییەکان دەکەوێتەوە
+        OwnerChar->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+    }
 }
 
 void UHamaAbilityComponent::ActivateBlitz()
@@ -217,16 +229,8 @@ void UHamaAbilityComponent::ActivateBlitz()
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Blitz Activated on Server!"));
 }
 
-void UHamaAbilityComponent::OnRep_IsGhost()
+void UHamaAbilityComponent::DeactivateGhostMode()
 {
-    if (bIsGhost)
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Purple, TEXT("Visuals: Player became a Ghost"));
-    }
-    else
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Visuals: Player returned to Normal"));
-    }
 }
 
 void UHamaAbilityComponent::StopAllAbilities()

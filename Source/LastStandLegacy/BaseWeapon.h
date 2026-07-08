@@ -197,7 +197,7 @@ public:
     void Server_FireRoutine();
 
     UFUNCTION(Server, Reliable)
-    void Server_ApplyDamage(AActor* HitActor, float DamageToApply, FVector ShotDirection, FHitResult HitInfo);
+    void Server_ApplyDamage(AActor* HitActor, FVector ShotDirection, FHitResult HitInfo);
 
     UFUNCTION()
     void OnRep_BurstCounter();

@@ -33,11 +33,11 @@ protected:
 public:
     void GetDamage(float Amount);
     void UpgradeHealth(float Amount);
+    void Revive();
 
 protected:
     void DownPlayer();
     void RegenerateHealth();
-    void Revive();
     void HandlePlayerDeath();
 
 private:

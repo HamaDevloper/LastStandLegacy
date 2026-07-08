@@ -44,6 +44,9 @@ public:
 
     bool GetGhost() const { return bIsGhost; }
 
+    // 🚀 ئەمە ئەو دێڕەیە کە زیاد کراوە
+    EHamaAbilityType GetAssignedAbility() const { return CurrentAssignedAbility; }
+
 protected:
     UFUNCTION(BlueprintPure, Category = "Hama|Abilities")
     EHamaAbilityType GetCurrentAssignedAbility() const { return CurrentAssignedAbility; }
@@ -55,7 +58,6 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     EHamaAbilityType CurrentAssignedAbility = EHamaAbilityType::None;
 
-    
     UPROPERTY(ReplicatedUsing = OnRep_CurrentPower, VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     float CurrentPower = 0.0f;
 
@@ -76,14 +78,13 @@ protected:
 
     UFUNCTION()
     void DeactivateGhostMode();
-   
+
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     float AbilityDuration = 15.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     float BlitzAbilityDuration = 20.0f;
-
 
     UFUNCTION()
     void OnRep_IsGhost();

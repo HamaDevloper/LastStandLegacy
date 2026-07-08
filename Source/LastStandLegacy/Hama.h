@@ -45,7 +45,7 @@ struct FInputActionValue;
 struct FInputActionInstance;
 
 UCLASS()
-class LASTSTANDLEGACY_API AHama : public ACharacter
+class LASTSTANDLEGACY_API AHama : public ACharacter, public IInteractInterface
 {
     GENERATED_BODY()
 
@@ -315,6 +315,7 @@ protected:
     void AimPressedSitck();
     void AbilityActionPressed();
     void MeleeActionPressed();
+    void InteractActionReleased();
        
 protected:
     static const float CrossHairTimer;
@@ -477,4 +478,27 @@ protected:
 
 public:
     void PerformMeleeHitDetection();
+
+    UFUNCTION(Server, Reliable)
+    void Server_BeginRevive(AHama* DownedPlayer);
+
+    // ئەگەر دوگمەکەی بەردا یان دوورکەوتەوە، ڕیڤایڤەکە هەڵدەوەشێتەوە
+    UFUNCTION(Server, Reliable)
+    void Server_CancelRevive();
+
+    // فەنکشنێک کە تایمەرەکەی سێرڤەر بانگی دەکات کاتێک کاتەکە تەواو دەبێت
+    UFUNCTION()
+    void Server_CompleteRevive(AHama* DownedPlayer);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama | Revive")
+    float DefaultReviveTime = 5.0f;
+
+private:
+    FTimerHandle ReviveTimerHandle;
+
+    bool bIsCurrentlyReviving = false;
+
+    virtual bool CanInteract(AHama* InteractingPlayer) override;
+    virtual FString GetInteractMessage() override;
+    virtual void Interact(AHama* InteractingPlayer) override;
 };

@@ -297,6 +297,12 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
         else if (SurfaceType == EPhysicalSurface::SurfaceType2)
             ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
     }
+
+    if (IsInfiniteAmmoActive())
+    {
+        ActualDamage *= 2.0f;
+    }
+
     return ActualDamage;
 }
 
@@ -410,7 +416,7 @@ void ABaseWeapon::HandleFireLocal()
                 if (LocalHit.GetActor())
                 {
                     float FinalDamage = CalculateDamageBySurface(LocalHit);
-                    Server_ApplyDamage(LocalHit.GetActor(), FinalDamage, ShotDirection, LocalHit);
+                    Server_ApplyDamage(LocalHit.GetActor(), ShotDirection, LocalHit);
                 }
             }
         }
@@ -429,7 +435,7 @@ void ABaseWeapon::HandleFireLocal()
                     PlayLocalHitEffects(SingleHit);
 
                     float FinalDamage = CalculateDamageBySurface(SingleHit);
-                    Server_ApplyDamage(SingleHit.GetActor(), FinalDamage, ShotDirection, SingleHit);
+                    Server_ApplyDamage(SingleHit.GetActor(), ShotDirection, SingleHit);
 
                     HitActors.Add(SingleHit.GetActor());
                     PenetratedCount++;
@@ -535,14 +541,16 @@ void ABaseWeapon::Server_FireRoutine()
     BurstCounter = (BurstCounter >= 255) ? 1 : BurstCounter + 1;
 }
 
-void ABaseWeapon::Server_ApplyDamage_Implementation(AActor* HitActor, float DamageToApply, FVector ShotDirection, FHitResult HitInfo)
+void ABaseWeapon::Server_ApplyDamage_Implementation(AActor* HitActor, FVector ShotDirection, FHitResult HitInfo)
 {
     if (!HitActor || !OwnerCharacter) return;
+
+    float FinalDamage = CalculateDamageBySurface(HitInfo);
 
     AController* DamageInstigator = OwnerCharacter->GetController();
 
     UGameplayStatics::ApplyPointDamage(
-        HitActor, DamageToApply, ShotDirection,
+        HitActor, FinalDamage, ShotDirection,
         HitInfo, DamageInstigator, this, UDamageType::StaticClass()
     );
 }
