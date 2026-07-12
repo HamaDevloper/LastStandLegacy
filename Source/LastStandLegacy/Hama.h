@@ -245,6 +245,9 @@ public:
     UAnimMontage* SlideMontage;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
+    UAnimMontage* DiveMontage;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
     UAnimMontage* DrinkPerkMontage;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Animations")
@@ -298,10 +301,12 @@ protected:
     void Move(const FInputActionValue& Value);
     void Look(const FInputActionValue& Value);
     void JumpActionPressed();
-    void CrouchActionPressed();
-    void CrouchActionReleased();
+    void CrouchActionPressed(const FInputActionInstance& Instance);
+    void CrouchActionReleased(const FInputActionInstance& Instance);
     void StartSlideRoutine();
     void StopSlideRoutine();
+    void StartDiving();
+    void StopDiving();
     void SwitchCameraPressed(const FInputActionInstance& Instance);
     void SwitchCameraReleased();
     void SprintActionPressed();
@@ -309,6 +314,7 @@ protected:
     void CrossHairTrace();
     void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
     void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+    void OnDiveMontageEnded(UAnimMontage* Montage, bool bInterrupted);
     void CreateDefaultWeapon();
     void AttachWeaponToMesh(ABaseWeapon* WeaponToAttach);
     void ReloadActionPressed();
@@ -323,6 +329,7 @@ protected:
     bool bIsHoldedTrigger = false;
     bool bIsAimButtonHold = false;
     bool bIsAimSnapping = false;
+    bool bHasPerformedDive = false;
     FRotator TargetSnapRotation;
 
     UPROPERTY()
@@ -332,8 +339,6 @@ protected:
 
     float SnapInterpSpeed = 45.f;
     float SnapStopThreshold = 1.0f;
-
-    //bool bIsStickyAiming = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Targeting")
     float StickySlowdownMultiplier = 0.5f;

@@ -20,6 +20,7 @@
 #include "Engine/DamageEvents.h"
 #include "MeleeDamageType.h"
 #include "DrawDebugHelpers.h"
+#include "HamaComponent.h"
 
 // -----------------------------------------------------------------------------
 // Constructor
@@ -28,11 +29,11 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer.SetDefaultSubobjectClass<UHamaMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.bStartWithTickEnabled = false;
+    PrimaryActorTick.bStartWithTickEnabled = true;
 
     bReplicates = true;
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(70.f);
+    SetNetUpdateFrequency(60.f);
     SetMinNetUpdateFrequency(33.f);
 
     if (GetCharacterMovement())
@@ -120,12 +121,13 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 
     DOREPLIFETIME(AHama, CurrentWeapon);
     DOREPLIFETIME(AHama, bHasFastHands);
-    DOREPLIFETIME(AHama, bHasDoubleTap);
-    DOREPLIFETIME(AHama, bHasMuleKick);
-    DOREPLIFETIME(AHama, PrimaryWeapon);
-    DOREPLIFETIME(AHama, SecondaryWeapon);
-    DOREPLIFETIME(AHama, ThirdWeapon);
     DOREPLIFETIME(AHama, bIsDead);
+    DOREPLIFETIME_CONDITION(AHama, bHasDoubleTap, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, bHasMuleKick, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, bHasDeadshot, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, PrimaryWeapon, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, SecondaryWeapon, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, ThirdWeapon, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, OwnedPerks, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, bIsDeathMachineActive, COND_OwnerOnly);
 }
@@ -162,14 +164,14 @@ void AHama::Tick(float DeltaTime)
 
     if (!OwnerController || !SnapTarget)
     {
-        SetActorTickEnabled(false);
+        //SetActorTickEnabled(false);
         return;
     }
 
     if (SnapTarget->IsDead())
     {
         SnapTarget = nullptr;
-        SetActorTickEnabled(false);
+        //SetActorTickEnabled(false);
         return;
     }
 
@@ -177,7 +179,7 @@ void AHama::Tick(float DeltaTime)
     if (!TargetMesh)
     {
         SnapTarget = nullptr;
-        SetActorTickEnabled(false);
+        //SetActorTickEnabled(false);
         return;
     }
 
@@ -207,13 +209,14 @@ void AHama::Tick(float DeltaTime)
     if (CurrentRot.Equals(TargetRot, 0.1f))
     {
         SnapTarget = nullptr;
-        SetActorTickEnabled(false);
+        //SetActorTickEnabled(false);
     }
 }
 
 void AHama::CheckForInteractables()
 {
     if (!IsLocallyControlled() || !OwnerController) return;
+    if (HamaComponent && HamaComponent->IsDowned()) return;
 
     FVector CameraLocation;
     FRotator ViewRotation;
@@ -487,7 +490,6 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
         OnRep_CurrentWeapon();
         OnWeaponChanged.Broadcast(CurrentWeapon);
 
-        // 🚀 دیبەگی سەرکەوتن: پێمان دەڵێت کە چەکەکە هاتە دەستمان و ناوی چەکەکەش دەهێنێت
         if (GEngine)
         {
             FString WeaponName = CurrentWeapon->GetName();
@@ -497,7 +499,6 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
     }
     else
     {
-        // 🚀 دیبەگی شکست: ئەگەر کێشەیەک هەبوو لە بلوپرێنتی چەکەکە و دروست نەبوو
         if (GEngine)
         {
             GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("FAILED: Weapon did not spawn!"));
@@ -567,6 +568,7 @@ void AHama::SwapWeapon()
 {
     if (!SwapWeaponMontage) return;
     if (IsDrinkingPerk()) return;
+    if(HamaComponent && HamaComponent->IsDowned()) return;
 
     ABaseWeapon* NextWeapon = nullptr;
    
@@ -590,6 +592,11 @@ void AHama::SwapWeapon()
 
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
     if (!AnimInstance) return;
+
+    if(CurrentWeapon && CurrentWeapon->IsReloading())
+    {
+        CurrentWeapon->CancelReload();
+    }
 
     if (AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
     {
@@ -629,6 +636,7 @@ void AHama::SwapWeapon()
 void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 {
     if (!NewWeapon) return;
+    if (HamaComponent && HamaComponent->IsDowned()) return;
 
     PendingWeaponForSwap = NewWeapon;
 
@@ -703,13 +711,13 @@ void AHama::CompleteWeaponSwap()
 
     OnWeaponChanged.Broadcast(CurrentWeapon);
 
-    // بەتاڵکردنەوەی پۆینتەرەکە بۆ گۆڕینی داهاتوو
     PendingWeaponForSwap = nullptr;
 }
 
 void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration)
 {
     if (!HasAuthority() || !WeaponClass) return;
+    if (HamaComponent && HamaComponent->IsDowned()) return;
 
     if (GetWorldTimerManager().IsTimerActive(DeathMachineTimerHandle))
     {
@@ -826,6 +834,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Triggered, this, &AHama::SwitchCameraPressed);
         EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Completed, this, &AHama::SwitchCameraReleased);
         EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Started, this, &AHama::CrouchActionPressed);
+        EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Triggered, this, &AHama::CrouchActionPressed);
         EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Completed, this, &AHama::CrouchActionReleased);
         EnhancedInput->BindAction(AimAction, ETriggerEvent::Started, this, &AHama::AimActionPressed);
         EnhancedInput->BindAction(AimAction, ETriggerEvent::Completed, this, &AHama::AimActionReleased);
@@ -863,16 +872,20 @@ void AHama::AimActionPressed()
 {
     if (!HamaComponent || !CurrentWeapon) return;
     if (IsDrinkingPerk()) return;
-    bIsAimButtonHold = true;
 
     if (HamaComponent->IsSprinting())
     {
         HamaComponent->StopSprinting();
     }
 
+    bIsAimButtonHold = true;
     HamaComponent->SetAiming(true);
-    OnAim(true);
 
+    if (!HamaComponent->IsDowned())
+    {
+        OnAim(true);
+    }
+  
     bool bIsGamepadAiming = false;
 
     if (OwnerController)
@@ -1018,50 +1031,76 @@ void AHama::Look(const FInputActionValue& Value)
 
 void AHama::JumpActionPressed()
 {
-    if (HamaComponent && HamaComponent->IsSlide())
+    if (HamaComponent)
     {
-        bCanJumpSlide = true;
-        StopSlideRoutine();
+        if (HamaComponent->IsDowned()) return;
+        if (HamaComponent->IsDiving()) return;
+        if (HamaComponent->IsSlide())
+        {
+            bCanJumpSlide = true;
+            StopSlideRoutine();
+        }
+        if (HamaComponent->IsSprinting()) HamaComponent->StopSprinting();
     }
-
-    if (HamaComponent && HamaComponent->IsSprinting())
-    {
-        HamaComponent->StopSprinting();
-    }
-
+   
     if (GetCharacterMovement()->IsCrouching()) UnCrouch();
     Jump();
 }
 
-void AHama::CrouchActionPressed()
+void AHama::CrouchActionPressed(const FInputActionInstance& Instance)
 {
     bIsCrouchButtonHold = true;
-    if (HamaComponent && HamaComponent->IsSlide()) return;
 
-    if (HamaComponent && IsSprinting())
+    if (GetCharacterMovement()->IsFalling()) return;
+    if (!HamaComponent || HamaComponent->IsDowned() || HamaComponent->IsSlide() || HamaComponent->IsDiving())
     {
-        StartSlideRoutine();
         return;
     }
 
-    if (GetCharacterMovement()->IsFalling()) return;
-
-    if (HamaMovementComponent)
+    if (IsSprinting())
     {
-        if (HamaMovementComponent->IsCrouching()) UnCrouch();
-        else Crouch();
+        if (Instance.GetElapsedTime() >= 0.25f)
+        {
+            bHasPerformedDive = true;
+            StartDiving();
+        }
+
+        return;
+    }
+
+    if (Instance.GetTriggerEvent() == ETriggerEvent::Started)
+    {
+        if (HamaMovementComponent)
+        {
+            if (HamaMovementComponent->IsCrouching())
+            {
+                UnCrouch();
+            }
+            else
+            {
+                Crouch();
+            }
+        }
     }
 }
 
-void AHama::CrouchActionReleased()
+void AHama::CrouchActionReleased(const FInputActionInstance& Instance)
 {
     bIsCrouchButtonHold = false;
+    bHasPerformedDive = false;
+
+    if (!HamaComponent) return;
+
+    if (IsSprinting() && Instance.GetElapsedTime() < 0.25f && !HamaComponent->IsDiving())
+    {
+        StartSlideRoutine();
+    }
 }
 
 void AHama::StartSlideRoutine()
 {
     if (!HamaComponent) return;
-    HamaComponent->StopSprinting();
+    if(IsSprinting())  HamaComponent->StopSprinting();
     PlayAnimMontage(SlideMontage);
     HamaComponent->StartSlide();
 
@@ -1084,11 +1123,46 @@ void AHama::StopSlideRoutine()
     }
 }
 
+void AHama::StartDiving()
+{
+    if (!HamaComponent) return;
+    if (HamaComponent->GetCurrentStamina() < 25.0f) return;
+    if (IsSprinting())  HamaComponent->StopSprinting();
+    PlayAnimMontage(DiveMontage);
+    HamaComponent->StartDive();
+
+    if(GetMesh() && GetMesh()->GetAnimInstance() && DiveMontage)
+    {
+        FOnMontageEnded MontageEndedDelegate;
+        MontageEndedDelegate.BindUObject(this, &AHama::OnDiveMontageEnded);
+        GetMesh()->GetAnimInstance()->Montage_SetEndDelegate(MontageEndedDelegate, DiveMontage);
+    }
+}
+
+void AHama::StopDiving()
+{
+    if (!HamaComponent) return;
+    HamaComponent->StopDive();
+
+    if (DiveMontage)
+    {
+        StopAnimMontage(DiveMontage);
+    }
+}
+
 void AHama::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
     if (Montage == SlideMontage && HamaComponent)
     {
         HamaComponent->StopSlide();
+    }
+}
+
+void AHama::OnDiveMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    if (Montage == DiveMontage && HamaComponent)
+    {
+        HamaComponent->StopDive();
     }
 }
 
@@ -1127,6 +1201,7 @@ void AHama::SprintActionPressed()
 {
     if (!HamaComponent || HamaComponent->GetStamina() < 15.f || GetCharacterMovement()->IsFalling()) return;
     if (IsDrinkingPerk()) return;
+    if (HamaComponent && HamaComponent->IsDowned()) return;
     if (HamaComponent->IsAiming())
     {
         HamaComponent->SetAiming(false);
@@ -1357,7 +1432,6 @@ float AHama::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, ACo
 
 void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
 {
-    // ئەگەر ئەم کارەکتەرە خۆمان کۆنتڕۆڵمان نەکردبوو (وەک بینینی یاریزانێکی تر)، بوەستە
     if (!IsLocallyControlled()) return;
 
     FVector PlayerLocation = GetActorLocation();
@@ -1365,18 +1439,13 @@ void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
  
     DamageOrigin.Z = PlayerLocation.Z;
 
-    // ئاڕاستەی زۆمبییەکە لە کارەکتەرەکەوە
     FVector DamageDirection = (DamageOrigin - PlayerLocation).GetSafeNormal();
 
-    // وەرگرتنی ئاڕاستەی سەیرکردنی کامێرای یاریزانەکە
     FVector Forward = GetActorForwardVector();
     FVector Right = GetActorRightVector();
 
-    // 🚀 بیرکاری AAA بۆ دۆزینەوەی گۆشەی نێوانیان (Dot Product)
     float ForwardDot = FVector::DotProduct(Forward, DamageDirection);
     float RightDot = FVector::DotProduct(Right, DamageDirection);
-
-    // وەرگرتنی گۆشەکە بە ڕادیان، پاشان گۆڕینی بۆ پلە (Degrees) لە نێوان -١٨٠ بۆ ١٨٠
     float AngleRads = FMath::Atan2(RightDot, ForwardDot);
     float AngleDegrees = FMath::RadiansToDegrees(AngleRads);
 
@@ -1421,6 +1490,10 @@ void AHama::GamepadXActionPressed(const FInputActionInstance& Instance)
     {
         if (FocusedInteractable && FocusedInteractable->CanInteract(this))
         {
+            if(CurrentWeapon && CurrentWeapon->IsReloading())
+            {
+                CurrentWeapon->CancelReload();
+            }
             bIsxButtonHolded = true;
             InteractActionPressed();
         }
@@ -1566,29 +1639,24 @@ void AHama::Interact(AHama* InteractingPlayer)
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 {
-    // پشکنینی ئاسایش: ئایا یاریزانەکە بوونی هەیە و بەڕاستی کەوتووە؟
     if (!DownedPlayer || !DownedPlayer->HealthComponent || !DownedPlayer->HamaComponent->IsDowned()) return;
 
-    // ڕێگری کردن لەوەی دوو کەس لە یەک کاتدا هەڵیبستێننەوە
     if (GetWorldTimerManager().IsTimerActive(ReviveTimerHandle)) return;
 
     float ReviveTime = DefaultReviveTime;
 
-    // ١. ئایا خۆم پزیشکم؟
     UHamaAbilityComponent* MyAbilityComp = FindComponentByClass<UHamaAbilityComponent>();
     if (MyAbilityComp && MyAbilityComp->GetAssignedAbility() == EHamaAbilityType::MedicalSupport)
     {
         ReviveTime /= 2.0f;
     }
 
-    // ٢. ئایا Blitz کارایە؟
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     if (GS && GS->IsTeamAdrenalineActive())
     {
         ReviveTime /= 2.0f;
     }
 
-    // دەستپێکردنی تایمەر لەسەر سێرڤەر (هیچ کلایێنتێک ناتوانێت فێڵ بکات)
     FTimerDelegate ReviveDel;
     ReviveDel.BindUFunction(this, FName("Server_CompleteRevive"), DownedPlayer);
 

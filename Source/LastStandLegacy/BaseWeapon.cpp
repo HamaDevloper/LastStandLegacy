@@ -129,27 +129,22 @@ void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
 {
     if (!HasAuthority()) return;
 
-    // ١. بەرزکردنەوەی هێز و قەبارەکان
     Damage *= 2.f;
     MaxAmmoInClip = FMath::RoundToInt(MaxAmmoInClip * 2.f);
 
     CurrentWeaponData.MaxReserveAmmo *= 2;
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
 
-    // ٣. جیاکردنەوەی سێرڤەر و کلایێنت بۆ ئەپدەیتی شاشە و ڕووکار
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
-        // ئەگەر خۆمان (هۆست) بوین، ڕاستەوخۆ شاشەکە ئەپدەیت دەکەین
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
     else
     {
-        // ئەگەر کلایێنت بوو، Client RPC دەنێرین تا شاشەکەی ئەپدەیت بکات
         Client_ApplyPackAPunchFX(ReserveAmmo);
     }
 }
 
-// ئەمە لەسەر شاشەی کلایێنتەکە کار دەکات
 void ABaseWeapon::Client_ApplyPackAPunchFX_Implementation(int32 NewReserveAmmo)
 {
     ReserveAmmo = NewReserveAmmo;
@@ -170,23 +165,19 @@ void ABaseWeapon::RefillAmmo()
 
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
 
-    // ٢. ئەپدەیتکردنی شاشەی هۆست (ئەگەر سێرڤەرەکە خۆی یاریزان بوو)
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 
-    // ٣. بڕیاردان لەسەر جۆری ڕیلۆدەکە
     if (bWasEmpty)
     {
         if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
         {
-            // ئەگەر خۆمانین (هۆستین)، ڕاستەوخۆ فەنکشنە لۆکاڵییەکە بەکاربهێنە بەبێ RPC
             Reload();
         }
         else
         {
-            // ئەگەر میوانە (کلایێنتە)، بە زۆر فیشەکەکەی بۆ بنێرە و پێی بڵێ ڕیلۆد بکات
             Client_ForceReload(ReserveAmmo);
         }
     }
@@ -543,7 +534,16 @@ void ABaseWeapon::Server_FireRoutine()
 
 void ABaseWeapon::Server_ApplyDamage_Implementation(AActor* HitActor, FVector ShotDirection, FHitResult HitInfo)
 {
-    if (!HitActor || !OwnerCharacter) return;
+    if (!HitActor || !OwnerCharacter || !OwnerCharacter->GetController()) return;
+
+    float DistanceToTarget = FVector::Dist(OwnerCharacter->GetActorLocation(), HitActor->GetActorLocation());
+    float MaxAllowedDistance = CurrentWeaponData.MaxRange + 500.0f;
+
+    if (DistanceToTarget > MaxAllowedDistance)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("CHEATING DETECTED: Player tried to shoot target out of weapon range!"));
+        return;
+    }
 
     float FinalDamage = CalculateDamageBySurface(HitInfo);
 
