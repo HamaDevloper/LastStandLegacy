@@ -2,7 +2,8 @@
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "Net/UnrealNetwork.h"
-#include "EngineUtils.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/PlayerState.h"
 
 UHealthComponent::UHealthComponent()
 {
@@ -15,7 +16,6 @@ void UHealthComponent::BeginPlay()
     Super::BeginPlay();
 
     OwnerCharacter = Cast<AHama>(GetOwner());
-
     if (OwnerCharacter)
     {
         OwnerComponent = OwnerCharacter->FindComponentByClass<UHamaComponent>();
@@ -30,35 +30,50 @@ void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     DOREPLIFETIME_CONDITION(UHealthComponent, MaxHealth, COND_OwnerOnly);
 }
 
-void UHealthComponent::UpgradeHealth(float Amount)
+void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
 {
-    if (!OwnerCharacter || !OwnerCharacter->HasAuthority()) return;
-
-    MaxHealth = Amount;
-    OwnerCharacter->ForceNetUpdate();
-
-    if (!GetWorld()->GetTimerManager().IsTimerActive(RegenerateHealthTimer))
+    if (CurrentHealth < OldHealth)
     {
-        GetWorld()->GetTimerManager().SetTimer(RegenerateHealthTimer, this, &UHealthComponent::RegenerateHealth, HealthTickGenerate, true, HealthGenerateDelay);
+        if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+        {
+            //OwnerCharacter->Client_ShowDamageIndicator();
+        }
     }
 }
 
-void UHealthComponent::GetDamage(float Amount)
+void UHealthComponent::UpgradeHealth(float Amount)
 {
-    if (!OwnerCharacter || !OwnerCharacter->HasAuthority()) return;
+    if (!GetOwner()->HasAuthority()) return;
 
-    GetWorld()->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+    MaxHealth = Amount;
 
-    CurrentHealth = FMath::Clamp(CurrentHealth - Amount, 0.f, MaxHealth);
-    OwnerCharacter->ForceNetUpdate();
-
-    if (CurrentHealth <= 0.f)
+    if (UWorld* World = GetWorld())
     {
-        DownPlayer();
+        if (!World->GetTimerManager().IsTimerActive(RegenerateHealthTimer))
+        {
+            World->GetTimerManager().SetTimer(RegenerateHealthTimer, this, &UHealthComponent::RegenerateHealth, HealthTickGenerate, true, HealthGenerateDelay);
+        }
     }
-    else
+}
+
+void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
+{
+    if (!GetOwner()->HasAuthority()) return;
+
+    if (UWorld* World = GetWorld())
     {
-        GetWorld()->GetTimerManager().SetTimer(RegenerateHealthTimer, this, &UHealthComponent::RegenerateHealth, HealthTickGenerate, true, HealthGenerateDelay);
+        World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+
+        CurrentHealth = FMath::Clamp(CurrentHealth - Amount, 0.f, MaxHealth);
+
+        if (CurrentHealth <= 0.f)
+        {
+            DownPlayer();
+        }
+        else
+        {
+            World->GetTimerManager().SetTimer(RegenerateHealthTimer, this, &UHealthComponent::RegenerateHealth, HealthTickGenerate, true, HealthGenerateDelay);
+        }
     }
 }
 
@@ -71,36 +86,39 @@ void UHealthComponent::RegenerateHealth()
     if (CurrentHealth >= MaxHealth)
     {
         CurrentHealth = MaxHealth;
-        GetWorld()->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+        }
     }
 }
 
 void UHealthComponent::DownPlayer()
 {
-    if (!OwnerCharacter || !OwnerCharacter->HasAuthority()) return;
+    if (!GetOwner()->HasAuthority()) return;
 
-    GetWorld()->GetTimerManager().ClearTimer(RegenerateHealthTimer);
-    GetWorld()->GetTimerManager().ClearTimer(DownTimerHandle);
-
-    if (OwnerComponent)
+    if (UWorld* World = GetWorld())
     {
-        OwnerComponent->SetDowned(true);
-    }
+        World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+        World->GetTimerManager().ClearTimer(DownTimerHandle);
 
-    GetWorld()->GetTimerManager().SetTimer(
-        DownTimerHandle,
-        this,
-        &UHealthComponent::HandlePlayerDeath,
-        45.0f,
-        false
-    );
+        if (OwnerComponent)
+        {
+            OwnerComponent->SetDowned(true);
+        }
+
+        World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, 45.0f, false);
+    }
 }
 
 void UHealthComponent::Revive()
 {
-    if (!OwnerCharacter || !OwnerCharacter->HasAuthority()) return;
+    if (!GetOwner()->HasAuthority()) return;
 
-    GetWorld()->GetTimerManager().ClearTimer(DownTimerHandle);
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(DownTimerHandle);
+    }
 
     CurrentHealth = MaxHealth;
 
@@ -108,18 +126,16 @@ void UHealthComponent::Revive()
     {
         OwnerComponent->SetDowned(false);
     }
-
-    OwnerCharacter->ForceNetUpdate();
 }
 
 void UHealthComponent::HandlePlayerDeath()
 {
     if (!GetOwner()->HasAuthority() || !OwnerCharacter || OwnerCharacter->bIsDead) return;
 
-    OwnerCharacter->HandleDeath();
+    OnDeath.Broadcast();
 
     APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
-    if (PC)
+    if (PC && GetWorld() && GetWorld()->GetGameState())
     {
         PC->UnPossess();
 

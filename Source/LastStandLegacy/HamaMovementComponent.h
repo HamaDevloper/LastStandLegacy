@@ -13,33 +13,36 @@ public:
     UHamaMovementComponent();
 
     virtual float GetMaxSpeed() const override;
-
-    // فەنکشنە سەرەکییەکان بۆ Network Prediction
     virtual void UpdateFromCompressedFlags(uint8 Flags) override;
     virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
+    virtual FVector ScaleInputAcceleration(const FVector& InputAcceleration) const override;
 
-    // گۆڕاوەکانی باری کارەکتەر
     uint8 bSprinting : 1;
     uint8 bAiming : 1;
     uint8 bDiving : 1;
-    uint8 bDowned : 1; // ئەمە لەلایەن سێرڤەرەوە دێت، پێویست بە فڵاگ ناکات
+    uint8 bDowned : 1;
     uint8 bSlide : 1;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
-    float SprintSpeed = 600.f;
+    float SprintSpeed = 800.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
-    float AimSpeed = 200.f;
+    float AimSpeed = 150.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
     float DownSpeed = 50.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
     float SlideSpeed = 650.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Movement | Dive")
+    float DiveImpulseHorizontal = 900.f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Movement | Dive")
+    float DiveImpulseVertical = 350.f;
 
 private:
-    // پاراستنی باری فڕەیمی پێشوو بۆ پێدانی هێزی کاتی (Impulse)
     bool bWasSliding = false;
     bool bWasDiving = false;
 
-    // سیستەمی پێشبینیکردنی کلاینت (Client Prediction)
+    TWeakObjectPtr<class UHamaComponent> CachedHamaComp;
+    UHamaComponent* GetHamaComp();
+
     class FSavedMove_Hama : public FSavedMove_Character
     {
     public:
@@ -47,6 +50,8 @@ private:
         uint8 bSavedWantsToAim : 1;
         uint8 bSavedWantsToDive : 1;
         uint8 bSavedWantsToSlide : 1;
+        uint8 bSavedWasSliding : 1;
+        uint8 bSavedWasDiving : 1;
 
         virtual void Clear() override;
         virtual uint8 GetCompressedFlags() const override;

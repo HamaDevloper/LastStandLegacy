@@ -11,47 +11,91 @@ UHamaMovementComponent::UHamaMovementComponent()
     bSlide = false;
 }
 
+UHamaComponent* UHamaMovementComponent::GetHamaComp()
+{
+    if (!CachedHamaComp.IsValid() && CharacterOwner)
+    {
+        CachedHamaComp = CharacterOwner->FindComponentByClass<UHamaComponent>();
+    }
+    return CachedHamaComp.Get();
+}
+
 float UHamaMovementComponent::GetMaxSpeed() const
 {
-    float MaxSpeed = Super::GetMaxSpeed();
-
     if (bDowned) return DownSpeed;
     if (bSlide) return SlideSpeed;
     if (bAiming) return AimSpeed;
     if (bSprinting) return SprintSpeed;
 
-    return MaxSpeed;
+    return Super::GetMaxSpeed();
+}
+
+FVector UHamaMovementComponent::ScaleInputAcceleration(const FVector& InputAcceleration) const
+{
+    if ((bSlide && Velocity.SizeSquared2D() > FMath::Square(200.f)) || bDiving)
+    {
+        return FVector::ZeroVector;
+    }
+
+    return Super::ScaleInputAcceleration(InputAcceleration);
 }
 
 void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
 {
     Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
-    // ١. پێدانی هێزی خلیسکان لە یەکەم فڕەیمی دەستپێکردندا بە شێوەیەکی سەلامەت بۆ تۆڕ
+    if (bSlide && bWasSliding)
+    {
+        if (Velocity.SizeSquared2D() < FMath::Square(200.f))
+        {
+            bSlide = false;
+
+            if (CharacterOwner)
+            {
+                if (UHamaComponent* HamaComp = GetHamaComp())
+                {
+                    HamaComp->bIsSlide = false;
+                }
+            }
+        }
+    }
+
+    if (bDiving && bWasDiving)
+    {
+        if (MovementMode != MOVE_Falling)
+        {
+            bDiving = false;
+
+            if (CharacterOwner)
+            {
+                if (UHamaComponent* HamaComp = GetHamaComp())
+                {
+                    HamaComp->bIsDiving = false;
+                }
+            }
+        }
+    }
+    // ----------------------------------------------------------------------
+
     if (bSlide && !bWasSliding)
     {
         if (CharacterOwner)
         {
             FVector SlideDirection = CharacterOwner->GetActorForwardVector();
-            Velocity += SlideDirection * 800.f;
+            Velocity = FVector(SlideDirection.X * SlideSpeed, SlideDirection.Y * SlideSpeed, Velocity.Z);
         }
     }
 
-    // ٢. جێبەجێکردنی هێزی Dive
     if (bDiving && !bWasDiving)
     {
         if (CharacterOwner)
         {
-            FVector DiveDirection = CharacterOwner->GetActorForwardVector() * 900.f;
-            DiveDirection.Z = 350.f;
-            Velocity += DiveDirection;
-
-            // خستنە باری هەوا بۆ ئەوەی لێکخشانی زەوی نەیگرێت
+            FVector DiveDirection = CharacterOwner->GetActorForwardVector();
+            Velocity = FVector(DiveDirection.X * DiveImpulseHorizontal, DiveDirection.Y * DiveImpulseHorizontal, DiveImpulseVertical);
             SetMovementMode(MOVE_Falling);
         }
     }
 
-    // ٣. ڕێکخستنی لێکخشان لە کاتی خلیسکاندا
     if (bSlide)
     {
         GroundFriction = 0.5f;
@@ -59,8 +103,8 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
     }
     else
     {
-        GroundFriction = 8.0f;
-        BrakingDecelerationWalking = 2048.f;
+        GroundFriction = 10.0f;
+        BrakingDecelerationWalking = 2800.0f;
     }
 
     bWasSliding = bSlide;
@@ -92,33 +136,42 @@ void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 void UHamaMovementComponent::FSavedMove_Hama::Clear()
 {
     FSavedMove_Character::Clear();
+
     bSavedWantsToSprint = false;
     bSavedWantsToAim = false;
     bSavedWantsToDive = false;
     bSavedWantsToSlide = false;
+    bSavedWasSliding = false;
+    bSavedWasDiving = false;
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT, FVector const& Accel, FNetworkPredictionData_Client_Character& Data)
 {
     FSavedMove_Character::SetMoveFor(C, DT, Accel, Data);
+
     if (UHamaMovementComponent* Comp = Cast<UHamaMovementComponent>(C->GetCharacterMovement()))
     {
         bSavedWantsToAim = Comp->bAiming;
         bSavedWantsToSprint = Comp->bSprinting;
         bSavedWantsToDive = Comp->bDiving;
         bSavedWantsToSlide = Comp->bSlide;
+        bSavedWasSliding = Comp->bWasSliding;
+        bSavedWasDiving = Comp->bWasDiving;
     }
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 {
     FSavedMove_Character::PrepMoveFor(C);
+
     if (UHamaMovementComponent* Comp = Cast<UHamaMovementComponent>(C->GetCharacterMovement()))
     {
         Comp->bSprinting = bSavedWantsToSprint;
         Comp->bAiming = bSavedWantsToAim;
         Comp->bDiving = bSavedWantsToDive;
         Comp->bSlide = bSavedWantsToSlide;
+        Comp->bWasSliding = bSavedWasSliding;
+        Comp->bWasDiving = bSavedWasDiving;
     }
 }
 
@@ -130,6 +183,8 @@ bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr
     if (bSavedWantsToAim != Other->bSavedWantsToAim) return false;
     if (bSavedWantsToDive != Other->bSavedWantsToDive) return false;
     if (bSavedWantsToSlide != Other->bSavedWantsToSlide) return false;
+    if (bSavedWasSliding != Other->bSavedWasSliding) return false;
+    if (bSavedWasDiving != Other->bSavedWasDiving) return false;
 
     return FSavedMove_Character::CanCombineWith(NewMove, C, MaxDelta);
 }

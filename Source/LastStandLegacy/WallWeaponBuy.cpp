@@ -11,7 +11,11 @@ AWallWeaponBuy::AWallWeaponBuy()
     bReplicates = true;
 
     InteractBox = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractBox"));
-    InteractBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+
+    InteractBox->SetCollisionProfileName(TEXT("Trigger"));
+    InteractBox->SetGenerateOverlapEvents(true);
+    InteractBox->SetBoxExtent(FVector(100.f, 100.f, 100.f)); 
+
     RootComponent = InteractBox;
 
     WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
@@ -77,4 +81,3 @@ bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
 
     return true;
 }
-

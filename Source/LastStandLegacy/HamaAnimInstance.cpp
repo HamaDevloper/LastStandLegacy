@@ -1,24 +1,22 @@
 ﻿#include "HamaAnimInstance.h"
 #include "Hama.h"
 #include "BaseWeapon.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "HamaMovementComponent.h"
 
 void UHamaAnimInstance::NativeInitializeAnimation()
 {
     Super::NativeInitializeAnimation();
 
     HamaCharacter = Cast<AHama>(TryGetPawnOwner());
-    if (!HamaCharacter) return;
-
-    MovementComponent = HamaCharacter->GetCharacterMovement();
-    HamaCharacter->OnWeaponChanged.AddUObject(this, &UHamaAnimInstance::OnWeaponChanged);
-    
-    if (HamaCharacter->CurrentWeapon)
+    if (HamaCharacter)
     {
-        OnWeaponChanged(HamaCharacter->CurrentWeapon);
+        MovementComponent = Cast<UHamaMovementComponent>(HamaCharacter->GetCharacterMovement());
     }
 }
 
+// --------------------------------------------------------------------------------------
+// GAME THREAD (تەنها بۆ خوێندنەوەی سەلامەت لە Actor و Component)
+// --------------------------------------------------------------------------------------
 void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
     Super::NativeUpdateAnimation(DeltaSeconds);
@@ -27,36 +25,49 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     {
         HamaCharacter = Cast<AHama>(TryGetPawnOwner());
         if (!HamaCharacter) return;
-
-        MovementComponent = HamaCharacter->GetCharacterMovement();
+        MovementComponent = Cast<UHamaMovementComponent>(HamaCharacter->GetCharacterMovement());
     }
 
     if (!MovementComponent) return;
 
-    PlayerVelocity = HamaCharacter->GetVelocity();
+    if (HamaCharacter->CurrentWeapon != LastKnownWeapon)
+    {
+        LastKnownWeapon = HamaCharacter->CurrentWeapon;
+        OnWeaponChanged(LastKnownWeapon);
+    }
 
-    FVector Velocity = HamaCharacter->GetVelocity();
-    Velocity.Z = 0.f;
-    float SpeedSq = Velocity.SizeSquared();
+    PlayerVelocity = HamaCharacter->GetVelocity();
+    CachedActorRotation = HamaCharacter->GetActorRotation();
+    bCachedHasAcceleration = !MovementComponent->GetCurrentAcceleration().IsNearlyZero();
+
+    bIsSprinting = MovementComponent->bSprinting;
+    bIsFalling = MovementComponent->IsFalling();
+    bIsDowned = MovementComponent->bDowned;
+}
+
+// --------------------------------------------------------------------------------------
+// WORKER THREAD (هەموو لێکدانەوەیەکی بیرکاری لێرە دەکرێت بەبێ ڕاگرتنی یارییەکە)
+// لێرەدا قەدەغەیە بنووسیت HamaCharacter->... یان MovementComponent->...
+// --------------------------------------------------------------------------------------
+void UHamaAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
+{
+    Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
+
+    FVector Velocity2D = PlayerVelocity;
+    Velocity2D.Z = 0.f;
+    float SpeedSq = Velocity2D.SizeSquared();
 
     GroundSpeed = FMath::Sqrt(SpeedSq);
+    bShouldMove = (SpeedSq > 9.f) && bCachedHasAcceleration;
 
-    bShouldMove = (SpeedSq > 9.f)
-        && !MovementComponent->GetCurrentAcceleration().IsNearlyZero();
+    FVector Forward = CachedActorRotation.Vector();
+    FVector Right = FRotationMatrix(CachedActorRotation).GetScaledAxis(EAxis::Y);
 
-    bIsFalling = MovementComponent->IsFalling();
+    FVector NormalVelocity = Velocity2D.GetSafeNormal();
+    float ForwardDot = FVector::DotProduct(NormalVelocity, Forward);
+    float RightDot = FVector::DotProduct(NormalVelocity, Right);
 
-    FRotator Rotation = HamaCharacter->GetActorRotation();
-    FVector Forward = Rotation.Vector();
-    FVector Right = FRotationMatrix(Rotation).GetScaledAxis(EAxis::Y);
-
-    float ForwardDot = FVector::DotProduct(Velocity.GetSafeNormal(), Forward);
-    float RightDot = FVector::DotProduct(Velocity.GetSafeNormal(), Right);
     Direction = FMath::RadiansToDegrees(FMath::Atan2(RightDot, ForwardDot));
-
-    bIsAiming = HamaCharacter->IsAiming();
-    bIsSprinting = HamaCharacter->IsSprinting();
-    bIsDowned = HamaCharacter->IsDowned();
 }
 
 void UHamaAnimInstance::OnWeaponChanged(ABaseWeapon* NewWeapon)

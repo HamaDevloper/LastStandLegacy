@@ -1,7 +1,7 @@
 ﻿#include "HamaMainWidget.h"
 #include "Hama.h"
 #include "Components/TextBlock.h"
-#include "Components/Image.h" // 🚀 چارەسەری ئێرۆرەکە لێرەدایە!
+#include "Components/Image.h"
 
 // -------------------------------------------------------------------------
 // Initialization
@@ -46,6 +46,7 @@ void UHamaMainWidget::UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo)
     {
         static const FText InfinityText = FText::FromString(TEXT("\u221E / \u221E"));
         Ammo->SetText(InfinityText);
+        HideAmmoWarning();
         return;
     }
 

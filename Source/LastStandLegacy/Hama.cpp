@@ -1460,16 +1460,13 @@ void AHama::OnRep_OwnedPerks()
 
 float AHama::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
+    if (!HasAuthority() || bIsDead) return 0.f;
+
     float AppliedDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-    
-    if (!HasAuthority()) return 0.f;
-    if (!HealthComponent) return 0.f;
 
-    HealthComponent->GetDamage(AppliedDamage);
-
-    if (DamageCauser)
+    if (HealthComponent && AppliedDamage > 0.f)
     {
-       Client_ShowDamageIndicator(DamageCauser->GetActorLocation());
+        HealthComponent->ApplyDamage(AppliedDamage, DamageCauser);
     }
 
     return AppliedDamage;
@@ -1668,7 +1665,12 @@ void AHama::PerformMeleeHitDetection()
 
 bool AHama::Server_ValidateMeleeHit_Validate(AActor* HitActor, FVector_NetQuantize HitLocation)
 {
-    return HitActor != nullptr;
+    if (!HitActor || !HitActor->IsA(AZombie::StaticClass()))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_NetQuantize HitLocation)

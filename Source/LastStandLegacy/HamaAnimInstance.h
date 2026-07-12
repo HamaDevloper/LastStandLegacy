@@ -7,7 +7,7 @@
 class AHama;
 class ABaseWeapon;
 class UAnimSequence;
-class UCharacterMovementComponent;
+class UHamaMovementComponent;
 
 UCLASS()
 class LASTSTANDLEGACY_API UHamaAnimInstance : public UAnimInstance
@@ -17,16 +17,22 @@ class LASTSTANDLEGACY_API UHamaAnimInstance : public UAnimInstance
 public:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+    virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 
 private:
     UPROPERTY()
     TObjectPtr<AHama> HamaCharacter;
 
     UPROPERTY()
-    TObjectPtr<UCharacterMovementComponent> MovementComponent;
+    TObjectPtr<UHamaMovementComponent> MovementComponent;
+
+    UPROPERTY()
+    TObjectPtr<ABaseWeapon> LastKnownWeapon;
+
+    FRotator CachedActorRotation;
+    bool bCachedHasAcceleration;
 
 protected:
-    // ← بەرێوەچووە خوارەوە — AddDynamic پێویستیەتی
     UFUNCTION()
     void OnWeaponChanged(ABaseWeapon* NewWeapon);
 
