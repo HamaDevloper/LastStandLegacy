@@ -40,6 +40,8 @@ class UInputAction;
 class APlayerController;
 class AZombie;
 class ABasePerk;
+class USphereComponent;
+class UStaticMeshComponent;
 
 struct FInputActionValue;
 struct FInputActionInstance;
@@ -82,6 +84,12 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Hama|References")
     TObjectPtr<APlayerController> OwnerController;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+    TObjectPtr<USphereComponent> InteractSphere;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    TObjectPtr<UStaticMeshComponent> PerkBottleMesh;
+
 public:
     // -----------------------------------------------------------------------------
     // Weapons & Inventory
@@ -105,7 +113,6 @@ public:
     FName SocketName;
 
 public:
-    bool HasWeaponClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;
     void RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefill);
     ABaseWeapon* GetWeaponByClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;
 protected:
@@ -209,9 +216,6 @@ protected:
 
     UFUNCTION()
     void HandleKillsChanged(int32 NewKills);
-
-    UFUNCTION()
-    void UpdatePingUI();
 
     FTimerHandle PingUpdateTimerHandle;
 
@@ -470,6 +474,9 @@ protected:
     UFUNCTION(Server, Reliable)
     void Server_ExecuteMelee();
 
+    UFUNCTION(Server, Reliable, WithValidation)
+    void Server_ValidateMeleeHit(AActor* HitActor, FVector_NetQuantize HitLocation);
+
     UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
     float MeleeDamage = 150.0f;
 
@@ -483,6 +490,7 @@ protected:
 
 public:
     void PerformMeleeHitDetection();
+
 
     UFUNCTION(Server, Reliable)
     void Server_BeginRevive(AHama* DownedPlayer);
@@ -506,4 +514,12 @@ private:
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual FString GetInteractMessage() override;
     virtual void Interact(AHama* InteractingPlayer) override;
+
+    UFUNCTION()
+    void OnInteractSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+    UFUNCTION()
+    void OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+    
+    int32 NearbyInteractablesCount = 0;
 };

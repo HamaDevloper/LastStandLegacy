@@ -1,6 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#include "HamaMovementComponent.h"
+﻿#include "HamaMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "HamaComponent.h"
 
@@ -8,6 +6,7 @@ UHamaMovementComponent::UHamaMovementComponent()
 {
     bSprinting = false;
     bAiming = false;
+    bDiving = false;
     bDowned = false;
     bSlide = false;
 }
@@ -24,28 +23,67 @@ float UHamaMovementComponent::GetMaxSpeed() const
     return MaxSpeed;
 }
 
-// ================= COMPRESSED FLAGS (SERVER READS THIS) =================
+void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
+{
+    Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+
+    // ١. پێدانی هێزی خلیسکان لە یەکەم فڕەیمی دەستپێکردندا بە شێوەیەکی سەلامەت بۆ تۆڕ
+    if (bSlide && !bWasSliding)
+    {
+        if (CharacterOwner)
+        {
+            FVector SlideDirection = CharacterOwner->GetActorForwardVector();
+            Velocity += SlideDirection * 800.f;
+        }
+    }
+
+    // ٢. جێبەجێکردنی هێزی Dive
+    if (bDiving && !bWasDiving)
+    {
+        if (CharacterOwner)
+        {
+            FVector DiveDirection = CharacterOwner->GetActorForwardVector() * 900.f;
+            DiveDirection.Z = 350.f;
+            Velocity += DiveDirection;
+
+            // خستنە باری هەوا بۆ ئەوەی لێکخشانی زەوی نەیگرێت
+            SetMovementMode(MOVE_Falling);
+        }
+    }
+
+    // ٣. ڕێکخستنی لێکخشان لە کاتی خلیسکاندا
+    if (bSlide)
+    {
+        GroundFriction = 0.5f;
+        BrakingDecelerationWalking = 200.f;
+    }
+    else
+    {
+        GroundFriction = 8.0f;
+        BrakingDecelerationWalking = 2048.f;
+    }
+
+    bWasSliding = bSlide;
+    bWasDiving = bDiving;
+}
+
 void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 {
     Super::UpdateFromCompressedFlags(Flags);
 
     bSprinting = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
     bAiming = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
-    bDowned = (Flags & FSavedMove_Character::FLAG_Custom_2) != 0;
+    bDiving = (Flags & FSavedMove_Character::FLAG_Custom_2) != 0;
     bSlide = (Flags & FSavedMove_Character::FLAG_Custom_3) != 0;
 
     if (CharacterOwner && CharacterOwner->HasAuthority())
     {
         if (UHamaComponent* HamaComp = CharacterOwner->FindComponentByClass<UHamaComponent>())
         {
-            if (bSprinting) HamaComp->StartSprinting();
-            else            HamaComp->StopSprinting();
-
-            HamaComp->SetAiming(bAiming);
-            HamaComp->SetDown(bDowned);
-
-            if (bSlide) HamaComp->StartSlide();
-            else        HamaComp->StopSlide();
+            HamaComp->bIsSprinting = bSprinting;
+            HamaComp->bIsAiming = bAiming;
+            HamaComp->bIsDiving = bDiving;
+            HamaComp->bIsSlide = bSlide;
         }
     }
 }
@@ -53,33 +91,33 @@ void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 // ================= SAVED MOVE =================
 void UHamaMovementComponent::FSavedMove_Hama::Clear()
 {
-    Super::Clear();
+    FSavedMove_Character::Clear();
     bSavedWantsToSprint = false;
     bSavedWantsToAim = false;
-    bSavedIsDowned = false;
+    bSavedWantsToDive = false;
     bSavedWantsToSlide = false;
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT, FVector const& Accel, FNetworkPredictionData_Client_Character& Data)
 {
-    Super::SetMoveFor(C, DT, Accel, Data);
+    FSavedMove_Character::SetMoveFor(C, DT, Accel, Data);
     if (UHamaMovementComponent* Comp = Cast<UHamaMovementComponent>(C->GetCharacterMovement()))
     {
         bSavedWantsToAim = Comp->bAiming;
         bSavedWantsToSprint = Comp->bSprinting;
-        bSavedIsDowned = Comp->bDowned;
+        bSavedWantsToDive = Comp->bDiving;
         bSavedWantsToSlide = Comp->bSlide;
     }
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 {
-    Super::PrepMoveFor(C);
+    FSavedMove_Character::PrepMoveFor(C);
     if (UHamaMovementComponent* Comp = Cast<UHamaMovementComponent>(C->GetCharacterMovement()))
     {
         Comp->bSprinting = bSavedWantsToSprint;
         Comp->bAiming = bSavedWantsToAim;
-        Comp->bDowned = bSavedIsDowned;
+        Comp->bDiving = bSavedWantsToDive;
         Comp->bSlide = bSavedWantsToSlide;
     }
 }
@@ -90,27 +128,27 @@ bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr
 
     if (bSavedWantsToSprint != Other->bSavedWantsToSprint) return false;
     if (bSavedWantsToAim != Other->bSavedWantsToAim) return false;
-    if (bSavedIsDowned != Other->bSavedIsDowned) return false;
-    if (bSavedWantsToSlide != Other->bSavedWantsToSlide) return false; // 🚀 ڕێگری لە تێکەڵبوون
+    if (bSavedWantsToDive != Other->bSavedWantsToDive) return false;
+    if (bSavedWantsToSlide != Other->bSavedWantsToSlide) return false;
 
-    return Super::CanCombineWith(NewMove, C, MaxDelta);
+    return FSavedMove_Character::CanCombineWith(NewMove, C, MaxDelta);
 }
 
 uint8 UHamaMovementComponent::FSavedMove_Hama::GetCompressedFlags() const
 {
-    uint8 Result = Super::GetCompressedFlags();
+    uint8 Result = FSavedMove_Character::GetCompressedFlags();
 
     if (bSavedWantsToSprint) Result |= FSavedMove_Character::FLAG_Custom_0;
     if (bSavedWantsToAim)    Result |= FSavedMove_Character::FLAG_Custom_1;
-    if (bSavedIsDowned)      Result |= FSavedMove_Character::FLAG_Custom_2;
-    if (bSavedWantsToSlide)  Result |= FSavedMove_Character::FLAG_Custom_3; // 🚀 فڵاگی کۆتایی
+    if (bSavedWantsToDive)   Result |= FSavedMove_Character::FLAG_Custom_2;
+    if (bSavedWantsToSlide)  Result |= FSavedMove_Character::FLAG_Custom_3;
 
     return Result;
 }
 
 // ================= PREDICTION DATA =================
 UHamaMovementComponent::FNetworkPredictionData_Client_Hama::FNetworkPredictionData_Client_Hama(const UCharacterMovementComponent& MoveComponent)
-    : Super(MoveComponent)
+    : FNetworkPredictionData_Client_Character(MoveComponent)
 {
 }
 

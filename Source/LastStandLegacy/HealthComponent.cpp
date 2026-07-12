@@ -119,19 +119,16 @@ void UHealthComponent::HandlePlayerDeath()
     OwnerCharacter->HandleDeath();
 
     APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
-
     if (PC)
     {
         PC->UnPossess();
 
-        AHama* PlayerToSpectate = nullptr;
-        for (TActorIterator<AHama> ActorItr(GetWorld()); ActorItr; ++ActorItr)
+        APlayerController* SpectatorPC = nullptr;
+        for (auto PlayerState : GetWorld()->GetGameState()->PlayerArray)
         {
-            AHama* OtherPlayer = *ActorItr;
-
-            if (OtherPlayer && OtherPlayer != OwnerCharacter && !OtherPlayer->bIsDead)
+            if (PlayerState && PlayerState->GetPawn() && PlayerState->GetPawn() != OwnerCharacter)
             {
-                PlayerToSpectate = OtherPlayer;
+                SpectatorPC = Cast<APlayerController>(PlayerState->GetOwner());
                 break;
             }
         }
@@ -139,12 +136,11 @@ void UHealthComponent::HandlePlayerDeath()
         PC->ChangeState(NAME_Spectating);
         PC->ClientGotoState(NAME_Spectating);
 
-        if (PlayerToSpectate)
+        if (SpectatorPC && SpectatorPC->GetPawn())
         {
-            PC->SetViewTargetWithBlend(PlayerToSpectate, 0.5f);
+            PC->SetViewTargetWithBlend(SpectatorPC->GetPawn(), 0.5f);
         }
     }
 
-    OwnerCharacter->ForceNetUpdate();
     OwnerCharacter->Destroy();
 }

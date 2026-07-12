@@ -56,8 +56,7 @@ void UHamaComponent::StartSlide()
 
     bIsSlide = true;
 
-    FVector SlideDirection = OwnerCharacter->GetActorForwardVector() * 800.f;
-    OwnerCharacter->LaunchCharacter(SlideDirection, true, false);
+    if (MoveComp) MoveComp->bSlide = true;
 
     if (!OwnerCharacter->HasAuthority())
     {
@@ -69,11 +68,26 @@ void UHamaComponent::StartSlide()
     }
 }
 
+void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
+{
+    if (bIsSlide == bNewSlideState) return;
+    bIsSlide = bNewSlideState;
+
+    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
+
+    if (GetNetMode() == NM_ListenServer)
+    {
+        OnRep_Slide();
+    }
+}
+
 void UHamaComponent::StopSlide()
 {
     if (!bIsSlide || !OwnerCharacter) return;
 
     bIsSlide = false;
+    if (MoveComp) MoveComp->bSlide = false;
+
     if (!OwnerCharacter->HasAuthority())
     {
         Server_SetSlideState(false);
@@ -161,19 +175,6 @@ void UHamaComponent::DecreaseStamina(float Amount)
     if (GetOwner() && GetOwner()->HasAuthority())
     {
         Stamina = FMath::Clamp(Stamina - Amount, 0.0f, MaxStamina);
-    }
-}
-
-void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
-{
-    if (bIsSlide == bNewSlideState) return;
-    bIsSlide = bNewSlideState;
-
-    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
-
-    if (GetNetMode() == NM_ListenServer)
-    {
-        OnRep_Slide();
     }
 }
 

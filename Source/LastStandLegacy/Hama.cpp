@@ -19,8 +19,8 @@
 #include "InteractInterface.h" 
 #include "Engine/DamageEvents.h"
 #include "MeleeDamageType.h"
+#include "Components/SphereComponent.h"
 #include "DrawDebugHelpers.h"
-#include "HamaComponent.h"
 
 // -----------------------------------------------------------------------------
 // Constructor
@@ -58,6 +58,17 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     FPCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FPCamera"));
     FPCamera->SetupAttachment(GetMesh(), FName("head"));
     FPCamera->bUsePawnControlRotation = true;
+
+    InteractSphere = CreateDefaultSubobject<USphereComponent>(TEXT("InteractSphere"));
+    InteractSphere->SetupAttachment(RootComponent);
+    InteractSphere->SetSphereRadius(250.f);
+    InteractSphere->SetCollisionProfileName(TEXT("Trigger"));
+    InteractSphere->SetGenerateOverlapEvents(true);
+
+    PerkBottleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PerkBottleMesh"));
+    PerkBottleMesh->SetupAttachment(GetMesh(), TEXT("PerkBottleSocket"));
+    PerkBottleMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    PerkBottleMesh->SetVisibility(false);
 }
 
 const float AHama::CrossHairTimer = 0.1f;
@@ -95,9 +106,11 @@ void AHama::BeginPlay()
         }
     }
 
-    GetWorldTimerManager().ClearTimer(PingUpdateTimerHandle);
-    GetWorldTimerManager().SetTimer(PingUpdateTimerHandle, this, &AHama::UpdatePingUI, 1.f, true);
-    GetWorld()->GetTimerManager().SetTimer(InteractTimerHandle, this, &AHama::CheckForInteractables, 0.1f, true);
+    if (IsLocallyControlled())
+    {
+        InteractSphere->OnComponentBeginOverlap.AddDynamic(this, &AHama::OnInteractSphereBeginOverlap);
+        InteractSphere->OnComponentEndOverlap.AddDynamic(this, &AHama::OnInteractSphereEndOverlap);
+    }
 
     if (HasAuthority()) CreateDefaultWeapon();
     StartCrossHairTimer();
@@ -210,6 +223,37 @@ void AHama::Tick(float DeltaTime)
     {
         SnapTarget = nullptr;
         //SetActorTickEnabled(false);
+    }
+}
+
+void AHama::OnInteractSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+    if (OtherActor && OtherActor != this && OtherActor->Implements<UInteractInterface>())
+    {
+        NearbyInteractablesCount++;
+        if (NearbyInteractablesCount == 1) // یەکەم ئۆبجێکت هاتە ناوەوە
+        {
+            GetWorld()->GetTimerManager().SetTimer(InteractTimerHandle, this, &AHama::CheckForInteractables, 0.1f, true);
+        }
+    }
+}
+
+void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+    if (OtherActor && OtherActor != this && OtherActor->Implements<UInteractInterface>())
+    {
+        NearbyInteractablesCount--;
+        if (NearbyInteractablesCount <= 0)
+        {
+            NearbyInteractablesCount = 0;
+            GetWorld()->GetTimerManager().ClearTimer(InteractTimerHandle);
+
+            if (FocusedInteractable)
+            {
+                FocusedInteractable = nullptr;
+                if (MainWidgetRef) MainWidgetRef->HideInteractMessage();
+            }
+        }
     }
 }
 
@@ -401,15 +445,6 @@ void AHama::HandleKillsChanged(int32 NewKills)
     }
 }
 
-void AHama::UpdatePingUI()
-{
-    if (APlayerState* PS = GetPlayerState())
-    {
-        float ExactPing = PS->GetPingInMilliseconds();
-        OnUIUpdatePing(FMath::RoundToInt(ExactPing));
-    }
-}
-
 void AHama::CreateDefaultWeapon()
 {
     if (!DefaultWeapon) return;
@@ -566,12 +601,18 @@ void AHama::RefillAllWeapons()
 
 void AHama::SwapWeapon()
 {
-    if (!SwapWeaponMontage) return;
+    // ١. پشکنینی بنەڕەتی
+    if (!SwapWeaponMontage || !CurrentWeapon) return;
     if (IsDrinkingPerk()) return;
-    if(HamaComponent && HamaComponent->IsDowned()) return;
+    if (HamaComponent && HamaComponent->IsDowned()) return;
+
+    // ٢. ڕێگریکردن لە سپامکردنی دوگمەی Swap (Anti-Spam)
+    // ئەگەر پێشتر چەکێکی هەڵبژاردبێت بۆ گۆڕین و هێشتا تەواو نەبووبێت، ڕەتی بکەرەوە
+    if (PendingWeaponForSwap != nullptr) return;
 
     ABaseWeapon* NextWeapon = nullptr;
-   
+
+    // لۆژیکی هەڵبژاردنی چەکی داهاتوو
     if (CurrentWeapon == PrimaryWeapon)
     {
         if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
@@ -593,7 +634,7 @@ void AHama::SwapWeapon()
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
     if (!AnimInstance) return;
 
-    if(CurrentWeapon && CurrentWeapon->IsReloading())
+    if (CurrentWeapon->IsReloading())
     {
         CurrentWeapon->CancelReload();
     }
@@ -607,18 +648,12 @@ void AHama::SwapWeapon()
 
     float TargetPlayRate = 1.0f;
 
-    bool bIsAdrenalineActive = false;
-    if (GetWorld() && GetWorld()->GetGameState())
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
-        if (ALastStandLegacyGameState* GS = Cast<ALastStandLegacyGameState>(GetWorld()->GetGameState()))
+        if (HasFastHands() || GS->IsTeamAdrenalineActive())
         {
-            bIsAdrenalineActive = GS->IsTeamAdrenalineActive();
+            TargetPlayRate = 2.0f;
         }
-    }
-
-    if (HasFastHands() || bIsAdrenalineActive)
-    {
-        TargetPlayRate = 2.0f;
     }
 
     AnimInstance->Montage_Play(SwapWeaponMontage, TargetPlayRate);
@@ -627,7 +662,7 @@ void AHama::SwapWeapon()
     MontageEndedDelegate.BindUObject(this, &AHama::OnSwapWeaponMontageEnded);
     AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, SwapWeaponMontage);
 
-    if (IsLocallyControlled())
+    if (!HasAuthority() && IsLocallyControlled())
     {
         Server_SwapWeapon(NextWeapon);
     }
@@ -637,6 +672,12 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 {
     if (!NewWeapon) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
+
+    if (NewWeapon != PrimaryWeapon && NewWeapon != SecondaryWeapon && NewWeapon != ThirdWeapon)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Cheat Detected: Player %s tried to swap to an unauthorized weapon!"), *GetName());
+        return;
+    }
 
     PendingWeaponForSwap = NewWeapon;
 
@@ -649,14 +690,11 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
         }
 
         float BasePlayRate = 1.0f;
-
         bool bIsAdrenalineActive = false;
-        if (GetWorld() && GetWorld()->GetGameState())
+
+        if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
         {
-            if (ALastStandLegacyGameState* GS = Cast<ALastStandLegacyGameState>(GetWorld()->GetGameState()))
-            {
-                bIsAdrenalineActive = GS->IsTeamAdrenalineActive();
-            }
+            bIsAdrenalineActive = GS->IsTeamAdrenalineActive();
         }
 
         if (HasFastHands() || bIsAdrenalineActive)
@@ -665,7 +703,6 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
         }
 
         float ServerPlayRate = BasePlayRate * 1.15f;
-
         AnimInstance->Montage_Play(SwapWeaponMontage, ServerPlayRate);
 
         FOnMontageEnded ServerMontageEndedDelegate;
@@ -702,14 +739,12 @@ void AHama::CompleteWeaponSwap()
     }
 
     CurrentWeapon = PendingWeaponForSwap;
+
     CurrentWeapon->SetActorHiddenInGame(false);
     CurrentWeapon->SetActorEnableCollision(true);
-
     CurrentWeapon->EquipWeapon(this);
-    AttachWeaponToMesh(CurrentWeapon);
-    OnRep_CurrentWeapon();
 
-    OnWeaponChanged.Broadcast(CurrentWeapon);
+    OnRep_CurrentWeapon();
 
     PendingWeaponForSwap = nullptr;
 }
@@ -761,13 +796,14 @@ void AHama::RemoveDeathMachine()
     bIsDeathMachineActive = false;
     ForceNetUpdate();
 
-    if (ActiveDeathMachine)
+    if (ActiveDeathMachine && IsValid(ActiveDeathMachine))
     {
         ActiveDeathMachine->Destroy();
         ActiveDeathMachine = nullptr;
     }
 
-    if (PreDeathMachineWeapon)
+    // پشکنینی تەواو بۆ ئەوەی دڵنیا ببینەوە چەکەکەی پێشووی هێشتا ماوە و خاشاک نییە
+    if (PreDeathMachineWeapon && IsValid(PreDeathMachineWeapon) && !PreDeathMachineWeapon->IsPendingKillPending())
     {
         CurrentWeapon = PreDeathMachineWeapon;
         CurrentWeapon->SetActorHiddenInGame(false);
@@ -778,6 +814,26 @@ void AHama::RemoveDeathMachine()
         OnWeaponChanged.Broadcast(CurrentWeapon);
 
         PreDeathMachineWeapon = nullptr;
+    }
+    else
+    {
+        ABaseWeapon* FallbackWeapon = nullptr;
+
+        if (ThirdWeapon && IsValid(ThirdWeapon)) FallbackWeapon = ThirdWeapon;
+        else if (SecondaryWeapon && IsValid(SecondaryWeapon)) FallbackWeapon = SecondaryWeapon;
+        else if (PrimaryWeapon && IsValid(PrimaryWeapon)) FallbackWeapon = PrimaryWeapon;
+
+        if (FallbackWeapon)
+        {
+            CurrentWeapon = FallbackWeapon;
+            CurrentWeapon->SetActorHiddenInGame(false);
+            CurrentWeapon->SetActorEnableCollision(true);
+            CurrentWeapon->EquipWeapon(this);
+            AttachWeaponToMesh(CurrentWeapon);
+
+            OnRep_CurrentWeapon();
+            OnWeaponChanged.Broadcast(CurrentWeapon);
+        }
     }
 }
 
@@ -1347,7 +1403,6 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
             HamaComponent->SetAiming(false);
             OnAim(false);
             SnapTarget = nullptr;
-            SetActorTickEnabled(false);
         }
 
         if (IsSprinting())
@@ -1355,23 +1410,13 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
             HamaComponent->StopSprinting();
         }
     }
-   
 
-    // -------------------------------------------------------------------------
-
+    // --- ڕێگەی مۆدێرن و خێرا ---
     UStaticMesh* BottleMesh = TargetPerk->GetBottleMesh();
-
-    if (BottleMesh)
+    if (BottleMesh && PerkBottleMesh)
     {
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.Owner = this;
-
-        CurrentSpawnedBottle = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), GetActorLocation(), GetActorRotation(), SpawnParams);
-        if (CurrentSpawnedBottle && CurrentSpawnedBottle->GetStaticMeshComponent())
-        {
-            CurrentSpawnedBottle->GetStaticMeshComponent()->SetStaticMesh(BottleMesh);
-            CurrentSpawnedBottle->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetIncludingScale, TEXT("PerkBottleSocket"));
-        }
+        PerkBottleMesh->SetStaticMesh(BottleMesh);
+        PerkBottleMesh->SetVisibility(true);
     }
 
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
@@ -1387,10 +1432,10 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
 
 void AHama::OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool bInterrupted)
 {
-    if (CurrentSpawnedBottle)
+    if (PerkBottleMesh)
     {
-        CurrentSpawnedBottle->Destroy();
-        CurrentSpawnedBottle = nullptr;
+        PerkBottleMesh->SetVisibility(false);
+        PerkBottleMesh->SetStaticMesh(nullptr);
     }
 }
 
@@ -1565,7 +1610,7 @@ void AHama::Server_ExecuteMelee_Implementation()
 
 void AHama::PerformMeleeHitDetection()
 {
-    if (!HasAuthority()) return;
+    if (!IsLocallyControlled() && !HasAuthority()) return;
 
     FVector CameraLocation;
     FRotator ViewRotation;
@@ -1585,41 +1630,72 @@ void AHama::PerformMeleeHitDetection()
 
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(this);
-    if (CurrentWeapon)
-    {
-        Params.AddIgnoredActor(CurrentWeapon);
-    }
+    if (CurrentWeapon) Params.AddIgnoredActor(CurrentWeapon);
 
     FHitResult HitResult;
     FCollisionShape MeleeSphere = FCollisionShape::MakeSphere(MeleeRadius);
 
     bool bHit = GetWorld()->SweepSingleByChannel(
-        HitResult,
-        StartLocation,
-        EndLocation,
-        FQuat::Identity,
+        HitResult, StartLocation, EndLocation, FQuat::Identity,
         ECC_Bullet,
-        MeleeSphere,
-        Params
+        MeleeSphere, Params
     );
 
     if (bHit && HitResult.GetActor())
     {
-        if(AZombie* HitZombie = Cast<AZombie>(HitResult.GetActor()))
+        AZombie* HitZombie = Cast<AZombie>(HitResult.GetActor());
+        if (HitZombie && !HitZombie->IsDead())
         {
-            if (HitZombie->IsDead()) return;
+            if (!HasAuthority())
+            {
+                Server_ValidateMeleeHit(HitZombie, HitResult.ImpactPoint);
 
-            AActor* HitActor = HitResult.GetActor();
-            FVector ShotDirection = ViewRotation.Vector();
+                // تێبینی: دەتوانیت لێرەدا ڕاستەوخۆ دەنگ و ئیفێکتی خوێن لێبدەیت بۆ ئەوەی یاریزانەکە هەست بە خێرایی بکات
+            }
+            else
+            {
+                FPointDamageEvent PointDamageEvent;
+                PointDamageEvent.Damage = MeleeDamage;
+                PointDamageEvent.HitInfo = HitResult;
+                PointDamageEvent.ShotDirection = ViewRotation.Vector();
+                PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
 
-            FPointDamageEvent PointDamageEvent;
-            PointDamageEvent.Damage = MeleeDamage;
-            PointDamageEvent.HitInfo = HitResult;
-            PointDamageEvent.ShotDirection = ShotDirection;
-            PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
-
-            HitActor->TakeDamage(MeleeDamage, PointDamageEvent, OwnerController, this);
+                HitZombie->TakeDamage(MeleeDamage, PointDamageEvent, OwnerController, this);
+            }
         }
+    }
+}
+
+bool AHama::Server_ValidateMeleeHit_Validate(AActor* HitActor, FVector_NetQuantize HitLocation)
+{
+    return HitActor != nullptr;
+}
+
+void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_NetQuantize HitLocation)
+{
+    AZombie* HitZombie = Cast<AZombie>(HitActor);
+    if (!HitZombie || HitZombie->IsDead()) return;
+
+    // --- Anti-Cheat Check ---
+    float Distance = FVector::Dist(GetActorLocation(), HitZombie->GetActorLocation());
+    float MaxAllowedDistance = MeleeRange + MeleeRadius + 150.f;
+
+    if (Distance <= MaxAllowedDistance)
+    {
+        FPointDamageEvent PointDamageEvent;
+        PointDamageEvent.Damage = MeleeDamage;
+
+        FHitResult ServerHit(HitZombie, nullptr, HitLocation, HitLocation);
+
+        PointDamageEvent.HitInfo = ServerHit;
+        PointDamageEvent.ShotDirection = (HitLocation - GetActorLocation()).GetSafeNormal();
+        PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
+
+        HitZombie->TakeDamage(MeleeDamage, PointDamageEvent, OwnerController, this);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Melee Exploit Detected! Player %s attacked from too far!"), *GetName());
     }
 }
 
@@ -1639,7 +1715,19 @@ void AHama::Interact(AHama* InteractingPlayer)
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 {
+    // ١. پشکنینی سەرەتایی (ئایا خۆت و ئامانجەکە بوونیان هەیە؟)
     if (!DownedPlayer || !DownedPlayer->HealthComponent || !DownedPlayer->HamaComponent->IsDowned()) return;
+
+    // ٢. پشکنینی ئەمنی بۆ خۆت: ئایا تۆ کەوتوویت یان مردوویت؟ ئەگەر وابێت ناتوانیت کەس ڕزگار بکەیت!
+    if (bIsDead || (HamaComponent && HamaComponent->IsDowned())) return;
+
+    // ٣. پشکنینی دووری (Anti-Exploit): نابێت لەوپەڕی نەخشەکەوە هاوڕێکەت ڕزگار بکەیت!
+    float DistanceToTarget = FVector::Dist(GetActorLocation(), DownedPlayer->GetActorLocation());
+    if (DistanceToTarget > SetIntractDistance + 100.f) // کەمێک مەودای زیادە بۆ کێشەی نێتوۆرک
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Cheat Detected: Player %s tried to revive from too far away!"), *GetName());
+        return;
+    }
 
     if (GetWorldTimerManager().IsTimerActive(ReviveTimerHandle)) return;
 
