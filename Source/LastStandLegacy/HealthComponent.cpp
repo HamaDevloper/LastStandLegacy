@@ -4,6 +4,7 @@
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "LastStandLegacyGameState.h"
 
 UHealthComponent::UHealthComponent()
 {
@@ -102,11 +103,29 @@ void UHealthComponent::DownPlayer()
         World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
         World->GetTimerManager().ClearTimer(DownTimerHandle);
 
+        MaxHealth = 100.f;
+        CurrentHealth = MaxHealth;
+        
         if (OwnerComponent)
         {
             OwnerComponent->SetDowned(true);
         }
 
+        ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+        if (GS && GS->bIsSoloMatch && OwnerCharacter && OwnerCharacter->HasQuickRevive())
+        {
+            OwnerCharacter->HandleDeath();
+            World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, 5.0f, false);
+            return;
+        }
+        else
+        {
+            if (OwnerCharacter)
+            {
+                OwnerCharacter->HandleDeath();
+            }
+        }
+      
         World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, 45.0f, false);
     }
 }
@@ -131,6 +150,8 @@ void UHealthComponent::Revive()
 void UHealthComponent::HandlePlayerDeath()
 {
     if (!GetOwner()->HasAuthority() || !OwnerCharacter || OwnerCharacter->bIsDead) return;
+
+    GetWorld()->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
 
     OnDeath.Broadcast();
 

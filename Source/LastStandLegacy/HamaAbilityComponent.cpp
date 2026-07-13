@@ -51,7 +51,6 @@ void UHamaAbilityComponent::AddPower(float Amount)
 
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Magenta, FString::Printf(TEXT("Current Power is: %f"), CurrentPower));
 
-    // نوێکردنەوەی شاشە بۆ ئەو یاریزانەی کە هۆستە
     if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_CurrentPower();
@@ -231,6 +230,7 @@ void UHamaAbilityComponent::ActivateBlitz()
 
 void UHamaAbilityComponent::DeactivateGhostMode()
 {
+    bIsGhost = false;
 }
 
 void UHamaAbilityComponent::StopAllAbilities()

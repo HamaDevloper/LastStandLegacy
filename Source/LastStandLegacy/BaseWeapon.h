@@ -214,7 +214,7 @@ public:
     void Client_ForceReload(int32 NewReserveAmmo);
 
     UFUNCTION(Server, Reliable)
-    void ServerReload(float InReloadTime);
+    void ServerReload(float InReloadTime, bool bClipEmpty);
 
     void CancelReload();
 

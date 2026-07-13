@@ -61,4 +61,5 @@ private:
     FTimerHandle RegenerateHealthTimer;
     FTimerHandle ReviveTimerHandle;
     FTimerHandle DownTimerHandle;
+    FTimerHandle QuickReviveTimerHandle;
 };

@@ -153,8 +153,6 @@ void ABaseWeapon::Client_ApplyPackAPunchFX_Implementation(int32 NewReserveAmmo)
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
-
-    // 💡 دواتر دەتوانیت لێرەدا فەنکشنی گۆڕینی ماتێریاڵ (Camo) یان دەنگی Pack-A-Punch لێبدەیت
 }
 
 void ABaseWeapon::RefillAmmo()
@@ -320,8 +318,8 @@ void ABaseWeapon::HandleFireLocal()
 
     if (CurrentAmmo <= 0 && !IsInfiniteAmmoActive())
     {
-        StopFire();
         Reload();
+        StopFire();
         return;
     }
 
@@ -406,7 +404,6 @@ void ABaseWeapon::HandleFireLocal()
                 PlayLocalHitEffects(LocalHit);
                 if (LocalHit.GetActor())
                 {
-                    float FinalDamage = CalculateDamageBySurface(LocalHit);
                     Server_ApplyDamage(LocalHit.GetActor(), ShotDirection, LocalHit);
                 }
             }
@@ -424,8 +421,6 @@ void ABaseWeapon::HandleFireLocal()
                     if (!SingleHit.GetActor() || HitActors.Contains(SingleHit.GetActor())) continue;
 
                     PlayLocalHitEffects(SingleHit);
-
-                    float FinalDamage = CalculateDamageBySurface(SingleHit);
                     Server_ApplyDamage(SingleHit.GetActor(), ShotDirection, SingleHit);
 
                     HitActors.Add(SingleHit.GetActor());
@@ -629,7 +624,7 @@ void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
 
 void ABaseWeapon::Reload()
 {
-    if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip || bIsReloading || CurrentAmmo == CurrentWeaponData.MaxAmmoInClip || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
+    if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip || bIsReloading || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
     bIsReloading = true;
     float ReloadTimeToUse = CurrentWeaponData.DefaultReloadTime;
@@ -647,18 +642,16 @@ void ABaseWeapon::Reload()
         OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage, MontagePlayRate);
     }
 
-    GetWorldTimerManager().SetTimer(
-        ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete,
-        ReloadTimeToUse, false
-    );
+    bool bIsEmpty = (CurrentAmmo <= 0);
 
-    if (HasAuthority())
+    if (!HasAuthority())
     {
-        ServerReload_Implementation(ReloadTimeToUse);
+        GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete, ReloadTimeToUse, false);
+        ServerReload(ReloadTimeToUse, bIsEmpty);
     }
     else
     {
-        ServerReload(ReloadTimeToUse);
+        ServerReload_Implementation(ReloadTimeToUse, bIsEmpty);
     }
 }
 
@@ -666,67 +659,51 @@ void ABaseWeapon::Local_ReloadComplete()
 {
     if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
-    int32 AmmoNeeded = CurrentWeaponData.MaxAmmoInClip - CurrentAmmo;
+    int32 AmmoNeeded = MaxAmmoInClip - CurrentAmmo;
     int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
-
     CurrentAmmo += AmmoToMove;
-    ReserveAmmo -= AmmoToMove;
     bIsReloading = false;
 
     OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 
-    if (OwnerCharacter->bIsFireButtonHold)
-    {
-        StartFire();
-    }
+    if (OwnerCharacter->bIsFireButtonHold) StartFire();
 }
 
-void ABaseWeapon::ServerReload_Implementation(float InReloadTime)
+void ABaseWeapon::ServerReload_Implementation(float InReloadTime, bool bClipEmpty)
 {
-    bIsReloading = true;
+    if (bClipEmpty) CurrentAmmo = 0;
+    GetWorldTimerManager().ClearTimer(ServerFireTimerHandle);
 
-    if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
-    {
-        OnRep_Reload();
-    }
+    bIsReloading = true;
+    if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled()) OnRep_Reload();
 
     float FinalReloadTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : InReloadTime;
-    ALastStandLegacyGameState* GS = GetGameStateCache();
-    if ((GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands()))
-    {
+    if ((GetGameStateCache() && GetGameStateCache()->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands()))
         FinalReloadTime /= 2.0f;
-    }
 
-    float BufferTolerance = FMath::Max(FinalReloadTime - 0.1f, 0.1f);
-
-    GetWorldTimerManager().SetTimer(
-        ReloadTimerHandle, this, &ABaseWeapon::Server_ReloadComplete,
-        BufferTolerance, false
-    );
+    GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Server_ReloadComplete, FMath::Max(FinalReloadTime - 0.1f, 0.1f), false);
 }
 
 void ABaseWeapon::Server_ReloadComplete()
 {
-    int32 AmmoNeeded = CurrentWeaponData.MaxAmmoInClip - CurrentAmmo;
+    int32 AmmoNeeded = MaxAmmoInClip - CurrentAmmo;
     int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
 
     CurrentAmmo += AmmoToMove;
     ReserveAmmo -= AmmoToMove;
     bIsReloading = false;
 
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    if (OwnerCharacter)
     {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
-
-    if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
-    {
-        OnRep_Reload();
-    }
-
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled() && OwnerCharacter->bIsFireButtonHold)
-    {
-        StartFire();
+        if (OwnerCharacter->IsLocallyControlled())
+        {
+            OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+            if (OwnerCharacter->bIsFireButtonHold) StartFire();
+        }
+        else
+        {
+            OnRep_Reload();
+        }
     }
 }
 
@@ -750,7 +727,7 @@ void ABaseWeapon::CancelReload()
         else if (HasAuthority() && !OwnerCharacter->IsLocallyControlled())
         {
             Client_CancelReload();
-            OnRep_Reload(); 
+            OnRep_Reload();
         }
     }
 }
@@ -822,10 +799,16 @@ void ABaseWeapon::OnRep_Reload()
 
 void ABaseWeapon::OnRep_CurrentAmmo()
 {
-    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    if (!bIsReloading)
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
 }
 
 void ABaseWeapon::OnRep_ReserveAmmo()
 {
-    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    if (!bIsReloading)
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
 }

@@ -365,6 +365,7 @@ public:
     bool HasDeadshot() const { return bHasDeadshot; }
     bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
     bool IsDrinkingPerk() const { return CurrentSpawnedBottle != nullptr; }
+    bool HasQuickRevive() const { return bHasQuickRevive; }
 
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
@@ -407,6 +408,9 @@ protected:
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
     bool bHasMuleKick = false;
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
+    bool bHasQuickRevive = false;
 
     UPROPERTY(Replicated)
     bool bIsDeathMachineActive = false;

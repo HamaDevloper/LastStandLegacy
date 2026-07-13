@@ -14,7 +14,7 @@ AWallWeaponBuy::AWallWeaponBuy()
 
     InteractBox->SetCollisionProfileName(TEXT("Trigger"));
     InteractBox->SetGenerateOverlapEvents(true);
-    InteractBox->SetBoxExtent(FVector(100.f, 100.f, 100.f)); 
+    InteractBox->SetCollisionResponseToChannel(ECC_Intract, ECR_Block);
 
     RootComponent = InteractBox;
 

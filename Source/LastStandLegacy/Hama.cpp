@@ -138,6 +138,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME_CONDITION(AHama, bHasDoubleTap, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, bHasMuleKick, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, bHasDeadshot, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(AHama, bHasQuickRevive, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, PrimaryWeapon, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, SecondaryWeapon, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(AHama, ThirdWeapon, COND_OwnerOnly);
@@ -601,18 +602,13 @@ void AHama::RefillAllWeapons()
 
 void AHama::SwapWeapon()
 {
-    // ١. پشکنینی بنەڕەتی
     if (!SwapWeaponMontage || !CurrentWeapon) return;
     if (IsDrinkingPerk()) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
-
-    // ٢. ڕێگریکردن لە سپامکردنی دوگمەی Swap (Anti-Spam)
-    // ئەگەر پێشتر چەکێکی هەڵبژاردبێت بۆ گۆڕین و هێشتا تەواو نەبووبێت، ڕەتی بکەرەوە
     if (PendingWeaponForSwap != nullptr) return;
 
     ABaseWeapon* NextWeapon = nullptr;
 
-    // لۆژیکی هەڵبژاردنی چەکی داهاتوو
     if (CurrentWeapon == PrimaryWeapon)
     {
         if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
@@ -720,6 +716,10 @@ void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     if (HasAuthority())
     {
         CompleteWeaponSwap();
+    }
+    else if (IsLocallyControlled())
+    {
+        PendingWeaponForSwap = nullptr;
     }
 }
 
@@ -1371,6 +1371,12 @@ void AHama::AddPerkByID(FName PerkID)
     {
         bHasMuleKick = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Mule Kick Perk Acquired!"));
+        if (HasAuthority()) ForceNetUpdate();
+    }
+    else if (PerkID == FName(TEXT("QuickRevive")))
+    {
+        bHasQuickRevive = true;
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PhD Flopper Perk Acquired!"));
         if (HasAuthority()) ForceNetUpdate();
     }
 }
