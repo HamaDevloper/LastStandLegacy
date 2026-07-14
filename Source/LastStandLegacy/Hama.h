@@ -16,6 +16,11 @@
 
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
+DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
+DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FString&);
+DECLARE_DELEGATE_OneParam(FOnCrosshairUpdateDelegate, bool);
+DECLARE_DELEGATE_OneParam(FOnPointsUpdateDelegate, int32);
+DECLARE_DELEGATE_OneParam(FOnKillsUpdateDelegate, int32);
 
 USTRUCT(BlueprintType)
 struct FRoleVisualData
@@ -120,6 +125,13 @@ protected:
     TObjectPtr<ABaseWeapon> PreDeathMachineWeapon;
 
     FTimerHandle DeathMachineTimerHandle;
+
+public:
+    FOnAmmoUpdateDelegate OnAmmoUpdateEvent;
+    FOnInteractUpdateDelegate OnInteractUpdateEvent;
+    FOnCrosshairUpdateDelegate OnCrosshairUpdateEvent;
+    FOnPointsUpdateDelegate OnPointsUpdateEvent;
+    FOnKillsUpdateDelegate OnKillsUpdateEvent;
 
 public:
     UPROPERTY(Transient)

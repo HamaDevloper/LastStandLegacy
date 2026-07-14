@@ -92,16 +92,16 @@ void AHama::BeginPlay()
 
             if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
             {
-                MainWidgetRef->UpdatePointsText(HamaPS->GetPoints());
-                MainWidgetRef->UpdateKillsText(HamaPS->GetKills());
+                MainWidgetRef->HandlePointsUpdate(HamaPS->GetPoints());
+                MainWidgetRef->HandleKillsUpdate(HamaPS->GetKills());
             }
             if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
             {
-                MainWidgetRef->UpdateRoundText(GS->GetCurrentRound());
+                MainWidgetRef->HandlePointsUpdate(GS->GetCurrentRound());
             }
             else
             {
-                MainWidgetRef->UpdateRoundText(1);
+                MainWidgetRef->HandlePointsUpdate(1);
             }
         }
     }
@@ -252,7 +252,7 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
             if (FocusedInteractable)
             {
                 FocusedInteractable = nullptr;
-                if (MainWidgetRef) MainWidgetRef->HideInteractMessage();
+                //OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
             }
         }
     }
@@ -292,8 +292,7 @@ void AHama::CheckForInteractables()
     );
 }
 
-void AHama::OnInteractTraceCompleted(
-    const FTraceHandle& Handle, FTraceDatum& Datum)
+void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Datum)
 {
     // ئەگەر هیچ Hit نەبوو
     if (Datum.OutHits.IsEmpty() || !Datum.OutHits[0].GetActor())
@@ -301,20 +300,20 @@ void AHama::OnInteractTraceCompleted(
         if (FocusedInteractable)
         {
             FocusedInteractable = nullptr;
-            if (MainWidgetRef) MainWidgetRef->HideInteractMessage();
+            OnInteractUpdateEvent.ExecuteIfBound(TEXT("")); // ناردنی تێکستی بەتاڵ بۆ شاردنەوەی UI
         }
         return;
     }
 
-    IInteractInterface* NewFocus = Cast<IInteractInterface>(
-        Datum.OutHits[0].GetActor());
+    IInteractInterface* NewFocus = Cast<IInteractInterface>(Datum.OutHits[0].GetActor());
 
+    // ئەگەر ئۆبجێکتەکە ئینتەرفەیسی نەبوو
     if (!NewFocus)
     {
         if (FocusedInteractable)
         {
             FocusedInteractable = nullptr;
-            if (MainWidgetRef) MainWidgetRef->HideInteractMessage();
+            OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
         }
         return;
     }
@@ -324,16 +323,15 @@ void AHama::OnInteractTraceCompleted(
         FocusedInteractable = NewFocus;
     }
 
-    if (MainWidgetRef)
+    if (FocusedInteractable->CanInteract(this))
     {
-        if (FocusedInteractable->CanInteract(this))
-            MainWidgetRef->ShowInteractMessage(
-                FocusedInteractable->GetInteractMessage());
-        else
-            MainWidgetRef->HideInteractMessage();
+        OnInteractUpdateEvent.ExecuteIfBound(FocusedInteractable->GetInteractMessage());
+    }
+    else
+    {
+        OnInteractUpdateEvent.ExecuteIfBound(TEXT("")); // شاردنەوە
     }
 }
-
 // -----------------------------------------------------------------------------
 // Crosshair & Weapon Logic
 // -----------------------------------------------------------------------------
@@ -384,7 +382,7 @@ void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDat
 
         if (MainWidgetRef)
         {
-            MainWidgetRef->UpdateCrosshairState(bHit);
+            OnCrosshairUpdateEvent.ExecuteIfBound(bHit);
         }
     }
 }
@@ -422,10 +420,10 @@ void AHama::BindPlayerStateEvents()
         HamaPS->OnPointsChanged.BindUObject(this, &AHama::HandlePointsChanged);
         HamaPS->OnKillsChanged.BindUObject(this, &AHama::HandleKillsChanged);
 
-        if (IsLocallyControlled() && MainWidgetRef)
+        if (IsLocallyControlled())
         {
-            MainWidgetRef->UpdatePointsText(HamaPS->GetPoints());
-            MainWidgetRef->UpdateKillsText(HamaPS->GetKills());
+            OnPointsUpdateEvent.ExecuteIfBound(HamaPS->GetPoints());
+            OnKillsUpdateEvent.ExecuteIfBound(HamaPS->GetKills());
         }
     }
 }
@@ -434,7 +432,7 @@ void AHama::HandlePointsChanged(int32 NewPoints)
 {
     if (IsLocallyControlled() && MainWidgetRef)
     {
-        MainWidgetRef->UpdatePointsText(NewPoints);
+        OnPointsUpdateEvent.ExecuteIfBound(NewPoints);
     }
 }
 
@@ -442,7 +440,7 @@ void AHama::HandleKillsChanged(int32 NewKills)
 {
     if (IsLocallyControlled() && MainWidgetRef)
     {
-        MainWidgetRef->UpdateKillsText(NewKills);
+        OnKillsUpdateEvent.ExecuteIfBound(NewKills);
     }
 }
 
@@ -567,32 +565,12 @@ void AHama::OnRep_CurrentWeapon()
 
 void AHama::HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo)
 {
-    if (IsLocallyControlled() && MainWidgetRef)
+    if (IsLocallyControlled())
     {
-        if (CurrentWeapon)
-        {
-            MainWidgetRef->UpdateAmmoText(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
-
-            if (bIsDeathMachineActive) return;
-
-            int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo();
-            int32 LowAmmoThreshold = FMath::RoundToInt(MaxClipSize * 0.25f);
-
-            if (CurrentWeapon->GetCurrentAmmo() == 0 && CurrentWeapon->GetReserveAmmo() <= 0)
-            {
-                MainWidgetRef->ShowAmmoWarning(TEXT("NoAmmo!"));
-            }
-            else if (CurrentWeapon->GetCurrentAmmo() <= LowAmmoThreshold && CurrentWeapon->GetCurrentAmmo() > 0)
-            {
-                MainWidgetRef->ShowAmmoWarning(TEXT("LOW AMMO"));
-            }
-            else
-            {
-                MainWidgetRef->HideAmmoWarning();
-            }
-        }
+        OnAmmoUpdateEvent.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 }
+
 void AHama::RefillAllWeapons()
 {
     if (PrimaryWeapon) PrimaryWeapon->RefillAmmo();

@@ -4,7 +4,7 @@
 #include "GameFramework/GameState.h"
 #include "LastStandLegacyGameState.generated.h"
 
-class AHama;
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnRoundChanged, int32);
 
 UCLASS()
 class LASTSTANDLEGACY_API ALastStandLegacyGameState : public AGameState
@@ -13,6 +13,9 @@ class LASTSTANDLEGACY_API ALastStandLegacyGameState : public AGameState
 
 public:
     ALastStandLegacyGameState();
+
+    // 🚨 تێبینی: UPROPERTY لێکراوەتەوە چونکە Native C++ Delegateـە
+    FOnRoundChanged OnRoundChangedDelegate;
 
 protected:
     virtual void BeginPlay() override;
@@ -54,21 +57,23 @@ public:
     void StartTeamAdrenaline(float Duration);
     bool IsTeamAdrenalineActive() const { return bIsAdrenalineActive; }
 
-    // لیستی ئامانجە دروستەکان، خوێندراوە لە زۆمبیەکان (سێرڤەر تەنها)
-    UPROPERTY()
-    TArray<APawn*> ValidTargets;
-
     bool GetInstaKill() const { return bHasInstaKill; }
 
     void StartGlobalBulletStorm(float Duration);
     void StartDoublePoints(float Duration);
     void StartinstaKill(float Duration);
 
+    // ── لیستی ئامانجەکان (0-CPU Overhead) ──
+    UPROPERTY()
+    TArray<APawn*> ValidTargets;
+
+    void RegisterTarget(APawn* NewTarget);
+    void UnregisterTarget(APawn* TargetToRemove);
+
 protected:
     void EndDoublePoints();
     void EndGlobalBulletStorm();
     void EndInstaKill();
-    void RefreshValidTargets();
     void EndTeamAdrenaline();
 
     UFUNCTION()
@@ -87,6 +92,5 @@ private:
     FTimerHandle BulletStormTimer;
     FTimerHandle DoublePointTimer;
     FTimerHandle InstaKillTimer;
-    FTimerHandle TargetCacheTimerHandle;
     FTimerHandle AdrenalineTimerHandle;
 };

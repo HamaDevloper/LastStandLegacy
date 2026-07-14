@@ -4,10 +4,9 @@
 #include "Blueprint/UserWidget.h"
 #include "HamaMainWidget.generated.h"
 
-// ناساندنی کڵاسەکان لە سەرەوە بۆ خاوێنی کۆدەکە
-class AHama;
 class UTextBlock;
 class UImage;
+class AHama;
 
 UCLASS()
 class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
@@ -15,24 +14,12 @@ class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
-    // --- بەشی سەرەتایی (Initialization) ---
+    // ئەم فەنکشنە تەنها یەک جار بانگ دەکرێت بۆ بەستنەوەی (Bind) ئیڤێنتەکان
+    UFUNCTION(BlueprintCallable, Category = "UI|Initialization")
     void InitializeWidget(AHama* InHama);
 
-    // --- بەشی نوێکردنەوەی زانیارییەکانی شاشە (HUD Updates) ---
-    void UpdatePointsText(int32 NewPoints);
-    void UpdateKillsText(int32 NewKills);
-    void UpdateAmmoText(int32 CurrentAmmo, int32 ReserveAmmo);
-    void UpdateRoundText(int32 NewRound);
-    void UpdateCrosshairState(bool bIsAimingAtEnemy);
-
-    // --- بەشی نامە و ئاگادارکردنەوەکان (Messages & Warnings) ---
-    void ShowInteractMessage(const FString& Message);
-    void HideInteractMessage();
-    void ShowAmmoWarning(const FString& WarningMessage);
-    void HideAmmoWarning();
-
 protected:
-    // --- پێکهاتەکانی دیزاین (UI Components) ---
+    // ── بەستنەوەی دەقەکانی شاشەکە (دەبێت ناوەکانیان لەناو بلۆپرێنت هەمان شت بێت) ──
     UPROPERTY(meta = (BindWidget))
     UTextBlock* Points;
 
@@ -40,10 +27,13 @@ protected:
     UTextBlock* Kills;
 
     UPROPERTY(meta = (BindWidget))
+    UTextBlock* Round;
+
+    UPROPERTY(meta = (BindWidget))
     UTextBlock* Ammo;
 
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* Round;
+    UImage* CrosshairImage;
 
     UPROPERTY(meta = (BindWidget))
     UTextBlock* InteractText;
@@ -51,10 +41,26 @@ protected:
     UPROPERTY(meta = (BindWidget))
     UTextBlock* AmmoWarningText;
 
-    UPROPERTY(meta = (BindWidget))
-    UImage* CrosshairImage;
+public:
+    UFUNCTION()
+    void HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo);
 
-    // --- داتای هەڵگیراو (Cached Data) ---
+    UFUNCTION()
+    void HandleInteractUpdate(const FString& Message);
+
+    UFUNCTION()
+    void HandleCrosshairUpdate(bool bIsAimingAtEnemy);
+
+    UFUNCTION()
+    void HandlePointsUpdate(int32 NewPoints);
+
+    UFUNCTION()
+    void HandleKillsUpdate(int32 NewKills);
+
+    UFUNCTION()
+    void HandleRoundUpdate(int32 NewRound);
+
+private:
     UPROPERTY()
-    TObjectPtr<AHama> CachedHamaChar;
+    AHama* CachedHamaChar;
 };

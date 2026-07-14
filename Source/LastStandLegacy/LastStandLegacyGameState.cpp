@@ -1,6 +1,5 @@
 ﻿#include "LastStandLegacyGameState.h"
 #include "Hama.h"
-#include "HamaMainWidget.h" // +++ گرنگە بۆ ناسینەوەی UI +++
 #include "Net/UnrealNetwork.h"
 
 ALastStandLegacyGameState::ALastStandLegacyGameState()
@@ -12,15 +11,7 @@ void ALastStandLegacyGameState::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!HasAuthority()) return;
-
-    // 0.25f = 4 جار لە چرکەیەکدا، بە یەک سکان هەموو زۆمبیەکانی جیهان خزمەت دەکات
-    GetWorldTimerManager().SetTimer(
-        TargetCacheTimerHandle,
-        this,
-        &ALastStandLegacyGameState::RefreshValidTargets,
-        0.25f,
-        true);
+    // 🚨 تایمەرە قورسەکەی RefreshValidTargets بە تەواوی سڕایەوە!
 }
 
 void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -36,58 +27,41 @@ void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimePrope
     DOREPLIFETIME_CONDITION(ALastStandLegacyGameState, bIsSoloMatch, COND_InitialOnly);
 }
 
+// ── فەنکشنەکانی ئامانج (0-CPU Usage) ──
+void ALastStandLegacyGameState::RegisterTarget(APawn* NewTarget)
+{
+    if (HasAuthority() && NewTarget && !ValidTargets.Contains(NewTarget))
+    {
+        ValidTargets.Add(NewTarget);
+    }
+}
+
+void ALastStandLegacyGameState::UnregisterTarget(APawn* TargetToRemove)
+{
+    if (HasAuthority() && TargetToRemove)
+    {
+        ValidTargets.Remove(TargetToRemove);
+    }
+}
+
 // ── فەنکشنە نوێیەکانی سیستەمی ڕاوەند ──
 void ALastStandLegacyGameState::SetCurrentRound(int32 NewRound)
 {
     if (!HasAuthority()) return;
+
     CurrentRound = NewRound;
     ForceNetUpdate();
-    // نوێکردنەوەی شاشەی کەسی هۆست (سێرڤەر) ڕاستەوخۆ
-    if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+
+    // ئەگەر سێرڤەرەکە خۆشی یاریزانە (Listen Server) دەبێت ڕاستەوخۆ ئیڤێنتەکە لێ بدات
+    if (GetNetMode() != NM_DedicatedServer)
     {
-        if (AHama* HamaChar = Cast<AHama>(PC->GetPawn()))
-        {
-            if (HamaChar->MainWidgetRef)
-            {
-                HamaChar->MainWidgetRef->UpdateRoundText(CurrentRound);
-            }
-        }
+        OnRoundChangedDelegate.Broadcast(CurrentRound);
     }
 }
 
 void ALastStandLegacyGameState::OnRep_CurrentRound()
 {
-    // کاتێک سێرڤەر ڕاوند دەگۆڕێت، ئەمە لەسەر کۆمپیوتەری کڵایەنتەکان لێدەدات و شاشەیان ئەپدێت دەکات
-    if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-    {
-        if (AHama* HamaChar = Cast<AHama>(PC->GetPawn()))
-        {
-            if (HamaChar->MainWidgetRef)
-            {
-                HamaChar->MainWidgetRef->UpdateRoundText(CurrentRound);
-            }
-        }
-    }
-}
-
-void ALastStandLegacyGameState::RefreshValidTargets()
-{
-    ValidTargets.Reset();
-
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-    {
-        if (!It->IsValid()) continue;
-
-        APawn* Pawn = It->Get()->GetPawn();
-        if (!Pawn) continue;
-
-        if (AHama* H = Cast<AHama>(Pawn))
-        {
-            if (H->IsGhost() || H->IsDowned()) continue;
-        }
-
-        ValidTargets.Add(Pawn);
-    }
+    OnRoundChangedDelegate.Broadcast(CurrentRound);
 }
 
 // ------------------- ADRENALINE (BLITZ) -------------------
