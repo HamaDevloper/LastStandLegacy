@@ -8,19 +8,17 @@
 #include "HealthComponent.h"
 #include "BaseWeapon.h"
 #include "HamaAbilityComponent.h"
+#include "InteractInterface.h"
 #include "Hama.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
 #define ECC_CrossHair ECC_GameTraceChannel2
 #define ECC_Intract ECC_GameTraceChannel3
 
-
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
 DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
 DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FString&);
 DECLARE_DELEGATE_OneParam(FOnCrosshairUpdateDelegate, bool);
-DECLARE_DELEGATE_OneParam(FOnPointsUpdateDelegate, int32);
-DECLARE_DELEGATE_OneParam(FOnKillsUpdateDelegate, int32);
 
 USTRUCT(BlueprintType)
 struct FRoleVisualData
@@ -130,17 +128,15 @@ public:
     FOnAmmoUpdateDelegate OnAmmoUpdateEvent;
     FOnInteractUpdateDelegate OnInteractUpdateEvent;
     FOnCrosshairUpdateDelegate OnCrosshairUpdateEvent;
-    FOnPointsUpdateDelegate OnPointsUpdateEvent;
-    FOnKillsUpdateDelegate OnKillsUpdateEvent;
 
 public:
     UPROPERTY(Transient)
     TObjectPtr<ABaseWeapon> ActiveDeathMachine;
 
     void GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration);
-   
+
     void RemoveDeathMachine();
-   
+
     void CompleteWeaponSwap();
 
     UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
@@ -201,44 +197,19 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> InteractAction;
-    
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> GamepadXAction;
 
     UPROPERTY(EditDefaultsOnly, Category = "Hama | Input")
     TObjectPtr<UInputAction> MeleeAction;
 
-public:
     // -----------------------------------------------------------------------------
-    // UI & HUD
+    // UI & HUD (MainWidgetRef Removed)
     // -----------------------------------------------------------------------------
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|UI")
-    TSubclassOf<class UHamaMainWidget> MainWidgetClass;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Hama|UI")
-    class UHamaMainWidget* MainWidgetRef;
 
 protected:
     virtual void OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState) override;
-    void BindPlayerStateEvents();
-
-    UFUNCTION()
-    void HandlePointsChanged(int32 NewPoints);
-
-    UFUNCTION()
-    void HandleKillsChanged(int32 NewKills);
-
-    FTimerHandle PingUpdateTimerHandle;
-
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|UI")
-    void OnUIUpdatePoints(int32 NewPoints);
-
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|UI")
-    void OnUIUpdateKills(int32 NewKills);
-
-    UFUNCTION(BlueprintImplementableEvent, Category = "Hama|UI")
-    void OnUIUpdatePing(int32 NewKills);
 
 public:
     // -----------------------------------------------------------------------------
@@ -326,6 +297,7 @@ protected:
     void SwitchCameraPressed(const FInputActionInstance& Instance);
     void SwitchCameraReleased();
     void SprintActionPressed();
+    void OnSprintStopped();
     void StartCrossHairTimer();
     void CrossHairTrace();
     void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
@@ -338,7 +310,7 @@ protected:
     void AbilityActionPressed();
     void MeleeActionPressed();
     void InteractActionReleased();
-       
+
 protected:
     static const float CrossHairTimer;
 
@@ -433,7 +405,6 @@ protected:
     class AStaticMeshActor* CurrentSpawnedBottle;
 
 public:
-    // ناردنی پۆینتەری پێرکەکە بۆ مڵتیکاست بۆ خوێندنەوەی ڕاستەوخۆی مێشی بوتڵەکە لێیەوە
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_PlayDrinkPerkAnimation(ABasePerk* TargetPerk);
 
@@ -460,14 +431,14 @@ public:
 
 protected:
     void CheckForInteractables();
-  
+
     void OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Datum);
-    
+
     UPROPERTY()
     FTimerHandle InteractTimerHandle;
 
     class IInteractInterface* FocusedInteractable;
-    
+
     void InteractActionPressed();
     void GamepadXActionPressed(const FInputActionInstance& Instance);
     void GamepadXActionReleased();
@@ -482,10 +453,8 @@ public:
     bool bIsDead = false;
 
 protected:
-    UPROPERTY(EditAnywhere,BlueprintReadOnly, Category = "Hama|Setting")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Setting")
     float SetIntractDistance = 100.f;
-
-
 
     UFUNCTION(Server, Reliable)
     void Server_ExecuteMelee();
@@ -507,15 +476,12 @@ protected:
 public:
     void PerformMeleeHitDetection();
 
-
     UFUNCTION(Server, Reliable)
     void Server_BeginRevive(AHama* DownedPlayer);
 
-    // ئەگەر دوگمەکەی بەردا یان دوورکەوتەوە، ڕیڤایڤەکە هەڵدەوەشێتەوە
     UFUNCTION(Server, Reliable)
     void Server_CancelRevive();
 
-    // فەنکشنێک کە تایمەرەکەی سێرڤەر بانگی دەکات کاتێک کاتەکە تەواو دەبێت
     UFUNCTION()
     void Server_CompleteRevive(AHama* DownedPlayer);
 
@@ -536,6 +502,6 @@ private:
 
     UFUNCTION()
     void OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
-    
+
     int32 NearbyInteractablesCount = 0;
 };

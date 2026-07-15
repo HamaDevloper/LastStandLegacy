@@ -1,6 +1,7 @@
 ﻿#include "LastStandLegacyGameState.h"
 #include "Hama.h"
 #include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
 
 ALastStandLegacyGameState::ALastStandLegacyGameState()
 {
@@ -18,12 +19,15 @@ void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME(ALastStandLegacyGameState, CurrentRound);
-    DOREPLIFETIME(ALastStandLegacyGameState, bIsGlobalBulletStormActive);
-    DOREPLIFETIME(ALastStandLegacyGameState, bIsDoublePointsActive);
-    DOREPLIFETIME(ALastStandLegacyGameState, bHasInstaKill);
-    DOREPLIFETIME(ALastStandLegacyGameState, bIsAdrenalineActive);
-    DOREPLIFETIME(ALastStandLegacyGameState, bIsPowerOn);
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, CurrentRound, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bIsGlobalBulletStormActive, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bIsDoublePointsActive, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bHasInstaKill, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bIsAdrenalineActive, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bIsPowerOn, Params);
     DOREPLIFETIME_CONDITION(ALastStandLegacyGameState, bIsSoloMatch, COND_InitialOnly);
 }
 
@@ -50,13 +54,9 @@ void ALastStandLegacyGameState::SetCurrentRound(int32 NewRound)
     if (!HasAuthority()) return;
 
     CurrentRound = NewRound;
-    ForceNetUpdate();
+    MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, CurrentRound, this);
 
-    // ئەگەر سێرڤەرەکە خۆشی یاریزانە (Listen Server) دەبێت ڕاستەوخۆ ئیڤێنتەکە لێ بدات
-    if (GetNetMode() != NM_DedicatedServer)
-    {
-        OnRoundChangedDelegate.Broadcast(CurrentRound);
-    }
+    OnRoundChangedDelegate.Broadcast(CurrentRound);
 }
 
 void ALastStandLegacyGameState::OnRep_CurrentRound()
@@ -70,7 +70,9 @@ void ALastStandLegacyGameState::StartTeamAdrenaline(float Duration)
     if (HasAuthority())
     {
         bIsAdrenalineActive = true;
-        ForceNetUpdate();
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsAdrenalineActive, this);
+
         OnRep_Adrenaline();
         GetWorldTimerManager().SetTimer(AdrenalineTimerHandle, this, &ALastStandLegacyGameState::EndTeamAdrenaline, Duration, false);
     }
@@ -81,7 +83,9 @@ void ALastStandLegacyGameState::EndTeamAdrenaline()
     if (HasAuthority())
     {
         bIsAdrenalineActive = false;
-        ForceNetUpdate();
+        
+        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsAdrenalineActive, this);
+
         OnRep_Adrenaline();
     }
 }
@@ -92,8 +96,10 @@ void ALastStandLegacyGameState::StartGlobalBulletStorm(float Duration)
     if (HasAuthority())
     {
         bIsGlobalBulletStormActive = true;
-        ForceNetUpdate();
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsGlobalBulletStormActive, this);
         OnRep_GlobalBulletStorm();
+
         GetWorldTimerManager().SetTimer(BulletStormTimer, this, &ALastStandLegacyGameState::EndGlobalBulletStorm, Duration, false);
     }
 }
@@ -103,7 +109,9 @@ void ALastStandLegacyGameState::EndGlobalBulletStorm()
     if (HasAuthority())
     {
         bIsGlobalBulletStormActive = false;
-        ForceNetUpdate();
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsGlobalBulletStormActive, this);
+
         OnRep_GlobalBulletStorm();
     }
 }
@@ -114,7 +122,9 @@ void ALastStandLegacyGameState::StartDoublePoints(float Duration)
     if (HasAuthority())
     {
         bIsDoublePointsActive = true;
-        ForceNetUpdate();
+      
+        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsDoublePointsActive, this);
+
         OnRep_DoublePoints();
         GetWorldTimerManager().SetTimer(DoublePointTimer, this, &ALastStandLegacyGameState::EndDoublePoints, Duration, false);
     }
@@ -125,7 +135,9 @@ void ALastStandLegacyGameState::EndDoublePoints()
     if (HasAuthority())
     {
         bIsDoublePointsActive = false;
-        ForceNetUpdate();
+        
+        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsDoublePointsActive, this);
+
         OnRep_DoublePoints();
     }
 }
@@ -136,7 +148,9 @@ void ALastStandLegacyGameState::StartinstaKill(float Duration)
     if (HasAuthority())
     {
         bHasInstaKill = true;
-        ForceNetUpdate();
+        
+        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bHasInstaKill, this);
+
         OnRep_InstaKill();
         GetWorldTimerManager().SetTimer(InstaKillTimer, this, &ALastStandLegacyGameState::EndInstaKill, Duration, false);
     }
@@ -147,7 +161,9 @@ void ALastStandLegacyGameState::EndInstaKill()
     if (HasAuthority())
     {
         bHasInstaKill = false;
-        ForceNetUpdate();
+        
+        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bHasInstaKill, this);
+
         OnRep_InstaKill();
     }
 }

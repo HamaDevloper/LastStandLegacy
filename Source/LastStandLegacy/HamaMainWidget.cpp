@@ -3,6 +3,8 @@
 #include "LastStandLegacyGameState.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
+#include "HamaPlayerState.h"
+#include "BaseWeapon.h"
 
 // -------------------------------------------------------------------------
 // Initialization (0-Coupling Architecture)
@@ -13,22 +15,44 @@ void UHamaMainWidget::InitializeWidget(AHama* InHama)
 
     CachedHamaChar = InHama;
 
+    // ١. ئەو شتانەی تایبەتبن بە کارەکتەر، لە کارەکتەرەوە گوێیان لێ دەگرین (چەک و ئینتەراکت)
     InHama->OnAmmoUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleAmmoUpdate);
     InHama->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
     InHama->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);
-    InHama->OnPointsUpdateEvent.BindUObject(this, &UHamaMainWidget::HandlePointsUpdate);
-    InHama->OnKillsUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleKillsUpdate);
 
+    // خوێندنەوەی داتای سەرەتایی فیشەک بۆ ئەوەی بەتاڵ نەبێت
+    if (ABaseWeapon* CurrentWep = InHama->GetCurrentWeapon())
+    {
+        HandleAmmoUpdate(CurrentWep->GetCurrentAmmo(), CurrentWep->GetReserveAmmo());
+    }
+    else
+    {
+        HandleAmmoUpdate(0, 0);
+    }
+
+    // ٢. 🚀 چارەسەرەکە: ئەو شتانەی تایبەتبن بە یاریزان (خاڵ و کوشتن)، ڕاستەوخۆ لە PlayerStateەوە گوێیان لێ دەگرین
+    if (AHamaPlayerState* PS = InHama->GetPlayerState<AHamaPlayerState>())
+    {
+        // ئیتر پێویستمان بە OnPointsUpdateEventـی ناو AHama نەما!
+        PS->OnPointsChanged.BindUObject(this, &UHamaMainWidget::HandlePointsUpdate);
+        PS->OnKillsChanged.BindUObject(this, &UHamaMainWidget::HandleKillsUpdate);
+
+        // خوێندنەوەی خاڵ و کوشتنەکانی ئێستا
+        HandlePointsUpdate(PS->GetPoints());
+        HandleKillsUpdate(PS->GetKills());
+    }
+
+    // ٣. ئەو شتانەی تایبەتبن بە گشتی یارییەکە (Round)، لە GameStateەوە گوێی لێ دەگرین
     if (UWorld* World = GetWorld())
     {
         if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
         {
             GS->OnRoundChangedDelegate.AddUObject(this, &UHamaMainWidget::HandleRoundUpdate);
-
             HandleRoundUpdate(GS->GetCurrentRound());
         }
     }
 
+    // شاردنەوەی تێکستەکان لە سەرەتادا
     if (InteractText) InteractText->SetVisibility(ESlateVisibility::Hidden);
     if (AmmoWarningText) AmmoWarningText->SetVisibility(ESlateVisibility::Hidden);
 }

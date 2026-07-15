@@ -8,7 +8,9 @@
 #include "LastStandLegacyGameMode.h"
 #include "LastStandLegacyGameState.h"
 #include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
 #include "HamaPlayerState.h"
+#include "Engine/DamageEvents.h"
 #include "MeleeDamageType.h"
 
 AZombie::AZombie()
@@ -55,8 +57,11 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME(AZombie, bIsDead);
-    DOREPLIFETIME(AZombie, Health);
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, bIsDead, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, Health, Params);
     DOREPLIFETIME_CONDITION(AZombie, MaxHealth, COND_InitialOnly);
 }
 
@@ -150,6 +155,9 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
     }
 
     Health -= DamageApplied;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, Health, this);
+    
     GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::Printf(TEXT("Current Zombie Health Is %f"), Health));
 
     AHamaPlayerState* AttackerPS = EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
@@ -183,7 +191,9 @@ void AZombie::Die(AController* KillerController)
 
     bIsDead = true;
 
-    SetNetUpdateFrequency(2.f);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
+
+    SetNetUpdateFrequency(1.f);
 
     GetWorld()->GetTimerManager().ClearTimer(ChaseTimerHandle);
     GetWorld()->GetTimerManager().ClearTimer(AttackTimerHandle);

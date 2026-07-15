@@ -2,6 +2,7 @@
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -117,12 +118,27 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME_CONDITION(ABaseWeapon, CurrentAmmo, COND_SkipOwner);
-    DOREPLIFETIME_CONDITION(ABaseWeapon, ReserveAmmo, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(ABaseWeapon, Damage, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(ABaseWeapon, MaxAmmoInClip, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(ABaseWeapon, bIsReloading, COND_SkipOwner);
-    DOREPLIFETIME_CONDITION(ABaseWeapon, BurstCounter, COND_SkipOwner);
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    Params.Condition = COND_SkipOwner;
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, CurrentAmmo, Params);
+
+    Params.Condition = COND_SkipOwner;
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
+
+    Params.Condition = COND_SkipOwner;
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, BurstCounter, Params);
+
+    Params.Condition = COND_OwnerOnly;
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, ReserveAmmo, Params);
+
+    Params.Condition = COND_OwnerOnly;
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, Damage, Params);
+
+    Params.Condition = COND_OwnerOnly;
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, MaxAmmoInClip, Params);
+   
 }
 
 void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
@@ -131,9 +147,12 @@ void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
 
     Damage *= 2.f;
     MaxAmmoInClip = FMath::RoundToInt(MaxAmmoInClip * 2.f);
-
     CurrentWeaponData.MaxReserveAmmo *= 2;
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, Damage, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, MaxAmmoInClip, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
 
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
@@ -162,6 +181,8 @@ void ABaseWeapon::RefillAmmo()
     bool bWasEmpty = (CurrentAmmo <= 0 && ReserveAmmo <= 0);
 
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
 
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
@@ -521,10 +542,14 @@ void ABaseWeapon::Server_FireRoutine()
         if (!IsInfiniteAmmoActive())
         {
             CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
+
+            MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
         }
     }
 
     BurstCounter = (BurstCounter >= 255) ? 1 : BurstCounter + 1;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, BurstCounter, this);
 }
 
 void ABaseWeapon::Server_ApplyDamage_Implementation(AActor* HitActor, FVector ShotDirection, FHitResult HitInfo)
@@ -675,6 +700,9 @@ void ABaseWeapon::ServerReload_Implementation(float InReloadTime, bool bClipEmpt
     GetWorldTimerManager().ClearTimer(ServerFireTimerHandle);
 
     bIsReloading = true;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
+
     if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled()) OnRep_Reload();
 
     float FinalReloadTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : InReloadTime;
@@ -692,6 +720,10 @@ void ABaseWeapon::Server_ReloadComplete()
     CurrentAmmo += AmmoToMove;
     ReserveAmmo -= AmmoToMove;
     bIsReloading = false;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
 
     if (OwnerCharacter)
     {
@@ -750,6 +782,9 @@ void ABaseWeapon::Client_CancelReload_Implementation()
 void ABaseWeapon::Server_CancelReload_Implementation()
 {
     bIsReloading = false;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
+
     GetWorldTimerManager().ClearTimer(ReloadTimerHandle);
 
     if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())

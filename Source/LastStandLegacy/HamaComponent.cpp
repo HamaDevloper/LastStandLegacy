@@ -1,5 +1,6 @@
 ﻿#include "HamaComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
 #include "Hama.h"
 #include "HamaMovementComponent.h"
 #include "BaseWeapon.h"
@@ -25,28 +26,40 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME_CONDITION(UHamaComponent, bIsSprinting, COND_SkipOwner);
-    DOREPLIFETIME_CONDITION(UHamaComponent, bIsAiming, COND_SkipOwner);
-    DOREPLIFETIME_CONDITION(UHamaComponent, bIsSlide, COND_SkipOwner);
-    DOREPLIFETIME_CONDITION(UHamaComponent, bIsDowned, COND_SkipOwner);
-    DOREPLIFETIME_CONDITION(UHamaComponent, bIsDiving, COND_SkipOwner);
-    DOREPLIFETIME_CONDITION(UHamaComponent, MaxStamina, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(UHamaComponent, Stamina, COND_OwnerOnly);
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    Params.Condition = COND_SkipOwner;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSprinting, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsAiming, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSlide, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDowned, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDiving, Params);
+
+    Params.Condition = COND_OwnerOnly;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, MaxStamina, Params);
 }
 
 void UHamaComponent::SetAiming(bool bNewAiming)
 {
     if (bIsAiming == bNewAiming) return;
     bIsAiming = bNewAiming;
-    OwnerCharacter->ForceNetUpdate();
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsAiming, this);
+
     if (MoveComp) MoveComp->bAiming = bIsAiming;
 }
 
-void UHamaComponent::SetDown(bool NewValue)
+void UHamaComponent::SetDowned(bool NewValue)
 {
     if (bIsDowned == NewValue) return;
     bIsDowned = NewValue;
-    OwnerCharacter->ForceNetUpdate();
+
+    if (OwnerCharacter && OwnerCharacter->HasAuthority())
+    {
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDowned, this);
+    }
+
     if (MoveComp) MoveComp->bDowned = bIsDowned;
 }
 
@@ -55,7 +68,6 @@ void UHamaComponent::StartSlide()
     if (bIsSlide || !OwnerCharacter) return;
 
     bIsSlide = true;
-
     if (MoveComp) MoveComp->bSlide = true;
 
     if (!OwnerCharacter->HasAuthority())
@@ -64,7 +76,7 @@ void UHamaComponent::StartSlide()
     }
     else
     {
-        OwnerCharacter->ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
     }
 }
 
@@ -73,7 +85,7 @@ void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
     if (bIsSlide == bNewSlideState) return;
     bIsSlide = bNewSlideState;
 
-    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
 
     if (GetNetMode() == NM_ListenServer)
     {
@@ -94,7 +106,7 @@ void UHamaComponent::StopSlide()
     }
     else
     {
-        OwnerCharacter->ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
     }
 }
 
@@ -113,12 +125,11 @@ void UHamaComponent::StartDive()
         DecreaseStamina(25.f);
 
         OwnerCharacter->LaunchCharacter(DiveDirection, true, true);
-        OwnerCharacter->ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
     }
     else
     {
         bIsDiving = true;
-
         OwnerCharacter->LaunchCharacter(DiveDirection, true, true);
         Server_SetDiving(true);
     }
@@ -134,7 +145,7 @@ void UHamaComponent::StopDive()
     }
     else
     {
-        OwnerCharacter->ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
     }
 }
 
@@ -157,7 +168,7 @@ void UHamaComponent::Server_SetDiving_Implementation(bool bNewDiveState)
     }
 
     bIsDiving = bNewDiveState;
-    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
 
     if (GetNetMode() == NM_ListenServer)
     {
@@ -196,6 +207,9 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
     GetWorld()->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
 
     bIsSprinting = bNewSprinting;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
+
     if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
     if (MoveComp) MoveComp->bSprinting = bIsSprinting;
 
@@ -206,23 +220,6 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
     }
     else
     {
-        if (OwnerCharacter)
-        {
-            if (OwnerCharacter->IsAimButtonHold())
-            {
-                SetAiming(true);
-                OwnerCharacter->OnAim(true);
-            }
-            if (OwnerCharacter->IsFireButtonHolded())
-            {
-                OwnerCharacter->FireActionPressed();
-            }
-            if (OwnerCharacter->CurrentWeapon && OwnerCharacter->CurrentWeapon->CanReload())
-            {
-                OwnerCharacter->CurrentWeapon->Reload();
-            }
-        }
-
         if (GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
         GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
     }
@@ -269,10 +266,7 @@ void UHamaComponent::DrainStamina()
         return;
     }
 
-    if (OwnerCharacter->HasAuthority())
-    {
-        Stamina = FMath::Clamp(Stamina - StaminaDrainRate * 0.1f, 0.f, MaxStamina);
-    }
+    Stamina = FMath::Clamp(Stamina - StaminaDrainRate * 0.1f, 0.f, MaxStamina);
 }
 
 void UHamaComponent::RegenerateStamina()
@@ -284,10 +278,7 @@ void UHamaComponent::RegenerateStamina()
         return;
     }
 
-    if (OwnerCharacter->HasAuthority())
-    {
-        Stamina = FMath::Clamp(Stamina + StaminaRegenRate * 0.1f, 0.f, MaxStamina);
-    }
+    Stamina = FMath::Clamp(Stamina + StaminaRegenRate * 0.1f, 0.f, MaxStamina);
 }
 
 void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
@@ -295,6 +286,8 @@ void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
     float StaminaRatio = (MaxStamina > 0.f) ? (Stamina / MaxStamina) : 1.0f;
 
     MaxStamina = NewMaxStamina;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, MaxStamina, this);
 
     Stamina = MaxStamina * StaminaRatio;
 
@@ -310,25 +303,13 @@ void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
             );
         }
     }
-
-    if (OwnerCharacter && OwnerCharacter->HasAuthority())
-    {
-        OwnerCharacter->ForceNetUpdate();
-    }
 }
 
 void UHamaComponent::ResetStamina()
 {
     MaxStamina = 100.f;
-}
 
-void UHamaComponent::SetDowned(bool NewValue)
-{
-    if (OwnerCharacter && OwnerCharacter->HasAuthority())
-    {
-        bIsDowned = NewValue;
-        OwnerCharacter->ForceNetUpdate();
-    }
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, MaxStamina, this);
 }
 
 void UHamaComponent::OnRep_Sprinting()

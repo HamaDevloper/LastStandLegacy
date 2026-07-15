@@ -1,5 +1,6 @@
 ﻿#include "HamaAbilityComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
 #include "Hama.h"
 #include "LastStandLegacyGameState.h"
 #include "CollisionQueryParams.h"
@@ -33,8 +34,15 @@ void UHamaAbilityComponent::BeginPlay()
 void UHamaAbilityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME_CONDITION(UHamaAbilityComponent, CurrentPower, COND_OwnerOnly);
-    DOREPLIFETIME(UHamaAbilityComponent, bIsGhost);
+
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    Params.Condition = COND_OwnerOnly;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, CurrentPower, Params);
+
+    Params.Condition = COND_None;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, bIsGhost, Params);
 }
 
 void UHamaAbilityComponent::SetAssignedAbility(EHamaAbilityType NewAbility)
@@ -60,6 +68,9 @@ void UHamaAbilityComponent::AddPower(float Amount)
 void UHamaAbilityComponent::ResetPower()
 {
     CurrentPower = 0.f;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, CurrentPower, this);
+
     if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_CurrentPower();
@@ -74,6 +85,9 @@ bool UHamaAbilityComponent::IsPowerFull() const
 void UHamaAbilityComponent::FullPower()
 {
     CurrentPower = MaxPower;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, CurrentPower, this);
+
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Magenta, FString::Printf(TEXT("Current Power is: %f"), CurrentPower));
     if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
     {
@@ -121,6 +135,7 @@ void UHamaAbilityComponent::ActivateBulletStorm()
         GS->StartGlobalBulletStorm(AbilityDuration);
         if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("BulletStorm Activated on Server!"));
         ResetPower();
+        return;
     }
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("BulletStorm Failed!"));
 }
@@ -177,6 +192,8 @@ void UHamaAbilityComponent::ActivateGhostMode()
     if (bIsGhost) return;
 
     bIsGhost = true;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsGhost, this);
     ResetPower();
 
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, TEXT("Ghost Mode Activated on Server!"));
@@ -191,6 +208,16 @@ void UHamaAbilityComponent::ActivateGhostMode()
             false
         );
     }
+
+    OnRep_IsGhost();
+}
+
+void UHamaAbilityComponent::DeactivateGhostMode()
+{
+    bIsGhost = false;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsGhost, this);
+
     OnRep_IsGhost();
 }
 
@@ -228,10 +255,6 @@ void UHamaAbilityComponent::ActivateBlitz()
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Blitz Activated on Server!"));
 }
 
-void UHamaAbilityComponent::DeactivateGhostMode()
-{
-    bIsGhost = false;
-}
 
 void UHamaAbilityComponent::StopAllAbilities()
 {
@@ -243,6 +266,9 @@ void UHamaAbilityComponent::StopAllAbilities()
     if (bIsGhost)
     {
         bIsGhost = false;
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsGhost, this);
+
         if (GetOwner() && GetOwner()->HasAuthority())
         {
             OnRep_IsGhost();

@@ -1,15 +1,14 @@
 ﻿#include "Hama.h"
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
-#include "HamaMainWidget.h"
 #include "LastStandLegacyGameState.h"
 #include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
-#include "Blueprint/UserWidget.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "EngineUtils.h"
 #include "Zombie.h"
@@ -82,30 +81,6 @@ void AHama::BeginPlay()
 
     OwnerController = Cast<APlayerController>(GetController());
 
-    if (IsLocallyControlled() && MainWidgetClass)
-    {
-        MainWidgetRef = CreateWidget<UHamaMainWidget>(GetWorld(), MainWidgetClass);
-        if (MainWidgetRef)
-        {
-            MainWidgetRef->AddToViewport();
-            MainWidgetRef->InitializeWidget(this);
-
-            if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
-            {
-                MainWidgetRef->HandlePointsUpdate(HamaPS->GetPoints());
-                MainWidgetRef->HandleKillsUpdate(HamaPS->GetKills());
-            }
-            if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
-            {
-                MainWidgetRef->HandlePointsUpdate(GS->GetCurrentRound());
-            }
-            else
-            {
-                MainWidgetRef->HandlePointsUpdate(1);
-            }
-        }
-    }
-
     if (IsLocallyControlled())
     {
         InteractSphere->OnComponentBeginOverlap.AddDynamic(this, &AHama::OnInteractSphereBeginOverlap);
@@ -115,35 +90,34 @@ void AHama::BeginPlay()
     if (HasAuthority()) CreateDefaultWeapon();
     StartCrossHairTimer();
 }
- 
+
 void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     Super::EndPlay(EndPlayReason);
     GetWorldTimerManager().ClearTimer(CrossHairTimerHandle);
-
-    if (MainWidgetRef)
-    {
-        MainWidgetRef->RemoveFromParent();
-        MainWidgetRef = nullptr;
-    }  
 }
 
 void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME(AHama, CurrentWeapon);
-    DOREPLIFETIME(AHama, bHasFastHands);
-    DOREPLIFETIME(AHama, bIsDead);
-    DOREPLIFETIME_CONDITION(AHama, bHasDoubleTap, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, bHasMuleKick, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, bHasDeadshot, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, bHasQuickRevive, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, PrimaryWeapon, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, SecondaryWeapon, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, ThirdWeapon, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, OwnedPerks, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(AHama, bIsDeathMachineActive, COND_OwnerOnly);
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentWeapon, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasFastHands, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsDead, Params);
+
+    Params.Condition = COND_OwnerOnly;
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasDoubleTap, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasMuleKick, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasDeadshot, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasQuickRevive, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, PrimaryWeapon, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, SecondaryWeapon, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ThirdWeapon, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, OwnedPerks, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsDeathMachineActive, Params);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -178,14 +152,12 @@ void AHama::Tick(float DeltaTime)
 
     if (!OwnerController || !SnapTarget)
     {
-        //SetActorTickEnabled(false);
         return;
     }
 
     if (SnapTarget->IsDead())
     {
         SnapTarget = nullptr;
-        //SetActorTickEnabled(false);
         return;
     }
 
@@ -193,7 +165,6 @@ void AHama::Tick(float DeltaTime)
     if (!TargetMesh)
     {
         SnapTarget = nullptr;
-        //SetActorTickEnabled(false);
         return;
     }
 
@@ -223,7 +194,6 @@ void AHama::Tick(float DeltaTime)
     if (CurrentRot.Equals(TargetRot, 0.1f))
     {
         SnapTarget = nullptr;
-        //SetActorTickEnabled(false);
     }
 }
 
@@ -232,7 +202,7 @@ void AHama::OnInteractSphereBeginOverlap(UPrimitiveComponent* OverlappedComponen
     if (OtherActor && OtherActor != this && OtherActor->Implements<UInteractInterface>())
     {
         NearbyInteractablesCount++;
-        if (NearbyInteractablesCount == 1) // یەکەم ئۆبجێکت هاتە ناوەوە
+        if (NearbyInteractablesCount == 1)
         {
             GetWorld()->GetTimerManager().SetTimer(InteractTimerHandle, this, &AHama::CheckForInteractables, 0.1f, true);
         }
@@ -252,7 +222,6 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
             if (FocusedInteractable)
             {
                 FocusedInteractable = nullptr;
-                //OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
             }
         }
     }
@@ -294,20 +263,18 @@ void AHama::CheckForInteractables()
 
 void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Datum)
 {
-    // ئەگەر هیچ Hit نەبوو
     if (Datum.OutHits.IsEmpty() || !Datum.OutHits[0].GetActor())
     {
         if (FocusedInteractable)
         {
             FocusedInteractable = nullptr;
-            OnInteractUpdateEvent.ExecuteIfBound(TEXT("")); // ناردنی تێکستی بەتاڵ بۆ شاردنەوەی UI
+            OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
         }
         return;
     }
 
     IInteractInterface* NewFocus = Cast<IInteractInterface>(Datum.OutHits[0].GetActor());
 
-    // ئەگەر ئۆبجێکتەکە ئینتەرفەیسی نەبوو
     if (!NewFocus)
     {
         if (FocusedInteractable)
@@ -329,7 +296,7 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
     }
     else
     {
-        OnInteractUpdateEvent.ExecuteIfBound(TEXT("")); // شاردنەوە
+        OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
     }
 }
 // -----------------------------------------------------------------------------
@@ -379,11 +346,7 @@ void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDat
     if (bHit != bLastCrossHairState)
     {
         bLastCrossHairState = bHit;
-
-        if (MainWidgetRef)
-        {
-            OnCrosshairUpdateEvent.ExecuteIfBound(bHit);
-        }
+        OnCrosshairUpdateEvent.ExecuteIfBound(bHit);
     }
 }
 
@@ -393,8 +356,6 @@ void AHama::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* Old
 
     if (NewPlayerState)
     {
-        BindPlayerStateEvents();
-
         if (AHamaPlayerState* HamaPS = Cast<AHamaPlayerState>(NewPlayerState))
         {
             EHamaAbilityType MyRole = HamaPS->GetAssignedRole();
@@ -408,39 +369,6 @@ void AHama::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* Old
             }
             ApplyRoleVisuals(MyRole);
         }
-    }
-}
-
-void AHama::BindPlayerStateEvents()
-{
-    if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
-    {
-        HamaPS->OnPointsChanged.Unbind();
-        HamaPS->OnKillsChanged.Unbind();
-        HamaPS->OnPointsChanged.BindUObject(this, &AHama::HandlePointsChanged);
-        HamaPS->OnKillsChanged.BindUObject(this, &AHama::HandleKillsChanged);
-
-        if (IsLocallyControlled())
-        {
-            OnPointsUpdateEvent.ExecuteIfBound(HamaPS->GetPoints());
-            OnKillsUpdateEvent.ExecuteIfBound(HamaPS->GetKills());
-        }
-    }
-}
-
-void AHama::HandlePointsChanged(int32 NewPoints)
-{
-    if (IsLocallyControlled() && MainWidgetRef)
-    {
-        OnPointsUpdateEvent.ExecuteIfBound(NewPoints);
-    }
-}
-
-void AHama::HandleKillsChanged(int32 NewKills)
-{
-    if (IsLocallyControlled() && MainWidgetRef)
-    {
-        OnKillsUpdateEvent.ExecuteIfBound(NewKills);
     }
 }
 
@@ -466,6 +394,8 @@ void AHama::CreateDefaultWeapon()
         }
 
         CurrentWeapon = SpawnedWeapon;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
         CurrentWeapon->EquipWeapon(this);
         OnRep_CurrentWeapon();
         AttachWeaponToMesh(CurrentWeapon);
@@ -489,58 +419,49 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
         if (!PrimaryWeapon)
         {
             PrimaryWeapon = SpawnedWeapon;
+            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
         }
         else if (!SecondaryWeapon)
         {
             SecondaryWeapon = SpawnedWeapon;
+            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this);
         }
         else if (!ThirdWeapon && bHasMuleKick)
         {
             ThirdWeapon = SpawnedWeapon;
+            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
         }
         else
         {
             if (CurrentWeapon)
             {
-                if (CurrentWeapon == PrimaryWeapon) PrimaryWeapon = SpawnedWeapon;
-                else if (CurrentWeapon == SecondaryWeapon) SecondaryWeapon = SpawnedWeapon;
-                else if (CurrentWeapon == ThirdWeapon) ThirdWeapon = SpawnedWeapon;
+                if (CurrentWeapon == PrimaryWeapon) { PrimaryWeapon = SpawnedWeapon; MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this); }
+                else if (CurrentWeapon == SecondaryWeapon) { SecondaryWeapon = SpawnedWeapon; MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this); }
+                else if (CurrentWeapon == ThirdWeapon) { ThirdWeapon = SpawnedWeapon; MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this); }
 
                 ABaseWeapon* WeaponToDestroy = CurrentWeapon;
-                CurrentWeapon = nullptr;
                 WeaponToDestroy->Destroy();
             }
         }
 
-        if (CurrentWeapon && CurrentWeapon != SpawnedWeapon && !CurrentWeapon->IsPendingKillPending())
+        if (IsValid(CurrentWeapon) && CurrentWeapon != SpawnedWeapon)
         {
             CurrentWeapon->SetActorHiddenInGame(true);
             CurrentWeapon->SetActorEnableCollision(false);
         }
 
         CurrentWeapon = SpawnedWeapon;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
+
         OnRep_CurrentWeapon();
         OnWeaponChanged.Broadcast(CurrentWeapon);
 
-        if (GEngine)
-        {
-            FString WeaponName = CurrentWeapon->GetName();
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("SUCCESS: %s is now in hands!"), *WeaponName));
-        }
         UE_LOG(LogTemp, Warning, TEXT("GiveWeapon Success: %s equipped."), *SpawnedWeapon->GetName());
     }
-    else
-    {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("FAILED: Weapon did not spawn!"));
-        }
-        UE_LOG(LogTemp, Error, TEXT("GiveWeapon Failed: Weapon spawn returned null."));
-    }
 }
-
 void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 {
     if (WeaponToAttach && GetMesh())
@@ -554,7 +475,7 @@ void AHama::OnRep_CurrentWeapon()
 {
     AttachWeaponToMesh(CurrentWeapon);
 
-    if (IsLocallyControlled() && MainWidgetRef && CurrentWeapon)
+    if (IsLocallyControlled() && CurrentWeapon)
     {
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
@@ -717,6 +638,7 @@ void AHama::CompleteWeaponSwap()
     }
 
     CurrentWeapon = PendingWeaponForSwap;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
     CurrentWeapon->SetActorHiddenInGame(false);
     CurrentWeapon->SetActorEnableCollision(true);
@@ -756,9 +678,11 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
     if (ActiveDeathMachine)
     {
         bIsDeathMachineActive = true;
-        ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
 
         CurrentWeapon = ActiveDeathMachine;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
         OnRep_CurrentWeapon();
@@ -772,7 +696,7 @@ void AHama::RemoveDeathMachine()
     if (!HasAuthority()) return;
 
     bIsDeathMachineActive = false;
-    ForceNetUpdate();
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
 
     if (ActiveDeathMachine && IsValid(ActiveDeathMachine))
     {
@@ -780,10 +704,11 @@ void AHama::RemoveDeathMachine()
         ActiveDeathMachine = nullptr;
     }
 
-    // پشکنینی تەواو بۆ ئەوەی دڵنیا ببینەوە چەکەکەی پێشووی هێشتا ماوە و خاشاک نییە
     if (PreDeathMachineWeapon && IsValid(PreDeathMachineWeapon) && !PreDeathMachineWeapon->IsPendingKillPending())
     {
         CurrentWeapon = PreDeathMachineWeapon;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
         CurrentWeapon->SetActorHiddenInGame(false);
         CurrentWeapon->SetActorEnableCollision(true);
         CurrentWeapon->EquipWeapon(this);
@@ -919,7 +844,7 @@ void AHama::AimActionPressed()
     {
         OnAim(true);
     }
-  
+
     bool bIsGamepadAiming = false;
 
     if (OwnerController)
@@ -1076,7 +1001,7 @@ void AHama::JumpActionPressed()
         }
         if (HamaComponent->IsSprinting()) HamaComponent->StopSprinting();
     }
-   
+
     if (GetCharacterMovement()->IsCrouching()) UnCrouch();
     Jump();
 }
@@ -1134,7 +1059,7 @@ void AHama::CrouchActionReleased(const FInputActionInstance& Instance)
 void AHama::StartSlideRoutine()
 {
     if (!HamaComponent) return;
-    if(IsSprinting())  HamaComponent->StopSprinting();
+    if (IsSprinting())  HamaComponent->StopSprinting();
     PlayAnimMontage(SlideMontage);
     HamaComponent->StartSlide();
 
@@ -1165,7 +1090,7 @@ void AHama::StartDiving()
     PlayAnimMontage(DiveMontage);
     HamaComponent->StartDive();
 
-    if(GetMesh() && GetMesh()->GetAnimInstance() && DiveMontage)
+    if (GetMesh() && GetMesh()->GetAnimInstance() && DiveMontage)
     {
         FOnMontageEnded MontageEndedDelegate;
         MontageEndedDelegate.BindUObject(this, &AHama::OnDiveMontageEnded);
@@ -1249,6 +1174,26 @@ void AHama::SprintActionPressed()
     HamaComponent->StartSprinting();
 }
 
+void AHama::OnSprintStopped()
+{
+    if (!CurrentWeapon) return;
+
+    if (IsAimButtonHold())
+    {
+        OnAim(true);
+    }
+
+    if (bIsFireButtonHold)
+    {
+        FireActionPressed();
+    }
+   
+    if (CurrentWeapon->CanReload() && CurrentWeapon->CanReload())
+    {
+        CurrentWeapon->Reload();
+    }
+}
+
 void AHama::AbilityActionPressed()
 {
     if (HamaComponent && HamaComponent->IsDowned()) return;
@@ -1301,20 +1246,19 @@ void AHama::AddPerkByID(FName PerkID)
 {
     if (PerkID.IsNone()) return;
 
-    // زیادکردنی بۆ ناو لیستی پێرکەکان بۆ UI
     if (!OwnedPerks.Contains(PerkID))
     {
         OwnedPerks.Add(PerkID);
-        if (HasAuthority()) ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
     }
 
     if (PerkID == FName(TEXT("FastHands")))
     {
         bHasFastHands = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Fast Hands Perk Acquired!"));
-        if (HasAuthority()) ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasFastHands, this);
     }
- 
+
     else if (PerkID == FName(TEXT("Juggernaut")))
     {
         if (HealthComponent)
@@ -1323,7 +1267,7 @@ void AHama::AddPerkByID(FName PerkID)
             GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Juggernaut Perk Acquired! Health Increased!"));
         }
     }
-   
+
     else if (PerkID == FName(TEXT("StaminaUp")))
     {
         if (HamaComponent)
@@ -1337,25 +1281,25 @@ void AHama::AddPerkByID(FName PerkID)
     {
         bHasDoubleTap = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Double Tap Perk Acquired!"));
-        if (HasAuthority())  ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDoubleTap, this);
     }
     else if (PerkID == FName(TEXT("Deadshot")))
     {
         bHasDeadshot = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Deadshot Perk Acquired!"));
-        if (HasAuthority()) ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDeadshot, this);
     }
     else if (PerkID == FName(TEXT("MuleKick")))
     {
         bHasMuleKick = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Mule Kick Perk Acquired!"));
-        if (HasAuthority()) ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasMuleKick, this);
     }
     else if (PerkID == FName(TEXT("QuickRevive")))
     {
         bHasQuickRevive = true;
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PhD Flopper Perk Acquired!"));
-        if (HasAuthority()) ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasQuickRevive, this);
     }
 }
 
@@ -1366,6 +1310,16 @@ void AHama::HandleDeath()
     bHasDoubleTap = false;
     bHasDeadshot = false;
     bHasMuleKick = false;
+    bHasQuickRevive = false;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasFastHands, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDoubleTap, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDeadshot, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasMuleKick, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasQuickRevive, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
+
     if (HamaComponent) HamaComponent->ResetStamina();
 }
 
@@ -1395,7 +1349,6 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
         }
     }
 
-    // --- ڕێگەی مۆدێرن و خێرا ---
     UStaticMesh* BottleMesh = TargetPerk->GetBottleMesh();
     if (BottleMesh && PerkBottleMesh)
     {
@@ -1425,20 +1378,10 @@ void AHama::OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool 
 
 void AHama::OnRep_OwnedPerks()
 {
-    // ١. پشکنین دەکەین؛ ئایا دوایین پێرک کە زیادبووە چییە؟
     if (OwnedPerks.Num() > 0)
     {
         FName LatestPerk = OwnedPerks.Last();
-
-        // ٢. لێدانی نامەیەک بۆ دڵنیایی
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Client Received Perk: %s"), *LatestPerk.ToString()));
-
-        // ٣. 🚀 لێرەدا دەتوانیت فەنکشنێکی ناو وەجێتەکەت (MainWidgetRef) بانگ بکەیت بۆ ئەپدیتکردنی شاشە:
-        if (MainWidgetRef)
-        {
-            // بۆ نموونە فەنکشنێک لە ناو بلۆپرێنتی یوئای دروست دەکەیت بە ناوی AddPerkIconToHUD
-            // MainWidgetRef->AddPerkIconToHUD(LatestPerk);
-        }
     }
 }
 
@@ -1462,7 +1405,7 @@ void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
 
     FVector PlayerLocation = GetActorLocation();
 
- 
+
     DamageOrigin.Z = PlayerLocation.Z;
 
     FVector DamageDirection = (DamageOrigin - PlayerLocation).GetSafeNormal();
@@ -1516,7 +1459,7 @@ void AHama::GamepadXActionPressed(const FInputActionInstance& Instance)
     {
         if (FocusedInteractable && FocusedInteractable->CanInteract(this))
         {
-            if(CurrentWeapon && CurrentWeapon->IsReloading())
+            if (CurrentWeapon && CurrentWeapon->IsReloading())
             {
                 CurrentWeapon->CancelReload();
             }
@@ -1630,8 +1573,6 @@ void AHama::PerformMeleeHitDetection()
             if (!HasAuthority())
             {
                 Server_ValidateMeleeHit(HitZombie, HitResult.ImpactPoint);
-
-                // تێبینی: دەتوانیت لێرەدا ڕاستەوخۆ دەنگ و ئیفێکتی خوێن لێبدەیت بۆ ئەوەی یاریزانەکە هەست بە خێرایی بکات
             }
             else
             {
@@ -1701,15 +1642,12 @@ void AHama::Interact(AHama* InteractingPlayer)
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 {
-    // ١. پشکنینی سەرەتایی (ئایا خۆت و ئامانجەکە بوونیان هەیە؟)
     if (!DownedPlayer || !DownedPlayer->HealthComponent || !DownedPlayer->HamaComponent->IsDowned()) return;
 
-    // ٢. پشکنینی ئەمنی بۆ خۆت: ئایا تۆ کەوتوویت یان مردوویت؟ ئەگەر وابێت ناتوانیت کەس ڕزگار بکەیت!
     if (bIsDead || (HamaComponent && HamaComponent->IsDowned())) return;
 
-    // ٣. پشکنینی دووری (Anti-Exploit): نابێت لەوپەڕی نەخشەکەوە هاوڕێکەت ڕزگار بکەیت!
     float DistanceToTarget = FVector::Dist(GetActorLocation(), DownedPlayer->GetActorLocation());
-    if (DistanceToTarget > SetIntractDistance + 100.f) // کەمێک مەودای زیادە بۆ کێشەی نێتوۆرک
+    if (DistanceToTarget > SetIntractDistance + 100.f)
     {
         UE_LOG(LogTemp, Warning, TEXT("Cheat Detected: Player %s tried to revive from too far away!"), *GetName());
         return;

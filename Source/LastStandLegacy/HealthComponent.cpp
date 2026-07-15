@@ -2,6 +2,7 @@
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "LastStandLegacyGameState.h"
@@ -27,8 +28,12 @@ void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME_CONDITION(UHealthComponent, CurrentHealth, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(UHealthComponent, MaxHealth, COND_OwnerOnly);
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    Params.Condition = COND_OwnerOnly;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, CurrentHealth, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, MaxHealth, Params);
 }
 
 void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
@@ -47,6 +52,8 @@ void UHealthComponent::UpgradeHealth(float Amount)
     if (!GetOwner()->HasAuthority()) return;
 
     MaxHealth = Amount;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
 
     if (UWorld* World = GetWorld())
     {
@@ -67,6 +74,8 @@ void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 
         CurrentHealth = FMath::Clamp(CurrentHealth - Amount, 0.f, MaxHealth);
 
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
+
         if (CurrentHealth <= 0.f)
         {
             DownPlayer();
@@ -83,6 +92,8 @@ void UHealthComponent::RegenerateHealth()
     float HealAmountPerTick = MaxHealth / 20.0f;
 
     CurrentHealth += HealAmountPerTick;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 
     if (CurrentHealth >= MaxHealth)
     {
@@ -105,6 +116,9 @@ void UHealthComponent::DownPlayer()
 
         MaxHealth = 100.f;
         CurrentHealth = MaxHealth;
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
         
         if (OwnerComponent)
         {
@@ -140,6 +154,8 @@ void UHealthComponent::Revive()
     }
 
     CurrentHealth = MaxHealth;
+    
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 
     if (OwnerComponent)
     {

@@ -1,5 +1,6 @@
 ﻿#include "HamaPlayerState.h"
 #include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
 
 AHamaPlayerState::AHamaPlayerState()
 {
@@ -13,8 +14,12 @@ AHamaPlayerState::AHamaPlayerState()
 void AHamaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME(AHamaPlayerState, Points);
-    DOREPLIFETIME(AHamaPlayerState, Kills);
+
+    FDoRepLifetimeParams SharedParams;
+    SharedParams.bIsPushBased = true;
+
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Points, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Kills, SharedParams);
     DOREPLIFETIME_CONDITION(AHamaPlayerState, AssignedRole, COND_InitialOnly);
 }
 
@@ -32,7 +37,9 @@ void AHamaPlayerState::AddPoints(int32 Amount)
     if (HasAuthority())
     {
         Points += Amount;
-        ForceNetUpdate();
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
+
         OnRep_Points();
     }
 }
@@ -42,7 +49,9 @@ void AHamaPlayerState::RemovePoints(int32 Amount)
     if (HasAuthority())
     {
         Points = FMath::Max(0, Points - Amount);
-        ForceNetUpdate();
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
+
         OnRep_Points();
     }
 }
@@ -52,7 +61,9 @@ void AHamaPlayerState::AddKills(int32 Amount)
     if (HasAuthority())
     {
         Kills += Amount;
-        ForceNetUpdate();
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Kills, this);
+
         OnRep_Kills();
     }
 }
