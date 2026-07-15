@@ -19,6 +19,7 @@
 #include "Engine/DamageEvents.h"
 #include "MeleeDamageType.h"
 #include "Components/SphereComponent.h"
+#include "ZombieDirectorSubsystem.h"
 #include "DrawDebugHelpers.h"
 
 // -----------------------------------------------------------------------------
@@ -87,7 +88,18 @@ void AHama::BeginPlay()
         InteractSphere->OnComponentEndOverlap.AddDynamic(this, &AHama::OnInteractSphereEndOverlap);
     }
 
-    if (HasAuthority()) CreateDefaultWeapon();
+    if (HasAuthority())
+    {
+        if (UWorld* World = GetWorld())
+        {
+            if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+            {
+                Director->RegisterPlayer(this);
+            }
+        }
+
+        CreateDefaultWeapon();
+    }
     StartCrossHairTimer();
 }
 
@@ -95,6 +107,17 @@ void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     Super::EndPlay(EndPlayReason);
     GetWorldTimerManager().ClearTimer(CrossHairTimerHandle);
+
+    if (HasAuthority())
+    {
+        if (UWorld* World = GetWorld())
+        {
+            if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+            {
+                Director->UnregisterPlayer(this);
+            }
+        }
+    }
 }
 
 void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

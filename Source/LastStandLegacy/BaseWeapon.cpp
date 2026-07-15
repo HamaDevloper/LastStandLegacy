@@ -46,7 +46,6 @@ void ABaseWeapon::Tick(float DeltaTime)
     if (!OwnerController) return;
 
     FRotator PreviousRecoil = CurrentRecoilOffset;
-
     CurrentRecoilOffset = FMath::RInterpTo(CurrentRecoilOffset, TargetRecoilOffset, DeltaTime, 15.0f);
 
     float DeltaPitch = CurrentRecoilOffset.Pitch - PreviousRecoil.Pitch;
@@ -123,22 +122,13 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
     Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, CurrentAmmo, Params);
-
-    Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
-
-    Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, BurstCounter, Params);
 
     Params.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, ReserveAmmo, Params);
-
-    Params.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, Damage, Params);
-
-    Params.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, MaxAmmoInClip, Params);
-   
 }
 
 void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
@@ -179,7 +169,6 @@ void ABaseWeapon::RefillAmmo()
     if (!HasAuthority()) return;
 
     bool bWasEmpty = (CurrentAmmo <= 0 && ReserveAmmo <= 0);
-
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
@@ -235,6 +224,7 @@ void ABaseWeapon::StartFire()
         {
             float ActualFireRate = CurrentWeaponData.FireRate;
             if (OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
+
             GetWorldTimerManager().SetTimer(
                 FireTimerHandle, this, &ABaseWeapon::HandleFireLocal,
                 ActualFireRate, true
@@ -265,31 +255,18 @@ void ABaseWeapon::StopFire()
 
 float ABaseWeapon::CalculateBulletSpread()
 {
-    if (HamaComponent && HamaComponent->IsAiming())
-    {
-        return 0.f;
-    }
+    if (HamaComponent && HamaComponent->IsAiming()) return 0.f;
 
     float CurrentSpread = CurrentWeaponData.BulletSpread;
 
     if (OwnerCharacter && OwnerCharacter->GetCharacterMovement())
     {
         UCharacterMovementComponent* MoveComp = OwnerCharacter->GetCharacterMovement();
-
-        if (MoveComp->IsCrouching())
-        {
-            CurrentSpread *= CurrentWeaponData.CrouchSpreadMultiplier;
-        }
-        else if (MoveComp->IsFalling())
-        {
-            CurrentSpread *= CurrentWeaponData.AirSpreadMultiplier;
-        }
+        if (MoveComp->IsCrouching()) CurrentSpread *= CurrentWeaponData.CrouchSpreadMultiplier;
+        else if (MoveComp->IsFalling()) CurrentSpread *= CurrentWeaponData.AirSpreadMultiplier;
     }
 
-    if (OwnerCharacter && OwnerCharacter->HasDeadshot())
-    {
-        CurrentSpread *= 0.65f;
-    }
+    if (OwnerCharacter && OwnerCharacter->HasDeadshot()) CurrentSpread *= 0.65f;
 
     return CurrentSpread;
 }
@@ -301,27 +278,18 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
     if (Hit.PhysMaterial.IsValid())
     {
         EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
-
-        if (SurfaceType == EPhysicalSurface::SurfaceType1)
-            ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
-        else if (SurfaceType == EPhysicalSurface::SurfaceType2)
-            ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
+        if (SurfaceType == EPhysicalSurface::SurfaceType1) ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
+        else if (SurfaceType == EPhysicalSurface::SurfaceType2) ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
     }
 
-    if (IsInfiniteAmmoActive())
-    {
-        ActualDamage *= 2.0f;
-    }
+    if (IsInfiniteAmmoActive()) ActualDamage *= 2.0f;
 
     return ActualDamage;
 }
 
 bool ABaseWeapon::IsInfiniteAmmoActive() const
 {
-    if (GSCache)
-    {
-        return GSCache->bIsGlobalBulletStormActive;
-    }
+    if (GSCache) return GSCache->bIsGlobalBulletStormActive;
 
     if (UWorld* World = GetWorld())
     {
@@ -423,10 +391,7 @@ void ABaseWeapon::HandleFireLocal()
             if (GetWorld()->LineTraceSingleByChannel(LocalHit, CameraLoc, EndLocation, ECC_Bullet, Params))
             {
                 PlayLocalHitEffects(LocalHit);
-                if (LocalHit.GetActor())
-                {
-                    Server_ApplyDamage(LocalHit.GetActor(), ShotDirection, LocalHit);
-                }
+                if (LocalHit.GetActor()) Server_ApplyDamage(LocalHit.GetActor(), ShotDirection, LocalHit);
             }
         }
         else
@@ -453,18 +418,12 @@ void ABaseWeapon::HandleFireLocal()
         }
     }
 
-    if (HasAuthority())
-    {
-        Server_FireRoutine();
-    }
+    if (HasAuthority()) Server_FireRoutine();
 
     if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
     {
         StopFire();
-        if (CurrentAmmo <= 0 && !IsInfiniteAmmoActive())
-        {
-            Reload();
-        }
+        if (CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) Reload();
     }
 }
 
@@ -473,7 +432,7 @@ void ABaseWeapon::PlayLocalHitEffects(const FHitResult& LocalHit)
     // UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), BloodEffect, LocalHit.ImpactPoint);
 }
 
-// ------------------- سێرڤەر ڕووتین -------------------
+// ------------------- SERVER ROUTINE -------------------
 
 void ABaseWeapon::Server_StartFire_Implementation()
 {
@@ -492,10 +451,7 @@ void ABaseWeapon::Server_StartFire_Implementation()
     if (CurrentWeaponData.FireMode == EWeaponFireMode::Automatic || CurrentWeaponData.FireMode == EWeaponFireMode::Burst)
     {
         float ActualFireRate = CurrentWeaponData.FireRate;
-        if (OwnerCharacter && OwnerCharacter->GetDoubleTap())
-        {
-            ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
-        }
+        if (OwnerCharacter && OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
 
         GetWorldTimerManager().SetTimer(
             ServerFireTimerHandle, this, &ABaseWeapon::Server_FireRoutine,
@@ -530,11 +486,7 @@ void ABaseWeapon::Server_FireRoutine()
     float CurrentTime = GetWorld()->GetTimeSeconds();
     float ActualFireRate = CurrentWeaponData.FireRate;
 
-    if (OwnerCharacter && OwnerCharacter->GetDoubleTap())
-    {
-        ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
-    }
-
+    if (OwnerCharacter && OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
     NextAllowedFireTime = CurrentTime + ActualFireRate;
 
     if (HasAuthority() && !OwnerCharacter->IsLocallyControlled())
@@ -542,13 +494,11 @@ void ABaseWeapon::Server_FireRoutine()
         if (!IsInfiniteAmmoActive())
         {
             CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
-
             MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
         }
     }
 
     BurstCounter = (BurstCounter >= 255) ? 1 : BurstCounter + 1;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, BurstCounter, this);
 }
 
@@ -556,17 +506,26 @@ void ABaseWeapon::Server_ApplyDamage_Implementation(AActor* HitActor, FVector Sh
 {
     if (!HitActor || !OwnerCharacter || !OwnerCharacter->GetController()) return;
 
-    float DistanceToTarget = FVector::Dist(OwnerCharacter->GetActorLocation(), HitActor->GetActorLocation());
+    FVector TraceStart = OwnerCharacter->GetActorLocation();
+    FVector TraceEnd = HitInfo.ImpactPoint;
+
+    float DistanceToTarget = FVector::Dist(TraceStart, TraceEnd);
     float MaxAllowedDistance = CurrentWeaponData.MaxRange + 500.0f;
 
-    if (DistanceToTarget > MaxAllowedDistance)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("CHEATING DETECTED: Player tried to shoot target out of weapon range!"));
-        return;
-    }
+    if (DistanceToTarget > MaxAllowedDistance) return; // Anti-Cheat: Range check
+
+    // Anti-Cheat: Line of Sight check
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(OwnerCharacter);
+    Params.AddIgnoredActor(this);
+    Params.AddIgnoredActor(HitActor);
+
+    FHitResult ServerHit;
+    bool bHitWall = GetWorld()->LineTraceSingleByChannel(ServerHit, TraceStart, TraceEnd, ECC_Visibility, Params);
+
+    if (bHitWall) return; // Anti-Cheat: Player tried to shoot through a solid wall
 
     float FinalDamage = CalculateDamageBySurface(HitInfo);
-
     AController* DamageInstigator = OwnerCharacter->GetController();
 
     UGameplayStatics::ApplyPointDamage(
@@ -581,10 +540,7 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
 {
     if (!OwnerController || !OwnerCharacter) return;
 
-    if (CurrentWeaponData.FireCameraShake)
-    {
-        OwnerController->ClientStartCameraShake(CurrentWeaponData.FireCameraShake);
-    }
+    if (CurrentWeaponData.FireCameraShake) OwnerController->ClientStartCameraShake(CurrentWeaponData.FireCameraShake);
 
     if (CurrentWeaponData.RecoilPitchCurve)
     {
@@ -592,11 +548,7 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
         float RandomYaw = FMath::RandRange(-CurrentWeaponData.RecoilRandomness, CurrentWeaponData.RecoilRandomness);
         float Multiplier = (HamaComponent && HamaComponent->IsAiming()) ? CurrentWeaponData.AimRecoilMultiplier : 1.0f;
 
-        float TargetPitch = CurvePitchValue * Multiplier;
-        float TargetYaw = RandomYaw * Multiplier;
-
-        TargetRecoilOffset = FRotator(TargetPitch, TargetYaw, 0.f);
-
+        TargetRecoilOffset = FRotator(CurvePitchValue * Multiplier, RandomYaw * Multiplier, 0.f);
         ShotsFiredInBurst++;
     }
 }
@@ -608,13 +560,13 @@ void ABaseWeapon::ResetRecoil()
     CurrentRecoilOffset = FRotator::ZeroRotator;
 }
 
-ALastStandLegacyGameState* ABaseWeapon::GetGameStateCache()
+ALastStandLegacyGameState* ABaseWeapon::GetGameStateCache() const
 {
     if (!GSCache)
     {
         if (UWorld* World = GetWorld())
         {
-            GSCache = World->GetGameState<ALastStandLegacyGameState>();
+            const_cast<ABaseWeapon*>(this)->GSCache = World->GetGameState<ALastStandLegacyGameState>();
         }
     }
     return GSCache;
@@ -632,7 +584,7 @@ void ABaseWeapon::OnRep_BurstCounter()
 
 void ABaseWeapon::PlayWeaponEffects()
 {
-    // VFX و دەنگ
+    // VFX & SFX
 }
 
 void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
@@ -647,37 +599,41 @@ void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
     Reload();
 }
 
+// ------------------- RELOAD REFACTOR -------------------
+
+float ABaseWeapon::GetCalculatedReloadTime() const
+{
+    float BaseTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : CurrentWeaponData.DefaultReloadTime;
+
+    ALastStandLegacyGameState* GS = GetGameStateCache();
+    bool bHasFastReload = (GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands());
+
+    return bHasFastReload ? (BaseTime / 2.0f) : BaseTime;
+}
+
 void ABaseWeapon::Reload()
 {
     if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip || bIsReloading || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
     bIsReloading = true;
-    ReloadStartReserveAmmo = ReserveAmmo;
-    float ReloadTimeToUse = CurrentWeaponData.DefaultReloadTime;
+
+    float FinalReloadTime = GetCalculatedReloadTime();
 
     if (CurrentWeaponData.ReloadMontage)
     {
-        float MontagePlayRate = 1.0f;
-        ReloadTimeToUse = CurrentWeaponData.ReloadMontage->GetPlayLength();
-        ALastStandLegacyGameState* GS = GetGameStateCache();
-        if ((GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands()))
-        {
-            ReloadTimeToUse /= 2;
-            MontagePlayRate = 2;
-        }
-        OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage, MontagePlayRate);
+        float PlayRate = (FinalReloadTime < CurrentWeaponData.ReloadMontage->GetPlayLength()) ? 2.0f : 1.0f;
+        OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage, PlayRate);
     }
-
-    bool bIsEmpty = (CurrentAmmo <= 0);
 
     if (!HasAuthority())
     {
-        GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete, ReloadTimeToUse, false);
-        ServerReload(ReloadTimeToUse, bIsEmpty);
+        GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete, FinalReloadTime, false);
+        // Client دەبێت ڕێک فیشەکەکانی ئێستای بنێرێت بۆ ئەوەی ڕێگری لە Desync بکرێت
+        ServerReload(FinalReloadTime, CurrentAmmo);
     }
     else
     {
-        ServerReload_Implementation(ReloadTimeToUse, bIsEmpty);
+        ServerReload_Implementation(FinalReloadTime, CurrentAmmo);
     }
 }
 
@@ -686,8 +642,10 @@ void ABaseWeapon::Local_ReloadComplete()
     if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
     int32 AmmoNeeded = MaxAmmoInClip - CurrentAmmo;
-    int32 AmmoToMove = FMath::Min(AmmoNeeded, ReloadStartReserveAmmo);
+    int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
+
     CurrentAmmo += AmmoToMove;
+    ReserveAmmo -= AmmoToMove; // Client prediction fix
     bIsReloading = false;
 
     OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
@@ -695,21 +653,19 @@ void ABaseWeapon::Local_ReloadComplete()
     if (OwnerCharacter->bIsFireButtonHold) StartFire();
 }
 
-void ABaseWeapon::ServerReload_Implementation(float InReloadTime, bool bClipEmpty)
+void ABaseWeapon::ServerReload_Implementation(float InReloadTime, int32 ClientCurrentAmmo)
 {
-    if (bClipEmpty) CurrentAmmo = 0;
     GetWorldTimerManager().ClearTimer(ServerFireTimerHandle);
 
-    bIsReloading = true;
+    // Syncing data: Client and Server now agree on ammo count at the start of reload
+    CurrentAmmo = FMath::Clamp(ClientCurrentAmmo, 0, MaxAmmoInClip);
 
+    bIsReloading = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
 
     if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled()) OnRep_Reload();
 
-    float FinalReloadTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : InReloadTime;
-    if ((GetGameStateCache() && GetGameStateCache()->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands()))
-        FinalReloadTime /= 2.0f;
-
+    float FinalReloadTime = GetCalculatedReloadTime();
     GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Server_ReloadComplete, FMath::Max(FinalReloadTime - 0.1f, 0.1f), false);
 }
 
@@ -783,7 +739,6 @@ void ABaseWeapon::Client_CancelReload_Implementation()
 void ABaseWeapon::Server_CancelReload_Implementation()
 {
     bIsReloading = false;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
 
     GetWorldTimerManager().ClearTimer(ReloadTimerHandle);
@@ -814,14 +769,8 @@ void ABaseWeapon::OnRep_Reload()
     {
         if (CurrentWeaponData.ReloadMontage)
         {
-            float MontagePlayRate = 1.0f;
-
-            ALastStandLegacyGameState* GS = GetGameStateCache();
-            if ((GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands()))
-            {
-                MontagePlayRate = 2.0f;
-            }
-            AnimInstance->Montage_Play(CurrentWeaponData.ReloadMontage, MontagePlayRate);
+            float PlayRate = (GetCalculatedReloadTime() < CurrentWeaponData.ReloadMontage->GetPlayLength()) ? 2.0f : 1.0f;
+            AnimInstance->Montage_Play(CurrentWeaponData.ReloadMontage, PlayRate);
         }
     }
     else

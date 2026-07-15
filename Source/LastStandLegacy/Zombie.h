@@ -6,70 +6,75 @@
 
 class AAIController;
 class ALastStandLegacyGameState;
+class UZombieDirectorSubsystem;
 
-DECLARE_DELEGATE_TwoParams(FOnZombieDeath, AZombie*, AController*);
+// گەر ئەم Delegateـەت نەبوو پێشتر، زیادی بکە، بەڵام وادیارە لە کۆدە کۆنەکەتدا هەبووە
+DECLARE_DELEGATE_TwoParams(FOnZombieDeathSignature, AZombie*, AController*);
 
 UCLASS()
-class AZombie : public ACharacter
+class LASTSTANDLEGACY_API AZombie : public ACharacter
 {
     GENERATED_BODY()
 
 public:
     AZombie();
 
-    FOnZombieDeath OnZombieDeath;
+    virtual void PossessedBy(AController* NewController) override;
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
     void SetStatsForRound(int32 CurrentRound);
 
-    virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
-        AController* EventInstigator, AActor* DamageCauser) override;
+    // گۆڕاوە نوێیەکان بۆ Subsystem
+    UPROPERTY(Transient)
+    APawn* CurrentTarget = nullptr;
+
+    UPROPERTY(Transient)
+    FVector LastTargetLocation = FVector::ZeroVector;
+
+    // فەنکشنی نوێی لێدان (Anti-Ghost Hit) کە دەبێت لە ئەنیمەیشنەوە بانگ بکرێت
+    UFUNCTION(BlueprintCallable, Category = "Zombie|Combat")
+    void ExecuteMeleeHit();
+
+    FOnZombieDeathSignature OnZombieDeath;
 
 protected:
     virtual void BeginPlay() override;
-    virtual void PossessedBy(AController* NewController) override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; // گرنگە بۆ سەلامەتی سێرڤەر
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
-private:
-    FTimerHandle ChaseTimerHandle;
-    FTimerHandle AttackTimerHandle;
-
-    UPROPERTY()
-    TObjectPtr<AAIController> CachedAIController;
-
-    UPROPERTY()
-    TObjectPtr<ALastStandLegacyGameState> CachedGS;
-
-    UPROPERTY()
-    TObjectPtr<APawn> CurrentTarget;
-
-protected:
-    UPROPERTY(ReplicatedUsing = OnRep_IsDead)
-    bool bIsDead = false;
-
-    UPROPERTY(Replicated, BlueprintReadOnly)
-    float Health = 0.f;
-
-    UPROPERTY(Replicated)
-    float MaxHealth = 0.f;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
-    float BaseHealth = 150.f;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
-    float AttackDamage = 25.f;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
-    float AttackDistance = 120.f;
-
-    float AttackDistanceSq = 0.f;
-
-    void UpdateNearestTarget();
-    void CheckAttackRange();
 
     UFUNCTION()
     void OnRep_IsDead();
 
 public:
+    UPROPERTY(ReplicatedUsing = OnRep_IsDead, BlueprintReadOnly, Category = "Zombie|State")
+    bool bIsDead = false;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
+    float BaseHealth = 150.f;
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Zombie|Stats")
+    float MaxHealth;
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Zombie|Stats")
+    float Health;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
+    float AttackDamage = 50.f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
+    float AttackDistance = 150.f;
+
+    float AttackDistanceSq;
+
     void Die(AController* KillerController);
+
     bool IsDead() const { return bIsDead; }
+
+    UPROPERTY(Transient)
+    TObjectPtr<AAIController> CachedAIController = nullptr;
+
+private:
+    UPROPERTY()
+    TObjectPtr<ALastStandLegacyGameState> CachedGS = nullptr;
+
 };

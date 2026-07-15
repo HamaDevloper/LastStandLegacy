@@ -12,10 +12,12 @@
 #include "HamaPlayerState.h"
 #include "Engine/DamageEvents.h"
 #include "MeleeDamageType.h"
+#include "ZombieDirectorSubsystem.h" 
 
 AZombie::AZombie()
 {
     PrimaryActorTick.bCanEverTick = false;
+
     bReplicates = true;
     SetReplicateMovement(true);
 
@@ -41,16 +43,32 @@ void AZombie::BeginPlay()
     Super::BeginPlay();
 
     if (!HasAuthority()) return;
+
     CachedGS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
-    const float RandomChaseDelay = FMath::RandRange(0.1f, 1.0f);
-    const float RandomAttackDelay = FMath::RandRange(0.1f, 0.5f);
+    if (UWorld* World = GetWorld())
+    {
+        if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            Director->RegisterZombie(this);
+        }
+    }
+}
 
-    GetWorld()->GetTimerManager().SetTimer(
-        ChaseTimerHandle, this, &AZombie::UpdateNearestTarget, 1.0f, true, RandomChaseDelay);
+void AZombie::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    Super::EndPlay(EndPlayReason);
 
-    GetWorld()->GetTimerManager().SetTimer(
-        AttackTimerHandle, this, &AZombie::CheckAttackRange, 0.5f, true, RandomAttackDelay);
+    if (HasAuthority())
+    {
+        if (UWorld* World = GetWorld())
+        {
+            if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+            {
+                Director->UnregisterZombie(this);
+            }
+        }
+    }
 }
 
 void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -80,56 +98,21 @@ void AZombie::SetStatsForRound(int32 CurrentRound)
     const int32 MaxTier = FMath::Clamp(CurrentRound, 1, 5);
     const int32 RandTier = FMath::RandRange(0, MaxTier - 1);
 
-    GetCharacterMovement()->MaxWalkSpeed =
-        FMath::Clamp(BaseSpeed + TierOffsets[RandTier], 200.f, 550.f);
+    GetCharacterMovement()->MaxWalkSpeed = FMath::Clamp(BaseSpeed + TierOffsets[RandTier], 200.f, 550.f);
 }
 
-void AZombie::UpdateNearestTarget()
+// ── سیستەمی نوێی دیمیج دان (جێگرەوەی CheckAttackRange) ──
+void AZombie::ExecuteMeleeHit()
 {
-    if (bIsDead || !CachedAIController || !CachedGS) return;
+    if (!HasAuthority() || bIsDead || !CurrentTarget) return;
 
-    APawn* NearestPlayer = nullptr;
-    float  ClosestDistanceSq = UE_BIG_NUMBER;
-    const FVector ZombieLocation = GetActorLocation();
+    // پشکنینی سێرڤەر بۆ دڵنیابوونەوە لەوەی یاریزانەکە ڕاینەکردووە (Desync & Anti-Ghost Hit)
+    float CurrentDistSq = FVector::DistSquared(GetActorLocation(), CurrentTarget->GetActorLocation());
 
-    for (APawn* Candidate : CachedGS->ValidTargets)
-    {
-        if (!IsValid(Candidate)) continue;
+    // بڕێک یەدەگ (Margin) دادەنێین بۆ جوڵەی خێرای یاریزان (نموونە: 50 یەکە)
+    float ToleranceSq = FMath::Square(AttackDistance + 50.f);
 
-        const float DistSq = FVector::DistSquared(ZombieLocation, Candidate->GetActorLocation());
-        if (DistSq < ClosestDistanceSq)
-        {
-            ClosestDistanceSq = DistSq;
-            NearestPlayer = Candidate;
-        }
-    }
-
-    if (NearestPlayer && NearestPlayer != CurrentTarget)
-    {
-        CurrentTarget = NearestPlayer;
-        CachedAIController->MoveToActor(CurrentTarget, 40.f, true, true, true);
-    }
-    else if (!NearestPlayer && CurrentTarget)
-    {
-        CurrentTarget = nullptr;
-        CachedAIController->StopMovement();
-    }
-
-    // ── گۆڕینی ڕێژەی نوێکردنەوە بەپێی مەسافە ──
-    if (CurrentTarget)
-    {
-        const float DistSq = FVector::DistSquared(ZombieLocation, CurrentTarget->GetActorLocation());
-        const float NewRate = (DistSq > FMath::Square(2000.f)) ? 2.0f : 1.0f;
-        GetWorld()->GetTimerManager().SetTimer(
-            ChaseTimerHandle, this, &AZombie::UpdateNearestTarget, NewRate, false);
-    }
-}
-
-void AZombie::CheckAttackRange()
-{
-    if (bIsDead || !CurrentTarget) return;
-
-    if (FVector::DistSquared(GetActorLocation(), CurrentTarget->GetActorLocation()) < AttackDistanceSq)
+    if (CurrentDistSq <= ToleranceSq)
     {
         UGameplayStatics::ApplyDamage(
             CurrentTarget, AttackDamage, GetController(), this, UDamageType::StaticClass());
@@ -143,8 +126,8 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
     float DamageApplied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 
     bool bIsMeleeDamage = DamageEvent.DamageTypeClass && DamageEvent.DamageTypeClass->IsChildOf(UMeleeDamageType::StaticClass());
-
     bool bDoublePoints = false;
+
     if (CachedGS)
     {
         bDoublePoints = CachedGS->bIsDoublePointsActive;
@@ -155,10 +138,11 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
     }
 
     Health -= DamageApplied;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, Health, this);
-    
+
+#if !UE_BUILD_SHIPPING
     GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::Printf(TEXT("Current Zombie Health Is %f"), Health));
+#endif
 
     AHamaPlayerState* AttackerPS = EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
 
@@ -168,7 +152,6 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
         {
             int32 KillPoints = bIsMeleeDamage ? 130 : 100;
             AttackerPS->AddPoints(bDoublePoints ? (KillPoints * 2) : KillPoints);
-
             AttackerPS->AddKills(1);
         }
         Die(EventInstigator);
@@ -190,13 +173,18 @@ void AZombie::Die(AController* KillerController)
     if (bIsDead || !HasAuthority()) return;
 
     bIsDead = true;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
 
     SetNetUpdateFrequency(1.f);
 
-    GetWorld()->GetTimerManager().ClearTimer(ChaseTimerHandle);
-    GetWorld()->GetTimerManager().ClearTimer(AttackTimerHandle);
+    // دەرهێنانی لە Subsystem ڕاستەوخۆ دوای مردنی بۆ ئەوەی CPU پشوو بدات
+    if (UWorld* World = GetWorld())
+    {
+        if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            Director->UnregisterZombie(this);
+        }
+    }
 
     if (CachedAIController)
     {

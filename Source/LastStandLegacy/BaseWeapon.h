@@ -8,6 +8,7 @@
 
 #define ECC_Bullet ECC_GameTraceChannel1
 
+// Pointers بۆ پێشگریکردن لە Include ـی زیادە (Forward Declarations)
 class AHama;
 class UHamaComponent;
 class USkeletalMeshComponent;
@@ -17,6 +18,7 @@ class UForceFeedbackEffect;
 class UCurveFloat;
 class ALastStandLegacyGameState;
 
+// دروستکردنی Delegate بۆ گۆڕانکارییەکانی فیشەک (بۆ بەکارهێنان لە UI)
 DECLARE_DELEGATE_TwoParams(FOnAmmoChangedSignature, int32, int32);
 
 UENUM(BlueprintType)
@@ -69,6 +71,7 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
     float AimRecoilMultiplier = 0.55f;
 
+    // --- Spread & Accuracy ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
     float BulletSpread = 2.0f;
 
@@ -78,6 +81,7 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
     float AirSpreadMultiplier = 2.0f;
 
+    // --- Ammo Specifications ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
     int32 MaxAmmoInClip = 30;
 
@@ -87,6 +91,7 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
     float DefaultReloadTime = 2.0f;
 
+    // --- Visuals & Animations ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Visuals")
     TSoftObjectPtr<USkeletalMesh> WeaponMeshAsset;
 
@@ -119,8 +124,10 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Mesh")
     TObjectPtr<USkeletalMeshComponent> WeaponMesh;
 
+    // دەتوانرێت کاتێک یاریزان چەکەکە هەڵدەگرێت بانگ بکرێت
     void EquipWeapon(AHama* NewOwnerCharacter);
 
+    // نوێکردنەوەی چەک لە ئاستی سێرڤەر (Pack-A-Punch)
     UFUNCTION(BlueprintCallable, Server, Reliable)
     void ServerUpgradeWeapon_PackAPunch();
 
@@ -159,6 +166,7 @@ protected:
 
     bool bInfiniteAmmo = false;
 
+    // گۆڕاوێک بۆ دروستکردنی هەڕەمەکی (Randomness)ـی تەقەکردن کە لە سێرڤەر و Client هاوتا بێت
     UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
     uint8 BurstCounter = 0;
 
@@ -167,8 +175,11 @@ protected:
     FTimerHandle ServerFireTimerHandle;
 
     int32 CurrentBurstShotsLeft = 0;
-    int32 ServerBurstShotsLeft = 0; // لۆجیکی جیاکراوە بۆ سێرڤەر بۆ پاراستن لە هاک
-    int32 ReloadStartReserveAmmo = 0;
+    int32 ServerBurstShotsLeft = 0;
+
+    // سڕدرایەوە چونکە ئێستا ڕاستەوخۆ حیسابی بۆ دەکرێت پێش Desync:
+    // int32 ReloadStartReserveAmmo = 0; 
+
     float NextAllowedFireTime;
 
 public:
@@ -187,7 +198,6 @@ public:
     void HandleFireLocal();
     float CalculateBulletSpread();
     bool IsInfiniteAmmoActive() const;
-
 
     UFUNCTION(Server, Reliable)
     void Server_StartFire();
@@ -209,13 +219,18 @@ public:
     UFUNCTION()
     void OnRep_ReserveAmmo();
 
+    // --- ڕێکخستنی Reload (Anti-Bloat & Desync Fixes) ---
     void Reload();
+
+    // گۆڕدرا بۆ float چونکە پێویستە ژمارەیەک بگەڕێنێتەوە، و دەبێت const بێت
+    float GetCalculatedReloadTime() const;
 
     UFUNCTION(Client, Reliable)
     void Client_ForceReload(int32 NewReserveAmmo);
 
+    // پارامیتەری bClipEmpty لابرا و ClientCurrentAmmo دانرا بۆ ڕێگریکردن لە Desync
     UFUNCTION(Server, Reliable)
-    void ServerReload(float InReloadTime, bool bClipEmpty);
+    void ServerReload(float InReloadTime, int32 ClientCurrentAmmo);
 
     void CancelReload();
 
@@ -235,7 +250,6 @@ protected:
     void Local_ReloadComplete();
     void Server_ReloadComplete();
     void PlayWeaponEffects();
-
     void PlayLocalHitEffects(const FHitResult& LocalHit);
 
     void ApplyRecoilAndCameraShake();
@@ -254,22 +268,29 @@ protected:
     UPROPERTY()
     TObjectPtr<APlayerController> OwnerController;
 
+    // وشەی mutable زیاد کرا بۆ ئەوەی بتوانین Cacheـی بکەین لەناو فەنکشنە constـەکاندا
     UPROPERTY()
-    TObjectPtr<ALastStandLegacyGameState> GSCache;
+    mutable TObjectPtr<ALastStandLegacyGameState> GSCache;
 
-    ALastStandLegacyGameState* GetGameStateCache();
+    // کرا بە const بۆ ئەوەی لەناو GetCalculatedReloadTime دا بەکاربهێنرێت
+    ALastStandLegacyGameState* GetGameStateCache() const;
 
 public:
+    // --- Getters & Inline Functions ---
     FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }
     FORCEINLINE UAnimSequence* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
     FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
     FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
+
     bool CanReload() const { return CurrentAmmo <= 0 && ReserveAmmo > 0; }
     bool IsReloading() const { return bIsReloading; }
     int32 GetCurrentAmmo() const { return CurrentAmmo; }
     int32 GetReserveAmmo() const { return ReserveAmmo; }
     int32 GetMaxClipAmmo() const { return MaxAmmoInClip; }
     FName GetWeaponRowName() const { return WeaponRowName; }
+
+    UFUNCTION(BlueprintCallable)
+    int32 ForTest() { return CurrentWeaponData.MaxReserveAmmo; }
+
     bool NeedsAmmo() const;
-    
 };
