@@ -652,6 +652,7 @@ void ABaseWeapon::Reload()
     if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip || bIsReloading || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
     bIsReloading = true;
+    ReloadStartReserveAmmo = ReserveAmmo;
     float ReloadTimeToUse = CurrentWeaponData.DefaultReloadTime;
 
     if (CurrentWeaponData.ReloadMontage)
@@ -685,7 +686,7 @@ void ABaseWeapon::Local_ReloadComplete()
     if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
     int32 AmmoNeeded = MaxAmmoInClip - CurrentAmmo;
-    int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
+    int32 AmmoToMove = FMath::Min(AmmoNeeded, ReloadStartReserveAmmo);
     CurrentAmmo += AmmoToMove;
     bIsReloading = false;
 

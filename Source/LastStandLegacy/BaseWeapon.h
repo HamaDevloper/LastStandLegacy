@@ -168,6 +168,7 @@ protected:
 
     int32 CurrentBurstShotsLeft = 0;
     int32 ServerBurstShotsLeft = 0; // لۆجیکی جیاکراوە بۆ سێرڤەر بۆ پاراستن لە هاک
+    int32 ReloadStartReserveAmmo = 0;
     float NextAllowedFireTime;
 
 public:

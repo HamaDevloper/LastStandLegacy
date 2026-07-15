@@ -47,6 +47,8 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsAiming, this);
 
+    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();   // <-- زیادکراو
+
     if (MoveComp) MoveComp->bAiming = bIsAiming;
 }
 
@@ -213,6 +215,13 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
     if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
     if (MoveComp) MoveComp->bSprinting = bIsSprinting;
 
+    // --- زیادکراو: fallback reliable RPC، جیاواز لە CMC move ---
+    if (OwnerCharacter && !OwnerCharacter->HasAuthority())
+    {
+        Server_SetSprintState(bNewSprinting);
+    }
+    // -----------------------------------------------------------
+
     if (bIsSprinting)
     {
         GetWorld()->GetTimerManager().ClearTimer(StaminaPenaltyTimerHandle);
@@ -224,6 +233,19 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
         GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
     }
 }
+
+// --- فەنکشنی نوێ ---
+void UHamaComponent::Server_SetSprintState_Implementation(bool bNewState)
+{
+    if (MoveComp) MoveComp->bSprinting = bNewState;
+
+    if (bIsSprinting != bNewState)
+    {
+        bIsSprinting = bNewState;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
+    }
+}
+// --------------------
 
 void UHamaComponent::DrainStamina()
 {
