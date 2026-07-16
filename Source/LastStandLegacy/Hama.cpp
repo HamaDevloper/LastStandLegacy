@@ -496,12 +496,19 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 
 void AHama::OnRep_CurrentWeapon()
 {
+    if (!CurrentWeapon) return;
+
     AttachWeaponToMesh(CurrentWeapon);
 
-    if (IsLocallyControlled() && CurrentWeapon)
+    if (IsLocallyControlled())
     {
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
+    }
+
+    if (CurrentWeapon->CanReload())
+    {
+        CurrentWeapon->Reload();
     }
 
     OnWeaponChanged.Broadcast(CurrentWeapon);
@@ -593,7 +600,6 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 
     if (NewWeapon != PrimaryWeapon && NewWeapon != SecondaryWeapon && NewWeapon != ThirdWeapon)
     {
-        UE_LOG(LogTemp, Error, TEXT("Cheat Detected: Player %s tried to swap to an unauthorized weapon!"), *GetName());
         return;
     }
 
@@ -651,11 +657,6 @@ void AHama::CompleteWeaponSwap()
 
     if (CurrentWeapon)
     {
-        if (CurrentWeapon->IsReloading())
-        {
-            CurrentWeapon->CancelReload();
-        }
-
         CurrentWeapon->SetActorHiddenInGame(true);
         CurrentWeapon->SetActorEnableCollision(false);
     }
