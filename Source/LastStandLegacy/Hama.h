@@ -396,15 +396,15 @@ protected:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
     bool bHasQuickRevive = false;
 
-    UPROPERTY(Replicated)
-    bool bIsDeathMachineActive = false;
-
     FName PendingPerkID;
 
     UPROPERTY()
     class AStaticMeshActor* CurrentSpawnedBottle;
 
 public:
+    UPROPERTY(Replicated)
+    bool bIsDeathMachineActive = false;
+
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_PlayDrinkPerkAnimation(ABasePerk* TargetPerk);
 

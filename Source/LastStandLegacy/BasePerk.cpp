@@ -102,6 +102,11 @@ bool ABasePerk::CanInteract(AHama* InteractingPlayer)
 {
     if (!InteractingPlayer) return false;
 
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
+    {
+        return false;
+    }
+
     if (InteractingPlayer->HasPerkID(PerkID))
     {
         return false;

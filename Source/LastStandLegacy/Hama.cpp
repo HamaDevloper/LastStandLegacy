@@ -1,7 +1,6 @@
 ﻿#include "Hama.h"
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
-#include "HamaAnimInstance.h"
 #include "LastStandLegacyGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
@@ -498,12 +497,6 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 
 void AHama::OnRep_CurrentWeapon()
 {
-    if (GEngine)
-    {
-        FString Msg = FString::Printf(TEXT("[%s] OnRep_CurrentWeapon: %s"),
-            *GetName(), CurrentWeapon ? *CurrentWeapon->GetName() : TEXT("NULL"));
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, Msg);
-    }
 
     if (!CurrentWeapon) return;
 
@@ -513,16 +506,6 @@ void AHama::OnRep_CurrentWeapon()
     {
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
-    }
-
-    if (CurrentWeapon->CanReload())
-    {
-        CurrentWeapon->Reload();
-    }
-
-    if (UHamaAnimInstance* AnimInst = Cast<UHamaAnimInstance>(GetMesh()->GetAnimInstance()))
-    {
-        AnimInst->OnWeaponChanged(CurrentWeapon);
     }
 
     OnWeaponChanged.Broadcast(CurrentWeapon);
@@ -640,8 +623,7 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
             BasePlayRate = 2.0f;
         }
 
-        float ServerPlayRate = BasePlayRate * 1.15f;
-        AnimInstance->Montage_Play(SwapWeaponMontage, ServerPlayRate);
+        AnimInstance->Montage_Play(SwapWeaponMontage, BasePlayRate);
 
         FOnMontageEnded ServerMontageEndedDelegate;
         ServerMontageEndedDelegate.BindUObject(this, &AHama::OnSwapWeaponMontageEnded);
@@ -659,8 +641,13 @@ void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     {
         CompleteWeaponSwap();
     }
-    else if (IsLocallyControlled())
+
+    if (IsLocallyControlled() && !HasAuthority())
     {
+        if (!bInterrupted && PendingWeaponForSwap && PendingWeaponForSwap->CanReload())
+        {
+            PendingWeaponForSwap->Reload();
+        }
         PendingWeaponForSwap = nullptr;
     }
 }
@@ -684,7 +671,13 @@ void AHama::CompleteWeaponSwap()
 
     OnRep_CurrentWeapon();
 
+    ABaseWeapon* NewlyEquippedWeapon = PendingWeaponForSwap;
     PendingWeaponForSwap = nullptr;
+
+    if (NewlyEquippedWeapon->NeedsAmmo() && NewlyEquippedWeapon->CanReload())
+    {
+        NewlyEquippedWeapon->Reload();
+    }
 }
 
 void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration)
@@ -736,44 +729,42 @@ void AHama::RemoveDeathMachine()
     bIsDeathMachineActive = false;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
 
-    if (ActiveDeathMachine && IsValid(ActiveDeathMachine))
+    if (IsValid(ActiveDeathMachine))
     {
         ActiveDeathMachine->Destroy();
         ActiveDeathMachine = nullptr;
     }
 
-    if (PreDeathMachineWeapon && IsValid(PreDeathMachineWeapon) && !PreDeathMachineWeapon->IsPendingKillPending())
+    ABaseWeapon* WeaponToEquip = nullptr;
+
+    if (IsValid(PreDeathMachineWeapon))
     {
-        CurrentWeapon = PreDeathMachineWeapon;
+        WeaponToEquip = PreDeathMachineWeapon;
+        PreDeathMachineWeapon = nullptr;
+    }
+    else
+    {
+        if (IsValid(PrimaryWeapon)) WeaponToEquip = PrimaryWeapon;
+        else if (IsValid(SecondaryWeapon)) WeaponToEquip = SecondaryWeapon;
+        else if (IsValid(ThirdWeapon)) WeaponToEquip = ThirdWeapon;
+    }
+
+    if (WeaponToEquip)
+    {
+        CurrentWeapon = WeaponToEquip;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
         CurrentWeapon->SetActorHiddenInGame(false);
         CurrentWeapon->SetActorEnableCollision(true);
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
+
         OnRep_CurrentWeapon();
         OnWeaponChanged.Broadcast(CurrentWeapon);
 
-        PreDeathMachineWeapon = nullptr;
-    }
-    else
-    {
-        ABaseWeapon* FallbackWeapon = nullptr;
-
-        if (ThirdWeapon && IsValid(ThirdWeapon)) FallbackWeapon = ThirdWeapon;
-        else if (SecondaryWeapon && IsValid(SecondaryWeapon)) FallbackWeapon = SecondaryWeapon;
-        else if (PrimaryWeapon && IsValid(PrimaryWeapon)) FallbackWeapon = PrimaryWeapon;
-
-        if (FallbackWeapon)
+        if (CurrentWeapon->CanReload())
         {
-            CurrentWeapon = FallbackWeapon;
-            CurrentWeapon->SetActorHiddenInGame(false);
-            CurrentWeapon->SetActorEnableCollision(true);
-            CurrentWeapon->EquipWeapon(this);
-            AttachWeaponToMesh(CurrentWeapon);
-
-            OnRep_CurrentWeapon();
-            OnWeaponChanged.Broadcast(CurrentWeapon);
+            CurrentWeapon->Reload();
         }
     }
 }
@@ -1369,6 +1360,25 @@ void AHama::HandleDeath()
     bHasDeadshot = false;
     bHasMuleKick = false;
     bHasQuickRevive = false;
+    
+    if (HamaComponent) HamaComponent->ResetStamina();
+
+    if (CurrentWeapon == ThirdWeapon)
+    {
+        if (IsValid(PrimaryWeapon)) CurrentWeapon = PrimaryWeapon;
+        else if (IsValid(SecondaryWeapon)) CurrentWeapon = SecondaryWeapon;
+
+        if (CurrentWeapon)
+        {
+            CurrentWeapon->SetActorHiddenInGame(false);
+            CurrentWeapon->EquipWeapon(this);
+        }
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+        OnRep_CurrentWeapon();
+    }
+
+    ThirdWeapon->Destroy();
+    ThirdWeapon = nullptr;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasFastHands, this);
@@ -1377,8 +1387,6 @@ void AHama::HandleDeath()
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasMuleKick, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasQuickRevive, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
-
-    if (HamaComponent) HamaComponent->ResetStamina();
 }
 
 

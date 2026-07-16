@@ -71,6 +71,11 @@ FString AWallWeaponBuy::GetInteractMessage()
 bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
 {
     if (!InteractingPlayer || !WeaponClass) return false;
+    
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
+    {
+        return false;
+    }
 
     ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponByClass(WeaponClass);
 

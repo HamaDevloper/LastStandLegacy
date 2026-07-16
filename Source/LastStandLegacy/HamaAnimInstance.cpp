@@ -14,9 +14,6 @@ void UHamaAnimInstance::NativeInitializeAnimation()
     }
 }
 
-// --------------------------------------------------------------------------------------
-// GAME THREAD (تەنها بۆ خوێندنەوەی سەلامەت لە Actor و Component)
-// --------------------------------------------------------------------------------------
 void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
     Super::NativeUpdateAnimation(DeltaSeconds);
@@ -25,23 +22,27 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     {
         HamaCharacter = Cast<AHama>(TryGetPawnOwner());
         if (!HamaCharacter) return;
+        if(!MovementComponent)
         MovementComponent = Cast<UHamaMovementComponent>(HamaCharacter->GetCharacterMovement());
+        if (!MovementComponent) return;
     }
 
-    if (!MovementComponent) return;
-
-    if (GEngine)
+    ABaseWeapon* CurrentCharWeapon = HamaCharacter->GetCurrentWeapon();
+    if (EquippedWeapon != CurrentCharWeapon || (CurrentCharWeapon && !CurrentWeaponIdle))
     {
-        FString Msg = FString::Printf(TEXT("[%s] AnimTick Weapon=%s"),
-            *HamaCharacter->GetName(),
-            HamaCharacter->CurrentWeapon ? *HamaCharacter->CurrentWeapon->GetName() : TEXT("NULL"));
-        GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Cyan, Msg);
-    }
-
-    if (HamaCharacter->CurrentWeapon != LastKnownWeapon)
-    {
-        LastKnownWeapon = HamaCharacter->CurrentWeapon;
-        OnWeaponChanged(LastKnownWeapon);
+        EquippedWeapon = CurrentCharWeapon;
+        if (EquippedWeapon)
+        {
+            CurrentWeaponIdle = EquippedWeapon->GetWeaponIdle();
+            CurrentWeaponSprint = EquippedWeapon->GetWeaponSprint();
+            CurrentWeaponAim = EquippedWeapon->GetAimMontage();
+        }
+        else
+        {
+            CurrentWeaponIdle = nullptr;
+            CurrentWeaponSprint = nullptr;
+            CurrentWeaponAim = nullptr;
+        }
     }
 
     PlayerVelocity = HamaCharacter->GetVelocity();
@@ -53,10 +54,6 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     bIsDowned = MovementComponent->bDowned;
 }
 
-// --------------------------------------------------------------------------------------
-// WORKER THREAD (هەموو لێکدانەوەیەکی بیرکاری لێرە دەکرێت بەبێ ڕاگرتنی یارییەکە)
-// لێرەدا قەدەغەیە بنووسیت HamaCharacter->... یان MovementComponent->...
-// --------------------------------------------------------------------------------------
 void UHamaAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
     Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
@@ -76,26 +73,4 @@ void UHamaAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
     float RightDot = FVector::DotProduct(NormalVelocity, Right);
 
     Direction = FMath::RadiansToDegrees(FMath::Atan2(RightDot, ForwardDot));
-}
-
-void UHamaAnimInstance::OnWeaponChanged(ABaseWeapon* NewWeapon)
-{
-    if (GEngine)
-    {
-        FString Msg = FString::Printf(TEXT("OnWeaponChanged CALLED: %s"),
-            NewWeapon ? *NewWeapon->GetName() : TEXT("NULL"));
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, Msg);
-    }
-    if (NewWeapon)
-    {
-        CurrentWeaponIdle = NewWeapon->GetWeaponIdle();
-        CurrentWeaponSprint = NewWeapon->GetWeaponSprint();
-        CurrentWeaponAim = NewWeapon->GetAimMontage();
-    }
-    else
-    {
-        CurrentWeaponIdle = nullptr;
-        CurrentWeaponSprint = nullptr;
-        CurrentWeaponAim = nullptr;
-    }
 }

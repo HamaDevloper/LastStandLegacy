@@ -27,14 +27,10 @@ private:
     TObjectPtr<UHamaMovementComponent> MovementComponent;
 
     UPROPERTY()
-    TObjectPtr<ABaseWeapon> LastKnownWeapon;
+    TObjectPtr<ABaseWeapon> EquippedWeapon;
 
     FRotator CachedActorRotation;
     bool bCachedHasAcceleration;
-
-public:
-    UFUNCTION()
-    void OnWeaponChanged(ABaseWeapon* NewWeapon);
 
 protected:
     // ── Weapon Data ───────────────────────────────
