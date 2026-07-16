@@ -38,8 +38,6 @@ public:
     void StartDive();
     void StopDive();
 
-    UFUNCTION(Server, Reliable)
-    void Server_SetSprintState(bool bNewState);
 
     UFUNCTION(Server, Reliable)
     void Server_SetSlideState(bool bNewSlideState);

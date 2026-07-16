@@ -44,12 +44,12 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 {
     if (bIsAiming == bNewAiming) return;
     bIsAiming = bNewAiming;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsAiming, this);
 
-    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();   // <-- زیادکراو
-
+    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
     if (MoveComp) MoveComp->bAiming = bIsAiming;
+
+    SetSprinting(false);
 }
 
 void UHamaComponent::SetDowned(bool NewValue)
@@ -209,43 +209,24 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
     GetWorld()->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
 
     bIsSprinting = bNewSprinting;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
 
     if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
     if (MoveComp) MoveComp->bSprinting = bIsSprinting;
 
-    // --- زیادکراو: fallback reliable RPC، جیاواز لە CMC move ---
-    if (OwnerCharacter && !OwnerCharacter->HasAuthority())
-    {
-        Server_SetSprintState(bNewSprinting);
-    }
-    // -----------------------------------------------------------
-
     if (bIsSprinting)
     {
+        SetAiming(false);
         GetWorld()->GetTimerManager().ClearTimer(StaminaPenaltyTimerHandle);
         GetWorld()->GetTimerManager().SetTimer(StaminaDrainTimerHandle, this, &UHamaComponent::DrainStamina, 0.1f, true);
     }
     else
     {
+        if (OwnerCharacter) OwnerCharacter->ResetValuesAfterSprint();
         if (GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
         GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
     }
 }
-
-// --- فەنکشنی نوێ ---
-void UHamaComponent::Server_SetSprintState_Implementation(bool bNewState)
-{
-    if (MoveComp) MoveComp->bSprinting = bNewState;
-
-    if (bIsSprinting != bNewState)
-    {
-        bIsSprinting = bNewState;
-        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
-    }
-}
-// --------------------
 
 void UHamaComponent::DrainStamina()
 {

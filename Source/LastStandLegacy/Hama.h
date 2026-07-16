@@ -488,6 +488,8 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama | Revive")
     float DefaultReviveTime = 5.0f;
 
+    void ResetValuesAfterSprint();
+
 private:
     FTimerHandle ReviveTimerHandle;
 

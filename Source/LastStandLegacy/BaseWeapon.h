@@ -278,9 +278,9 @@ protected:
 public:
     // --- Getters & Inline Functions ---
     FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }
-    FORCEINLINE UAnimSequence* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
-    FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
-    FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
+    UAnimSequence* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
+    UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
+    UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
 
     bool CanReload() const { return CurrentAmmo <= 0 && ReserveAmmo > 0; }
     bool IsReloading() const { return bIsReloading; }

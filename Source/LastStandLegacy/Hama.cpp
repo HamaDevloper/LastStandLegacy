@@ -1,6 +1,7 @@
 ﻿#include "Hama.h"
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
+#include "HamaAnimInstance.h"
 #include "LastStandLegacyGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
@@ -127,6 +128,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
 
+    Params.Condition = COND_None;
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentWeapon, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasFastHands, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsDead, Params);
@@ -496,6 +498,13 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 
 void AHama::OnRep_CurrentWeapon()
 {
+    if (GEngine)
+    {
+        FString Msg = FString::Printf(TEXT("[%s] OnRep_CurrentWeapon: %s"),
+            *GetName(), CurrentWeapon ? *CurrentWeapon->GetName() : TEXT("NULL"));
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, Msg);
+    }
+
     if (!CurrentWeapon) return;
 
     AttachWeaponToMesh(CurrentWeapon);
@@ -509,6 +518,11 @@ void AHama::OnRep_CurrentWeapon()
     if (CurrentWeapon->CanReload())
     {
         CurrentWeapon->Reload();
+    }
+
+    if (UHamaAnimInstance* AnimInst = Cast<UHamaAnimInstance>(GetMesh()->GetAnimInstance()))
+    {
+        AnimInst->OnWeaponChanged(CurrentWeapon);
     }
 
     OnWeaponChanged.Broadcast(CurrentWeapon);
@@ -972,6 +986,26 @@ void AHama::AimPressedSitck()
     }
 }
 
+void AHama::ResetValuesAfterSprint()
+{
+    if (bIsAimButtonHold)
+    {
+        HamaComponent->SetAiming(true);
+        OnAim(true);
+    }
+    if (CurrentWeapon)
+    {
+        if (bIsFireButtonHold)
+        {
+           CurrentWeapon->StartFire();
+        }
+        if (CurrentWeapon->CanReload())
+        {
+            CurrentWeapon->Reload();
+        }
+    }
+   
+}
 
 void AHama::ReloadActionPressed()
 {

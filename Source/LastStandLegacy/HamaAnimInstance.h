@@ -32,10 +32,11 @@ private:
     FRotator CachedActorRotation;
     bool bCachedHasAcceleration;
 
-protected:
+public:
     UFUNCTION()
     void OnWeaponChanged(ABaseWeapon* NewWeapon);
 
+protected:
     // ── Weapon Data ───────────────────────────────
     UPROPERTY(BlueprintReadOnly, Category = "Weapon Data")
     TObjectPtr<UAnimSequence> CurrentWeaponIdle;

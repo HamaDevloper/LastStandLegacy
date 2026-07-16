@@ -119,17 +119,6 @@ void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
     bAiming = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
     bDiving = (Flags & FSavedMove_Character::FLAG_Custom_2) != 0;
     bSlide = (Flags & FSavedMove_Character::FLAG_Custom_3) != 0;
-
-    if (CharacterOwner && CharacterOwner->HasAuthority())
-    {
-        if (UHamaComponent* HamaComp = CharacterOwner->FindComponentByClass<UHamaComponent>())
-        {
-            HamaComp->bIsSprinting = bSprinting;
-            HamaComp->bIsAiming = bAiming;
-            HamaComp->bIsDiving = bDiving;
-            HamaComp->bIsSlide = bSlide;
-        }
-    }
 }
 
 // ================= SAVED MOVE =================

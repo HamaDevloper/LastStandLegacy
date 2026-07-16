@@ -30,6 +30,14 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     if (!MovementComponent) return;
 
+    if (GEngine)
+    {
+        FString Msg = FString::Printf(TEXT("[%s] AnimTick Weapon=%s"),
+            *HamaCharacter->GetName(),
+            HamaCharacter->CurrentWeapon ? *HamaCharacter->CurrentWeapon->GetName() : TEXT("NULL"));
+        GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Cyan, Msg);
+    }
+
     if (HamaCharacter->CurrentWeapon != LastKnownWeapon)
     {
         LastKnownWeapon = HamaCharacter->CurrentWeapon;
@@ -72,6 +80,12 @@ void UHamaAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 
 void UHamaAnimInstance::OnWeaponChanged(ABaseWeapon* NewWeapon)
 {
+    if (GEngine)
+    {
+        FString Msg = FString::Printf(TEXT("OnWeaponChanged CALLED: %s"),
+            NewWeapon ? *NewWeapon->GetName() : TEXT("NULL"));
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, Msg);
+    }
     if (NewWeapon)
     {
         CurrentWeaponIdle = NewWeapon->GetWeaponIdle();
