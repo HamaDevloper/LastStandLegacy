@@ -253,6 +253,7 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
 
 void AHama::CheckForInteractables()
 {
+    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, TEXT("Checking for interactables..."));
     if (!IsLocallyControlled() || !OwnerController) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
 
@@ -323,6 +324,7 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
         OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
     }
 }
+
 // -----------------------------------------------------------------------------
 // Crosshair & Weapon Logic
 // -----------------------------------------------------------------------------
@@ -423,7 +425,7 @@ void AHama::CreateDefaultWeapon()
         CurrentWeapon->EquipWeapon(this);
         OnRep_CurrentWeapon();
         AttachWeaponToMesh(CurrentWeapon);
-        OnWeaponChanged.Broadcast(CurrentWeapon);
+        //OnWeaponChanged.Broadcast(CurrentWeapon);
     }
 }
 
@@ -481,7 +483,7 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
         AttachWeaponToMesh(CurrentWeapon);
 
         OnRep_CurrentWeapon();
-        OnWeaponChanged.Broadcast(CurrentWeapon);
+        //OnWeaponChanged.Broadcast(CurrentWeapon);
 
         UE_LOG(LogTemp, Warning, TEXT("GiveWeapon Success: %s equipped."), *SpawnedWeapon->GetName());
     }
@@ -497,7 +499,6 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 
 void AHama::OnRep_CurrentWeapon()
 {
-
     if (!CurrentWeapon) return;
 
     AttachWeaponToMesh(CurrentWeapon);
@@ -508,7 +509,7 @@ void AHama::OnRep_CurrentWeapon()
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
     }
 
-    OnWeaponChanged.Broadcast(CurrentWeapon);
+    //OnWeaponChanged.Broadcast(CurrentWeapon);
 }
 
 void AHama::HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo)
@@ -717,7 +718,7 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
         OnRep_CurrentWeapon();
-        OnWeaponChanged.Broadcast(CurrentWeapon);
+        //OnWeaponChanged.Broadcast(CurrentWeapon);
     }
     GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
 }
@@ -760,7 +761,7 @@ void AHama::RemoveDeathMachine()
         AttachWeaponToMesh(CurrentWeapon);
 
         OnRep_CurrentWeapon();
-        OnWeaponChanged.Broadcast(CurrentWeapon);
+        //OnWeaponChanged.Broadcast(CurrentWeapon);
 
         if (CurrentWeapon->CanReload())
         {
@@ -908,7 +909,7 @@ void AHama::AimActionReleased()
     OnAim(false);
 
     SnapTarget = nullptr;
-    SetActorTickEnabled(false);
+    //SetActorTickEnabled(false);
 }
 
 void AHama::AimPressedSitck()
@@ -1223,6 +1224,13 @@ void AHama::SprintActionPressed()
     HamaComponent->StartSprinting();
 }
 
+void AHama::StopSprint()
+{
+    if (!HamaComponent) return;
+
+    HamaComponent->StopSprinting();
+}
+
 void AHama::OnSprintStopped()
 {
     if (!CurrentWeapon) return;
@@ -1322,7 +1330,11 @@ void AHama::AddPerkByID(FName PerkID)
         if (HamaComponent)
         {
             HamaComponent->UpgradeMaxStamina(250.f);
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Stamina Up Perk Acquired! Stamina Increased!"));
+        }
+
+        if (!IsLocallyControlled())
+        {
+           Client_OnStaminUpAcquired(250.f);
         }
     }
 
@@ -1363,6 +1375,11 @@ void AHama::HandleDeath()
     
     if (HamaComponent) HamaComponent->ResetStamina();
 
+    if (!IsLocallyControlled())
+    {
+        Client_OnPlayerDowned();
+    }
+
     if (CurrentWeapon == ThirdWeapon)
     {
         if (IsValid(PrimaryWeapon)) CurrentWeapon = PrimaryWeapon;
@@ -1376,9 +1393,12 @@ void AHama::HandleDeath()
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
         OnRep_CurrentWeapon();
     }
-
-    ThirdWeapon->Destroy();
-    ThirdWeapon = nullptr;
+    
+    if (IsValid(ThirdWeapon))
+    {
+        ThirdWeapon->Destroy();
+        ThirdWeapon = nullptr;
+    }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasFastHands, this);
@@ -1756,5 +1776,27 @@ void AHama::Server_CompleteRevive(AHama* DownedPlayer)
         {
             MyPS->AddPoints(100);
         }
+    }
+
+    if (auto* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+    {
+        Director->SetPlayerTargetable(this, true);
+    }
+}
+
+void AHama::Client_OnStaminUpAcquired_Implementation(float NewMaxStamina)
+{
+    if (HamaComponent)
+    {
+        HamaComponent->UpgradeMaxStamina(NewMaxStamina);
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Stamina Up Perk Acquired! Stamina Increased!"));
+    }
+}
+
+void AHama::Client_OnPlayerDowned_Implementation()
+{
+    if (HamaComponent)
+    {
+        HamaComponent->ResetStamina();
     }
 }

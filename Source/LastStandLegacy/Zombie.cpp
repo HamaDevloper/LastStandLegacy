@@ -177,7 +177,6 @@ void AZombie::Die(AController* KillerController)
 
     SetNetUpdateFrequency(1.f);
 
-    // دەرهێنانی لە Subsystem ڕاستەوخۆ دوای مردنی بۆ ئەوەی CPU پشوو بدات
     if (UWorld* World = GetWorld())
     {
         if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())

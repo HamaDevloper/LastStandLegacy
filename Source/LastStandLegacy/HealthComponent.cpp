@@ -6,6 +6,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "LastStandLegacyGameState.h"
+#include "ZombieDirectorSubsystem.h"
 
 UHealthComponent::UHealthComponent()
 {
@@ -120,6 +121,12 @@ void UHealthComponent::DownPlayer()
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
         
+        // لە داخل کلاسەکەی Hama (کاتێک Down بوو)
+        if (auto* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            Director->SetPlayerTargetable(Cast<APawn>(OwnerCharacter), false);
+        }
+
         if (OwnerComponent)
         {
             OwnerComponent->SetDowned(true);

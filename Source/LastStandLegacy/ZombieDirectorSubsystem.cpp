@@ -41,15 +41,33 @@ void UZombieDirectorSubsystem::RegisterPlayer(APawn* Player)
     if (Player && !ActivePlayers.Contains(Player))
     {
         ActivePlayers.Add(Player);
+        SetPlayerTargetable(Player, true);
     }
 }
 
 void UZombieDirectorSubsystem::UnregisterPlayer(APawn* Player)
 {
     int32 Index = ActivePlayers.Find(Player);
+
+    SetPlayerTargetable(Player, false);
+
     if (Index != INDEX_NONE)
     {
         ActivePlayers.RemoveAtSwap(Index, 1, EAllowShrinking::No);
+    }
+}
+
+void UZombieDirectorSubsystem::SetPlayerTargetable(APawn* Player, bool bIsTargetable)
+{
+    if (!Player) return;
+
+    if (bIsTargetable)
+    {
+        if (!ValidTargetPlayers.Contains(Player)) ValidTargetPlayers.Add(Player);
+    }
+    else
+    {
+        ValidTargetPlayers.RemoveSingleSwap(Player, EAllowShrinking::No);
     }
 }
 
@@ -57,11 +75,9 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    UWorld* World = GetWorld();
-    if (!World || World->GetNetMode() == NM_Client) return;
+    if (ActiveZombies.IsEmpty() || ValidTargetPlayers.IsEmpty()) return;
 
     int32 ZombieCount = ActiveZombies.Num();
-    if (ZombieCount == 0 || ActivePlayers.IsEmpty()) return;
 
     constexpr int32 DesiredCycleFrames = 30;
     ZombiesToUpdatePerFrame = FMath::Clamp(FMath::CeilToInt(ZombieCount / (float)DesiredCycleFrames), 1, 25);
@@ -71,22 +87,21 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     for (int32 i = CurrentZombieIndex; i < EndIndex; ++i)
     {
         AZombie* Zombie = ActiveZombies[i];
-
         if (!IsValid(Zombie) || Zombie->bIsDead) continue;
 
         APawn* NearestPlayer = nullptr;
         float ClosestDistanceSq = UE_BIG_NUMBER;
         const FVector ZombieLoc = Zombie->GetActorLocation();
 
-        for (APawn* Player : ActivePlayers)
+        for (APawn* TargetPlayer : ValidTargetPlayers)
         {
-            if (!IsValid(Player)) continue;
+            if (!IsValid(TargetPlayer)) continue;
 
-            float DistSq = FVector::DistSquared(ZombieLoc, Player->GetActorLocation());
+            float DistSq = FVector::DistSquared(ZombieLoc, TargetPlayer->GetActorLocation());
             if (DistSq < ClosestDistanceSq)
             {
                 ClosestDistanceSq = DistSq;
-                NearestPlayer = Player;
+                NearestPlayer = TargetPlayer;
             }
         }
 
@@ -95,12 +110,10 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             if (AAIController* AICon = Zombie->CachedAIController)
             {
                 float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, NearestPlayer->GetActorLocation());
-
                 if (Zombie->CurrentTarget != NearestPlayer || TargetMovedDistSq > PathUpdateDistanceThresholdSq)
                 {
                     Zombie->CurrentTarget = NearestPlayer;
                     Zombie->LastTargetLocation = NearestPlayer->GetActorLocation();
-
                     AICon->MoveToActor(NearestPlayer, 40.f, true, true, true);
                 }
             }
@@ -108,10 +121,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     }
 
     CurrentZombieIndex = EndIndex;
-    if (CurrentZombieIndex >= ZombieCount)
-    {
-        CurrentZombieIndex = 0;
-    }
+    if (CurrentZombieIndex >= ZombieCount) CurrentZombieIndex = 0;
 }
 
 TStatId UZombieDirectorSubsystem::GetStatId() const

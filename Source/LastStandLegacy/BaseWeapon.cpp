@@ -182,6 +182,10 @@ void ABaseWeapon::RefillAmmo()
     {
         if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
         {
+            if (HamaComponent && HamaComponent->IsSprinting())
+            {
+                HamaComponent->StopSprinting();
+            }
             Reload();
         }
         else
@@ -593,10 +597,14 @@ void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
 
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
+        if (HamaComponent && HamaComponent->IsSprinting())
+        {
+            HamaComponent->StopSprinting();
+        }
 
-    Reload();
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+        Reload();
+    }
 }
 
 // ------------------- RELOAD REFACTOR -------------------

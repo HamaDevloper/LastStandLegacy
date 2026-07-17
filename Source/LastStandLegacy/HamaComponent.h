@@ -20,7 +20,7 @@ protected:
 protected:
     UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float Stamina;
-    UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float MaxStamina = 100.f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float StaminaRegenRate = 15.f;
@@ -30,6 +30,7 @@ protected:
     float PenaltyStamina = 2.f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float NormalDelayStamina = 0.5f;
+
 public:
     void StartSprinting();
     void StopSprinting();
@@ -63,7 +64,7 @@ public:
     bool bIsAiming = false;
     UPROPERTY(ReplicatedUsing = OnRep_Slide, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     bool bIsSlide = false;
-    UPROPERTY(ReplicatedUsing = OnRep_Down, BlueprintReadOnly, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
+    UPROPERTY(ReplicatedUsing = OnRep_Down, BlueprintReadWrite, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
     bool bIsDowned = false;
     UPROPERTY(ReplicatedUsing = OnRep_Dive, BlueprintReadOnly, Category = "Hama|State", meta = (AllowPrivateAccess = "true"))
     bool bIsDiving = false;

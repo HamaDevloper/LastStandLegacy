@@ -35,9 +35,6 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSlide, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDowned, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDiving, Params);
-
-    Params.Condition = COND_OwnerOnly;
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, MaxStamina, Params);
 }
 
 void UHamaComponent::SetAiming(bool bNewAiming)
@@ -290,8 +287,6 @@ void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
 
     MaxStamina = NewMaxStamina;
 
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, MaxStamina, this);
-
     Stamina = MaxStamina * StaminaRatio;
 
     if (!bIsSprinting)
@@ -311,8 +306,7 @@ void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
 void UHamaComponent::ResetStamina()
 {
     MaxStamina = 100.f;
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, MaxStamina, this);
+    Stamina = 100.f;
 }
 
 void UHamaComponent::OnRep_Sprinting()

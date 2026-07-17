@@ -15,7 +15,7 @@
 #define ECC_CrossHair ECC_GameTraceChannel2
 #define ECC_Intract ECC_GameTraceChannel3
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
+//DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
 DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
 DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FString&);
 DECLARE_DELEGATE_OneParam(FOnCrosshairUpdateDelegate, bool);
@@ -341,7 +341,6 @@ private:
 public:
     FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
     FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
-    FORCEINLINE bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
     FORCEINLINE bool GetDeathMachine() const { return bIsDeathMachineActive; }
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
@@ -350,7 +349,7 @@ public:
     bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
     bool IsDrinkingPerk() const { return CurrentSpawnedBottle != nullptr; }
     bool HasQuickRevive() const { return bHasQuickRevive; }
-
+    bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
     float NormalSensitivity = 1.f;
@@ -365,7 +364,7 @@ public:
     void ApplyRoleVisuals(EHamaAbilityType NewRole);
 
 public:
-    FOnWeaponChanged OnWeaponChanged;
+    //FOnWeaponChanged OnWeaponChanged;
     void RefillAllWeapons();
 
 protected:
@@ -488,6 +487,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama | Revive")
     float DefaultReviveTime = 5.0f;
 
+    void StopSprint();
     void ResetValuesAfterSprint();
 
 private:
@@ -506,4 +506,10 @@ private:
     void OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
     int32 NearbyInteractablesCount = 0;
+
+    UFUNCTION(Client, Reliable)
+    void Client_OnStaminUpAcquired(float NewMaxStamina);
+
+    UFUNCTION(Client, Reliable)
+    void Client_OnPlayerDowned();
 };

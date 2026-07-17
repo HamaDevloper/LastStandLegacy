@@ -28,12 +28,18 @@ public:
     void RegisterPlayer(APawn* Player);
     void UnregisterPlayer(APawn* Player);
 
+    // فەنکشنێکی زۆر گرنگ بۆ Performance: تەنها ئەو یاریزانانە زیاد بکە کە دەکرێت ببنە ئامانج
+    void SetPlayerTargetable(APawn* Player, bool bIsTargetable);
+
 private:
     UPROPERTY()
     TArray<AZombie*> ActiveZombies;
 
     UPROPERTY()
     TArray<APawn*> ActivePlayers;
+
+    UPROPERTY()
+    TArray<APawn*> ValidTargetPlayers;
 
     // --- ڕێکخستنەکانی Time-Slicing بۆ Optimization ---
 
