@@ -1,4 +1,4 @@
-#include "HamaPlayerController.h"
+﻿#include "HamaPlayerController.h"
 #include "HamaMainWidget.h"
 #include "HamaPlayerState.h"
 #include "Hama.h"
@@ -8,34 +8,22 @@
 void AHamaPlayerController::BeginPlay()
 {
     Super::BeginPlay();
-
-    if (IsLocalController())
-    {
-        SetupClientUI();
-    }
+    if (IsLocalController()) CheckAndBindUI();
 }
 
 void AHamaPlayerController::OnRep_PlayerState()
 {
     Super::OnRep_PlayerState();
-
-    if (IsLocalController())
-    {
-        SetupClientUI();
-    }
+    if (IsLocalController()) CheckAndBindUI();
 }
 
 void AHamaPlayerController::AcknowledgePossession(APawn* P)
 {
     Super::AcknowledgePossession(P);
-
-    if (IsLocalController())
-    {
-        SetupClientUI();
-    }
+    if (IsLocalController()) CheckAndBindUI();
 }
 
-void AHamaPlayerController::SetupClientUI()
+void AHamaPlayerController::CheckAndBindUI()
 {
     if (!MainWidgetRef && MainWidgetClass)
     {
@@ -48,23 +36,18 @@ void AHamaPlayerController::SetupClientUI()
 
     if (!MainWidgetRef) return;
 
-    if (AHamaPlayerState* HamaPS = GetPlayerState<AHamaPlayerState>())
-    {
-        MainWidgetRef->HandlePointsUpdate(HamaPS->GetPoints());
-        MainWidgetRef->HandleKillsUpdate(HamaPS->GetKills());
-    }
-
-    if (AHama* HamaCharacter = Cast<AHama>(GetPawn()))
-    {
-        MainWidgetRef->InitializeWidget(HamaCharacter);
-    }
-
     if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
-        MainWidgetRef->HandleRoundUpdate(GS->GetCurrentRound());
+        MainWidgetRef->BindGameState(GS);
     }
-    else
+
+    if (AHamaPlayerState* PS = GetPlayerState<AHamaPlayerState>())
     {
-        MainWidgetRef->HandleRoundUpdate(1);
+        MainWidgetRef->BindPlayerState(PS);
+    }
+
+    if (AHama* HamaChar = Cast<AHama>(GetPawn()))
+    {
+        MainWidgetRef->BindCharacter(HamaChar);
     }
 }

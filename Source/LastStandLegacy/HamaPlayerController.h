@@ -7,6 +7,7 @@
 class UHamaMainWidget;
 class AHama;
 class AHamaPlayerState;
+class ALastStandLegacyGameState;
 
 UCLASS()
 class LASTSTANDLEGACY_API AHamaPlayerController : public APlayerController
@@ -22,11 +23,13 @@ public:
 
 protected:
     virtual void BeginPlay() override;
-
     virtual void OnRep_PlayerState() override;
-
     virtual void AcknowledgePossession(APawn* P) override;
+    void CheckAndBindUI();
 
 private:
-    void SetupClientUI();
+    void CreateMainWidget();
+    void BindGameState();
+
+    FTimerHandle GameStateBindTimer;
 };

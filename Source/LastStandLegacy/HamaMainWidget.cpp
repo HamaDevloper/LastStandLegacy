@@ -7,59 +7,60 @@
 #include "BaseWeapon.h"
 
 // -------------------------------------------------------------------------
-// Initialization (0-Coupling Architecture)
+// Initialization & Bindings (Separated Concerns)
 // -------------------------------------------------------------------------
-void UHamaMainWidget::InitializeWidget(AHama* InHama)
+
+void UHamaMainWidget::BindCharacter(AHama* InHama)
 {
     if (!InHama) return;
-
     CachedHamaChar = InHama;
 
-    // ١. ئەو شتانەی تایبەتبن بە کارەکتەر، لە کارەکتەرەوە گوێیان لێ دەگرین (چەک و ئینتەراکت)
+    InHama->OnAmmoUpdateEvent.Unbind();
+    InHama->OnInteractUpdateEvent.Unbind();
+    InHama->OnCrosshairUpdateEvent.Unbind();
+
     InHama->OnAmmoUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleAmmoUpdate);
     InHama->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
     InHama->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);
 
-    // خوێندنەوەی داتای سەرەتایی فیشەک بۆ ئەوەی بەتاڵ نەبێت
     if (ABaseWeapon* CurrentWep = InHama->GetCurrentWeapon())
     {
         HandleAmmoUpdate(CurrentWep->GetCurrentAmmo(), CurrentWep->GetReserveAmmo());
     }
-    else
+}
+void UHamaMainWidget::BindPlayerState(AHamaPlayerState* InPlayerState)
+{
+    if (!InPlayerState || CachedHamaPS == InPlayerState) return;
+
+    CachedHamaPS = InPlayerState;
+
+    InPlayerState->OnPointsChanged.BindUObject(this, &UHamaMainWidget::HandlePointsUpdate);
+    InPlayerState->OnKillsChanged.BindUObject(this, &UHamaMainWidget::HandleKillsUpdate);
+
+    HandlePointsUpdate(InPlayerState->GetPoints());
+    HandleKillsUpdate(InPlayerState->GetKills());
+
+    if (PingText && !GetWorld()->GetTimerManager().IsTimerActive(PingUpdateTimer))
     {
-        HandleAmmoUpdate(0, 0);
+        GetWorld()->GetTimerManager().SetTimer(PingUpdateTimer, this, &UHamaMainWidget::UpdatePingDisplay, 1.0f, true);
+        UpdatePingDisplay();
     }
+}
 
-    // ٢. 🚀 چارەسەرەکە: ئەو شتانەی تایبەتبن بە یاریزان (خاڵ و کوشتن)، ڕاستەوخۆ لە PlayerStateەوە گوێیان لێ دەگرین
-    if (AHamaPlayerState* PS = InHama->GetPlayerState<AHamaPlayerState>())
-    {
-        // ئیتر پێویستمان بە OnPointsUpdateEventـی ناو AHama نەما!
-        PS->OnPointsChanged.BindUObject(this, &UHamaMainWidget::HandlePointsUpdate);
-        PS->OnKillsChanged.BindUObject(this, &UHamaMainWidget::HandleKillsUpdate);
+void UHamaMainWidget::BindGameState(ALastStandLegacyGameState* InGameState)
+{
+    if (!InGameState || bIsGameStateBound) return;
 
-        // خوێندنەوەی خاڵ و کوشتنەکانی ئێستا
-        HandlePointsUpdate(PS->GetPoints());
-        HandleKillsUpdate(PS->GetKills());
-    }
+    InGameState->OnRoundChangedDelegate.AddUObject(this, &UHamaMainWidget::HandleRoundUpdate);
+    HandleRoundUpdate(InGameState->GetCurrentRound());
 
-    // ٣. ئەو شتانەی تایبەتبن بە گشتی یارییەکە (Round)، لە GameStateەوە گوێی لێ دەگرین
-    if (UWorld* World = GetWorld())
-    {
-        if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
-        {
-            GS->OnRoundChangedDelegate.AddUObject(this, &UHamaMainWidget::HandleRoundUpdate);
-            HandleRoundUpdate(GS->GetCurrentRound());
-        }
-    }
-
-    // شاردنەوەی تێکستەکان لە سەرەتادا
-    if (InteractText) InteractText->SetVisibility(ESlateVisibility::Hidden);
-    if (AmmoWarningText) AmmoWarningText->SetVisibility(ESlateVisibility::Hidden);
+    bIsGameStateBound = true;
 }
 
 // -------------------------------------------------------------------------
-// Event Handlers (ئەم فەنکشنانە خۆکارانە کار دەکەن کاتێک داتا دەگۆڕێت)
+// Event Handlers
 // -------------------------------------------------------------------------
+
 void UHamaMainWidget::HandlePointsUpdate(int32 NewPoints)
 {
     if (Points)
@@ -90,7 +91,6 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
 
     if (CachedHamaChar && CachedHamaChar->GetDeathMachine())
     {
-        // هێمای ئینفینیتی کاتێک چەکی Death Machineـی پێیە
         static const FText InfinityText = FText::FromString(TEXT("\u221E / \u221E"));
         Ammo->SetText(InfinityText);
 
@@ -101,7 +101,6 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
     FText FormattedAmmo = FText::Format(FText::FromString(TEXT("{0} / {1}")), CurrentAmmo, ReserveAmmo);
     Ammo->SetText(FormattedAmmo);
 
-    // لۆژیکی هۆشداریدانی فیشەک (Low Ammo / No Ammo)
     if (AmmoWarningText && CachedHamaChar && CachedHamaChar->GetCurrentWeapon())
     {
         int32 MaxClipSize = CachedHamaChar->GetCurrentWeapon()->GetMaxClipAmmo();
@@ -110,13 +109,11 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
         if (CurrentAmmo == 0 && ReserveAmmo <= 0)
         {
             AmmoWarningText->SetText(FText::FromString(TEXT("No Ammo!")));
-            AmmoWarningText->SetColorAndOpacity(FSlateColor(FLinearColor::Red));
             AmmoWarningText->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
         else if (CurrentAmmo <= LowAmmoThreshold && CurrentAmmo > 0)
         {
             AmmoWarningText->SetText(FText::FromString(TEXT("LOW AMMO")));
-            AmmoWarningText->SetColorAndOpacity(FSlateColor(FLinearColor::Red));
             AmmoWarningText->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
         else
@@ -155,4 +152,42 @@ void UHamaMainWidget::HandleCrosshairUpdate(bool bIsAimingAtEnemy)
             CrosshairImage->SetColorAndOpacity(FLinearColor::White);
         }
     }
+}
+
+void UHamaMainWidget::UpdatePingDisplay()
+{
+    if (!CachedHamaPS || !PingText) return;
+
+    int32 PingValue = 0;
+
+    if (GetOwningPlayer() && GetOwningPlayer()->HasAuthority())
+    {
+        PingValue = 0;
+    }
+    else
+    {
+        PingValue = FMath::RoundToInt(CachedHamaPS->GetPingInMilliseconds());
+    }
+
+    FText FormattedPing = FText::Format(FText::FromString(TEXT("{0} ms")), PingValue);
+    PingText->SetText(FormattedPing);
+
+    FSlateColor PingColor = FLinearColor::Green;
+
+    if (PingValue > 150)
+        PingColor = FLinearColor::Red;
+    else if (PingValue > 80)
+        PingColor = FLinearColor::Yellow;
+
+    PingText->SetColorAndOpacity(PingColor);
+}
+
+void UHamaMainWidget::NativeDestruct()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(PingUpdateTimer);
+    }
+
+    Super::NativeDestruct();
 }

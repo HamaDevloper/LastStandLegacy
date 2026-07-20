@@ -203,7 +203,7 @@ public:
     void Server_StartFire();
 
     UFUNCTION(Server, Reliable)
-    void Server_StopFire();
+    void Server_StopFire(int32 ClientPredictedAmmo);
 
     void Server_FireRoutine();
 
@@ -225,12 +225,12 @@ public:
     // گۆڕدرا بۆ float چونکە پێویستە ژمارەیەک بگەڕێنێتەوە، و دەبێت const بێت
     float GetCalculatedReloadTime() const;
 
-    UFUNCTION(Client, Reliable)
-    void Client_ForceReload(int32 NewReserveAmmo);
-
     // پارامیتەری bClipEmpty لابرا و ClientCurrentAmmo دانرا بۆ ڕێگریکردن لە Desync
     UFUNCTION(Server, Reliable)
-    void ServerReload(float InReloadTime, int32 ClientCurrentAmmo);
+    void ServerReload(bool bClientEmpty);
+
+    UFUNCTION(Client, Reliable)
+    void Client_ForceReload(int32 NewReserveAmmo);
 
     void CancelReload();
 

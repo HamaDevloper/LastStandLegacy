@@ -28,8 +28,8 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_Kills, BlueprintReadOnly, Category = "Player State")
     int32 Kills;
 
-    // پاراستنی ڕۆڵەکە لێرەدا دەبێت
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Player State")
+    // گۆڕدرا بۆ ReplicatedUsing بۆ ئەوەی کڵایەنتەکان بتوانن مەشەکەیان ئەپدەیت بکەن
+    UPROPERTY(ReplicatedUsing = OnRep_AssignedRole, BlueprintReadOnly, Category = "Player State")
     EHamaAbilityType AssignedRole = EHamaAbilityType::None;
 
     UFUNCTION()
@@ -37,6 +37,10 @@ protected:
 
     UFUNCTION()
     void OnRep_Kills();
+
+    // فەنکشنی نوێ بۆ ئەپدەیتکردنی ڕۆڵەکە لای کڵایەنتەکان
+    UFUNCTION()
+    void OnRep_AssignedRole();
 
 public:
     UFUNCTION(BlueprintCallable, Category = "Player State")
@@ -54,10 +58,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Player State")
     int32 GetKills() const { return Kills; }
 
-    // فەنکشنە نوێیەکان بۆ وەرگرتن و پێدانی ڕۆڵ
     UFUNCTION(BlueprintCallable, Category = "Player State")
     void SetAssignedRole(EHamaAbilityType NewRole);
 
     UFUNCTION(BlueprintCallable, Category = "Player State")
     EHamaAbilityType GetAssignedRole() const { return AssignedRole; }
+
+    float GetExactPing() const { return GetPingInMilliseconds(); }
 };

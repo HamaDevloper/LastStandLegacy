@@ -179,6 +179,8 @@ void AHama::Tick(float DeltaTime)
         return;
     }
 
+   
+
     if (SnapTarget->IsDead())
     {
         SnapTarget = nullptr;
@@ -522,6 +524,8 @@ void AHama::HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo)
 
 void AHama::RefillAllWeapons()
 {
+    if (!HasAuthority()) return;
+
     if (PrimaryWeapon) PrimaryWeapon->RefillAmmo();
     if (SecondaryWeapon) SecondaryWeapon->RefillAmmo();
     if (ThirdWeapon) ThirdWeapon->RefillAmmo();

@@ -19,16 +19,13 @@ void UHamaAbilityComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    GetWorld()->GetTimerManager().SetTimerForNextTick([this]()
+        if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
         {
-            if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+            if (AHamaPlayerState* PS = OwnerPawn->GetPlayerState<AHamaPlayerState>())
             {
-                if (AHamaPlayerState* PS = OwnerPawn->GetPlayerState<AHamaPlayerState>())
-                {
-                    SetAssignedAbility(PS->GetAssignedRole());
-                }
+                SetAssignedAbility(PS->GetAssignedRole());
             }
-        });
+        }
 }
 
 void UHamaAbilityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

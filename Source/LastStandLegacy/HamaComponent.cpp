@@ -29,11 +29,14 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
 
-    Params.Condition = COND_SkipOwner;
+    Params.Condition = COND_None;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDowned, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSprinting, Params);
+
+    Params.Condition = COND_SkipOwner;
+   
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsAiming, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSlide, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDowned, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDiving, Params);
 }
 
@@ -42,11 +45,19 @@ void UHamaComponent::SetAiming(bool bNewAiming)
     if (bIsAiming == bNewAiming) return;
     bIsAiming = bNewAiming;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsAiming, this);
-
-    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
+    Server_SetAiming(bIsAiming);
     if (MoveComp) MoveComp->bAiming = bIsAiming;
 
-    SetSprinting(false);
+    if (bNewAiming)
+    {
+        SetSprinting(false);
+    }
+}
+
+void UHamaComponent::Server_SetAiming_Implementation(bool bNewAiming)
+{
+    bIsAiming = bNewAiming;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsAiming, this);
 }
 
 void UHamaComponent::SetDowned(bool NewValue)
@@ -208,7 +219,8 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
     bIsSprinting = bNewSprinting;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
 
-    if (OwnerCharacter) OwnerCharacter->ForceNetUpdate();
+    Server_SetSprint(bIsSprinting);
+
     if (MoveComp) MoveComp->bSprinting = bIsSprinting;
 
     if (bIsSprinting)
@@ -224,6 +236,13 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
         GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
     }
 }
+
+void UHamaComponent::Server_SetSprint_Implementation(bool bNewSprinting)
+{
+    bIsSprinting = bNewSprinting;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
+}
+
 
 void UHamaComponent::DrainStamina()
 {

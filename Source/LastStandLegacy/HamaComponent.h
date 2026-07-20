@@ -53,11 +53,18 @@ protected:
     void SetSprinting(bool bNewSprinting);
     void DrainStamina();
     void RegenerateStamina();
+
+    UFUNCTION(Server, Reliable)
+    void Server_SetSprint(bool bNewSprinting);
+
 public:
     void UpgradeMaxStamina(float NewMaxStamina);
     void ResetStamina();
     void SetAiming(bool bNewAiming);
-    void SetDown(bool NewValue);
+
+    UFUNCTION(Server, Reliable)
+    void Server_SetAiming(bool bNewAiming);
+
     UPROPERTY(ReplicatedUsing = OnRep_Sprinting, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     bool bIsSprinting = false;
     UPROPERTY(ReplicatedUsing = OnRep_Aiming, EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")

@@ -1,6 +1,8 @@
 ﻿#include "HamaPlayerState.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
+#include "Hama.h" // پێویستە بۆ گۆڕینی مەشەکە
+#include "HamaAbilityComponent.h"
 
 AHamaPlayerState::AHamaPlayerState()
 {
@@ -20,7 +22,7 @@ void AHamaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Points, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Kills, SharedParams);
-    DOREPLIFETIME_CONDITION(AHamaPlayerState, AssignedRole, COND_InitialOnly);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, AssignedRole, SharedParams);
 }
 
 void AHamaPlayerState::SetAssignedRole(EHamaAbilityType NewRole)
@@ -28,19 +30,40 @@ void AHamaPlayerState::SetAssignedRole(EHamaAbilityType NewRole)
     if (HasAuthority())
     {
         AssignedRole = NewRole;
-        ForceNetUpdate();
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, AssignedRole, this);
+
+        if (AHama* HamaChar = Cast<AHama>(GetPawn()))
+        {
+            HamaChar->ApplyRoleVisuals(AssignedRole);
+            if (UHamaAbilityComponent* AbilityComp = HamaChar->FindComponentByClass<UHamaAbilityComponent>())
+            {
+                AbilityComp->SetAssignedAbility(AssignedRole);
+            }
+        }
     }
 }
 
+void AHamaPlayerState::OnRep_AssignedRole()
+{
+    if (AHama* HamaChar = Cast<AHama>(GetPawn()))
+    {
+        HamaChar->ApplyRoleVisuals(AssignedRole);
+
+        if (UHamaAbilityComponent* AbilityComp = HamaChar->FindComponentByClass<UHamaAbilityComponent>())
+        {
+            AbilityComp->SetAssignedAbility(AssignedRole);
+        }
+    }
+}
+
+// فەنکشنەکانی خوارەوە هەمان شتی خۆتن بێ گۆڕانکاری...
 void AHamaPlayerState::AddPoints(int32 Amount)
 {
     if (HasAuthority())
     {
         Points += Amount;
-
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
-
-        OnRep_Points();
+        OnRep_Points(); // بۆ سێرڤەر
     }
 }
 
@@ -49,9 +72,7 @@ void AHamaPlayerState::RemovePoints(int32 Amount)
     if (HasAuthority())
     {
         Points = FMath::Max(0, Points - Amount);
-
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
-
         OnRep_Points();
     }
 }
@@ -61,9 +82,7 @@ void AHamaPlayerState::AddKills(int32 Amount)
     if (HasAuthority())
     {
         Kills += Amount;
-
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Kills, this);
-
         OnRep_Kills();
     }
 }

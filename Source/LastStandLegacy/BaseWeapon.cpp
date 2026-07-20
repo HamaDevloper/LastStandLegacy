@@ -120,10 +120,13 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
 
-    Params.Condition = COND_SkipOwner;
-    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, CurrentAmmo, Params);
+    Params.Condition = COND_None;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, CurrentAmmo, Params);
+
+    Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, BurstCounter, Params);
+   
 
     Params.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, ReserveAmmo, Params);
@@ -161,37 +164,6 @@ void ABaseWeapon::Client_ApplyPackAPunchFX_Implementation(int32 NewReserveAmmo)
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
-}
-
-void ABaseWeapon::RefillAmmo()
-{
-    if (!HasAuthority()) return;
-
-    bool bWasEmpty = (CurrentAmmo <= 0 && ReserveAmmo <= 0);
-    ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
-
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-    {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
-
-    if (bWasEmpty)
-    {
-        if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-        {
-            if (HamaComponent && HamaComponent->IsSprinting())
-            {
-                HamaComponent->StopSprinting();
-            }
-            Reload();
-        }
-        else
-        {
-            Client_ForceReload(ReserveAmmo);
-        }
     }
 }
 
@@ -249,11 +221,11 @@ void ABaseWeapon::StopFire()
 
     if (!HasAuthority())
     {
-        Server_StopFire();
+        Server_StopFire(CurrentAmmo);
     }
     else
     {
-        Server_StopFire_Implementation();
+        Server_StopFire_Implementation(CurrentAmmo);
     }
 }
 
@@ -464,16 +436,25 @@ void ABaseWeapon::Server_StartFire_Implementation()
     }
 }
 
-void ABaseWeapon::Server_StopFire_Implementation()
+void ABaseWeapon::Server_StopFire_Implementation(int32 ClientPredictedAmmo)
 {
     GetWorldTimerManager().ClearTimer(ServerFireTimerHandle);
+
+    if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
+    {
+        if (ClientPredictedAmmo < CurrentAmmo && FMath::Abs(CurrentAmmo - ClientPredictedAmmo) <= 3)
+        {
+            CurrentAmmo = ClientPredictedAmmo;
+            MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+        }
+    }
 }
 
 void ABaseWeapon::Server_FireRoutine()
 {
     if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || bIsReloading || !OwnerCharacter)
     {
-        Server_StopFire_Implementation();
+        Server_StopFire_Implementation(CurrentAmmo);
         return;
     }
 
@@ -481,7 +462,7 @@ void ABaseWeapon::Server_FireRoutine()
     {
         if (ServerBurstShotsLeft <= 0)
         {
-            Server_StopFire_Implementation();
+            Server_StopFire_Implementation(CurrentAmmo);
             return;
         }
         ServerBurstShotsLeft--;
@@ -516,9 +497,8 @@ void ABaseWeapon::Server_ApplyDamage_Implementation(AActor* HitActor, FVector Sh
     float DistanceToTarget = FVector::Dist(TraceStart, TraceEnd);
     float MaxAllowedDistance = CurrentWeaponData.MaxRange + 500.0f;
 
-    if (DistanceToTarget > MaxAllowedDistance) return; // Anti-Cheat: Range check
+    if (DistanceToTarget > MaxAllowedDistance) return;
 
-    // Anti-Cheat: Line of Sight check
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(OwnerCharacter);
     Params.AddIgnoredActor(this);
@@ -527,7 +507,7 @@ void ABaseWeapon::Server_ApplyDamage_Implementation(AActor* HitActor, FVector Sh
     FHitResult ServerHit;
     bool bHitWall = GetWorld()->LineTraceSingleByChannel(ServerHit, TraceStart, TraceEnd, ECC_Visibility, Params);
 
-    if (bHitWall) return; // Anti-Cheat: Player tried to shoot through a solid wall
+    if (bHitWall) return;
 
     float FinalDamage = CalculateDamageBySurface(HitInfo);
     AController* DamageInstigator = OwnerCharacter->GetController();
@@ -591,23 +571,50 @@ void ABaseWeapon::PlayWeaponEffects()
     // VFX & SFX
 }
 
-void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
+// ------------------- RELOAD REFACTOR -------------------
+
+void ABaseWeapon::RefillAmmo()
 {
-    ReserveAmmo = NewReserveAmmo;
+    if (!HasAuthority()) return;
+
+    GEngine->AddOnScreenDebugMessage(-1, 5, FColor::Red,
+        FString::Printf(TEXT("Server Local=%d"), OwnerCharacter->IsLocallyControlled()));
+
+    bool bWasEmpty = (CurrentAmmo <= 0 && ReserveAmmo <= 0);
+    GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red,
+        FString::Printf(TEXT("Value Is: %s"), bWasEmpty ? TEXT("True") : TEXT("False")));
+    ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
 
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
-        if (HamaComponent && HamaComponent->IsSprinting())
-        {
-            HamaComponent->StopSprinting();
-        }
-
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-        Reload();
+    }
+
+    if (bWasEmpty)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Red, "Trigger");
+        if (OwnerCharacter && OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+        if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+        {
+            Reload();
+        }
+        else if (OwnerCharacter)
+        {
+            Client_ForceReload(ReserveAmmo);
+        }
     }
 }
 
-// ------------------- RELOAD REFACTOR -------------------
+void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
+{
+    if (OwnerCharacter && OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+    GEngine->AddOnScreenDebugMessage(-1, 5, FColor::Green, "Client_ForceReload");
+
+    ReserveAmmo = NewReserveAmmo;
+
+    Reload();
+}
 
 float ABaseWeapon::GetCalculatedReloadTime() const
 {
@@ -623,6 +630,17 @@ void ABaseWeapon::Reload()
 {
     if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip || bIsReloading || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
+    GEngine->AddOnScreenDebugMessage(
+        -1,
+        5,
+        FColor::Yellow,
+        FString::Printf(TEXT("Local=%d Reserve=%d Current=%d Reloading=%d"),
+            OwnerCharacter ? OwnerCharacter->IsLocallyControlled() : -1,
+            ReserveAmmo,
+            CurrentAmmo,
+            bIsReloading));
+
+    GetWorldTimerManager().ClearTimer(ReloadTimerHandle);
     bIsReloading = true;
 
     float FinalReloadTime = GetCalculatedReloadTime();
@@ -633,15 +651,16 @@ void ABaseWeapon::Reload()
         OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage, PlayRate);
     }
 
+    bool bIsEmpty = (CurrentAmmo <= 0);
+
     if (!HasAuthority())
     {
+        ServerReload(bIsEmpty);
         GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete, FinalReloadTime, false);
-        // Client دەبێت ڕێک فیشەکەکانی ئێستای بنێرێت بۆ ئەوەی ڕێگری لە Desync بکرێت
-        ServerReload(FinalReloadTime, CurrentAmmo);
     }
     else
     {
-        ServerReload_Implementation(FinalReloadTime, CurrentAmmo);
+        ServerReload_Implementation(bIsEmpty);
     }
 }
 
@@ -653,7 +672,7 @@ void ABaseWeapon::Local_ReloadComplete()
     int32 AmmoToMove = FMath::Min(AmmoNeeded, ReserveAmmo);
 
     CurrentAmmo += AmmoToMove;
-    ReserveAmmo -= AmmoToMove; // Client prediction fix
+    ReserveAmmo -= AmmoToMove;
     bIsReloading = false;
 
     OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
@@ -661,12 +680,15 @@ void ABaseWeapon::Local_ReloadComplete()
     if (OwnerCharacter->bIsFireButtonHold) StartFire();
 }
 
-void ABaseWeapon::ServerReload_Implementation(float InReloadTime, int32 ClientCurrentAmmo)
+void ABaseWeapon::ServerReload_Implementation(bool bClientEmpty)
 {
     GetWorldTimerManager().ClearTimer(ServerFireTimerHandle);
 
-    // Syncing data: Client and Server now agree on ammo count at the start of reload
-    CurrentAmmo = FMath::Clamp(ClientCurrentAmmo, 0, MaxAmmoInClip);
+    if (bClientEmpty && CurrentAmmo > 0 && CurrentAmmo <= 3)
+    {
+        CurrentAmmo = 0;
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+    }
 
     bIsReloading = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
@@ -674,7 +696,8 @@ void ABaseWeapon::ServerReload_Implementation(float InReloadTime, int32 ClientCu
     if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled()) OnRep_Reload();
 
     float FinalReloadTime = GetCalculatedReloadTime();
-    GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Server_ReloadComplete, FMath::Max(FinalReloadTime - 0.1f, 0.1f), false);
+
+    GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Server_ReloadComplete, FinalReloadTime, false);
 }
 
 void ABaseWeapon::Server_ReloadComplete()

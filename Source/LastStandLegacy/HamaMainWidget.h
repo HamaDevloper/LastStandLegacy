@@ -7,6 +7,8 @@
 class UTextBlock;
 class UImage;
 class AHama;
+class AHamaPlayerState;
+class ALastStandLegacyGameState;
 
 UCLASS()
 class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
@@ -14,12 +16,14 @@ class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
-    // ئەم فەنکشنە تەنها یەک جار بانگ دەکرێت بۆ بەستنەوەی (Bind) ئیڤێنتەکان
     UFUNCTION(BlueprintCallable, Category = "UI|Initialization")
-    void InitializeWidget(AHama* InHama);
+    void BindCharacter(AHama* InHama);
+
+    void BindPlayerState(AHamaPlayerState* InPlayerState);
+    void BindGameState(ALastStandLegacyGameState* InGameState);
+    virtual void NativeDestruct() override;
 
 protected:
-    // ── بەستنەوەی دەقەکانی شاشەکە (دەبێت ناوەکانیان لەناو بلۆپرێنت هەمان شت بێت) ──
     UPROPERTY(meta = (BindWidget))
     UTextBlock* Points;
 
@@ -40,6 +44,9 @@ protected:
 
     UPROPERTY(meta = (BindWidget))
     UTextBlock* AmmoWarningText;
+
+    UPROPERTY(meta = (BindWidget))
+    UTextBlock* PingText;
 
 public:
     UFUNCTION()
@@ -62,5 +69,15 @@ public:
 
 private:
     UPROPERTY()
-    AHama* CachedHamaChar;
+    TObjectPtr<AHama> CachedHamaChar;
+
+    UPROPERTY()
+    TObjectPtr<AHamaPlayerState> CachedHamaPS;
+
+    UFUNCTION()
+    void UpdatePingDisplay();
+
+    bool bIsGameStateBound = false;
+
+    FTimerHandle PingUpdateTimer;
 };

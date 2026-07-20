@@ -33,7 +33,7 @@ void ABasePowerUp::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* O
 {
     if (!HasAuthority()) return;
 
-    if (AHama* Player = Cast<AHama>(OtherActor))
+   if (AHama* Player = Cast<AHama>(OtherActor))
     {
         ActivatePowerUp(Player);
 
