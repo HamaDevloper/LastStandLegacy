@@ -8,11 +8,17 @@ ALastStandLegacyGameState::ALastStandLegacyGameState()
     SetNetUpdateFrequency(1.f);
 }
 
+void ALastStandLegacyGameState::Multicast_AnnouncePowerUp_Implementation(EPowerUpType PowerUpType)
+{
+    if(OnPowerUpAnnouncedDelegate.IsBound())
+    {
+        OnPowerUpAnnouncedDelegate.Broadcast(PowerUpType);
+    }
+}
+
 void ALastStandLegacyGameState::BeginPlay()
 {
     Super::BeginPlay();
-
-    // 🚨 تایمەرە قورسەکەی RefreshValidTargets بە تەواوی سڕایەوە!
 }
 
 void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

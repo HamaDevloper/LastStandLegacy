@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameState.h"
+#include "LastStandLegacyTypes.h"
 #include "LastStandLegacyGameState.generated.h"
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnRoundChanged, int32);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnPowerUpAnnounced, EPowerUpType);
 
 UCLASS()
 class LASTSTANDLEGACY_API ALastStandLegacyGameState : public AGameState
@@ -14,8 +16,11 @@ class LASTSTANDLEGACY_API ALastStandLegacyGameState : public AGameState
 public:
     ALastStandLegacyGameState();
 
-    // 🚨 تێبینی: UPROPERTY لێکراوەتەوە چونکە Native C++ Delegateـە
     FOnRoundChanged OnRoundChangedDelegate;
+    FOnPowerUpAnnounced OnPowerUpAnnouncedDelegate;
+
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_AnnouncePowerUp(EPowerUpType PowerUpType);
 
 protected:
     virtual void BeginPlay() override;

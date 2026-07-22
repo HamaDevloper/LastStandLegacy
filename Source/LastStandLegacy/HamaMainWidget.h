@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "LastStandLegacyTypes.h"
 #include "HamaMainWidget.generated.h"
 
 class UTextBlock;
@@ -21,34 +22,47 @@ public:
 
     void BindPlayerState(AHamaPlayerState* InPlayerState);
     void BindGameState(ALastStandLegacyGameState* InGameState);
+
     virtual void NativeDestruct() override;
 
 protected:
+    // --- UI Bindings ---
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* Points;
+    TObjectPtr<UTextBlock> Points;
 
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* Kills;
+    TObjectPtr<UTextBlock> Kills;
 
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* Round;
+    TObjectPtr<UTextBlock> Round;
 
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* Ammo;
+    TObjectPtr<UTextBlock> Ammo;
 
     UPROPERTY(meta = (BindWidget))
-    UImage* CrosshairImage;
+    TObjectPtr<UImage> CrosshairImage;
 
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* InteractText;
+    TObjectPtr<UTextBlock> InteractText;
 
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* AmmoWarningText;
+    TObjectPtr<UTextBlock> AmmoWarningText;
 
     UPROPERTY(meta = (BindWidget))
-    UTextBlock* PingText;
+    TObjectPtr<UTextBlock> PingText;
+
+    // --- Animations ---
+    UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+    TObjectPtr<UWidgetAnimation> PowerUpAnim;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UImage> PowerImgae;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PowerUp Data")
+    TMap<EPowerUpType, UTexture2D*> PowerUpIcons;
 
 public:
+    // --- Event Handlers ---
     UFUNCTION()
     void HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo);
 
@@ -67,12 +81,18 @@ public:
     UFUNCTION()
     void HandleRoundUpdate(int32 NewRound);
 
+    UFUNCTION()
+    void ShowPowerMessage(EPowerUpType PowerUpType);
+
 private:
     UPROPERTY()
     TObjectPtr<AHama> CachedHamaChar;
 
     UPROPERTY()
     TObjectPtr<AHamaPlayerState> CachedHamaPS;
+
+    UPROPERTY()
+    TObjectPtr<ALastStandLegacyGameState> CachedGameState;
 
     UFUNCTION()
     void UpdatePingDisplay();

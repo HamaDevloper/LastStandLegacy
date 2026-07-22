@@ -52,6 +52,7 @@ void UHamaMainWidget::BindGameState(ALastStandLegacyGameState* InGameState)
     if (!InGameState || bIsGameStateBound) return;
 
     InGameState->OnRoundChangedDelegate.AddUObject(this, &UHamaMainWidget::HandleRoundUpdate);
+    InGameState->OnPowerUpAnnouncedDelegate.AddUObject(this, &UHamaMainWidget::ShowPowerMessage);
     HandleRoundUpdate(InGameState->GetCurrentRound());
 
     bIsGameStateBound = true;
@@ -180,6 +181,29 @@ void UHamaMainWidget::UpdatePingDisplay()
         PingColor = FLinearColor::Yellow;
 
     PingText->SetColorAndOpacity(PingColor);
+}
+
+void UHamaMainWidget::ShowPowerMessage(EPowerUpType PowerUpType)
+{
+    if (!PowerImgae) return;
+
+    if (UTexture2D** FoundIcon = PowerUpIcons.Find(PowerUpType))
+    {
+        if (*FoundIcon)
+        {
+            PowerImgae->SetBrushFromTexture(*FoundIcon);
+            PowerImgae->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
+    }
+
+    if (PowerUpAnim)
+    {
+        if (IsAnimationPlaying(PowerUpAnim))
+        {
+            StopAnimation(PowerUpAnim);
+        }
+        PlayAnimationForward(PowerUpAnim);
+    }
 }
 
 void UHamaMainWidget::NativeDestruct()

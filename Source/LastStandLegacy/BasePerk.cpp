@@ -9,17 +9,22 @@ ABasePerk::ABasePerk()
 {
     PrimaryActorTick.bCanEverTick = false;
     bReplicates = true;
+    SetReplicatingMovement(false);
+
+    NetDormancy = DORM_Initial;
+    SetNetUpdateFrequency(1.0f);
 
     TriggerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TriggerBox"));
-
     RootComponent = TriggerBox;
-
     TriggerBox->SetMobility(EComponentMobility::Static);
+    TriggerBox->SetCollisionProfileName(TEXT("Trigger"));
+    TriggerBox->SetCollisionResponseToChannel(ECC_Intract, ECR_Block);
     TriggerBox->PrimaryComponentTick.bCanEverTick = false;
 
     PerkMachineMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PerkMachineMesh"));
     PerkMachineMesh->SetupAttachment(RootComponent);
     PerkMachineMesh->SetMobility(EComponentMobility::Static);
+    PerkMachineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PerkMachineMesh->PrimaryComponentTick.bCanEverTick = false;
 
     PerkID = FName(TEXT("FastHands"));

@@ -141,7 +141,7 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, Health, this);
 
 #if !UE_BUILD_SHIPPING
-    GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::Printf(TEXT("Current Zombie Health Is %f"), Health));
+    GEngine->AddOnScreenDebugMessage(555, 2.f, FColor::Red, FString::Printf(TEXT("Current Zombie Health Is %f"), Health));
 #endif
 
     AHamaPlayerState* AttackerPS = EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;

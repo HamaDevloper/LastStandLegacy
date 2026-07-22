@@ -20,10 +20,10 @@ public:
 
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-    UBoxComponent* InteractBox;
+    TObjectPtr<UBoxComponent> InteractBox;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-    UStaticMeshComponent* WeaponMesh;
+    TObjectPtr<UStaticMeshComponent> WeaponMesh;
 
     // ئەو چەکەی کە دەفرۆشرێت
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Buy")

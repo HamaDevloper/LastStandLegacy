@@ -9,18 +9,25 @@ AWallWeaponBuy::AWallWeaponBuy()
 {
     PrimaryActorTick.bCanEverTick = false;
     bReplicates = true;
+    SetReplicatingMovement(false);
+
+    NetDormancy = DORM_Initial;
+    SetNetUpdateFrequency(1.f);
+    SetMinNetUpdateFrequency(0.5f);
 
     InteractBox = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractBox"));
-
-    InteractBox->SetCollisionProfileName(TEXT("Trigger"));
-    InteractBox->SetGenerateOverlapEvents(true);
-    InteractBox->SetCollisionResponseToChannel(ECC_Intract, ECR_Block);
-
     RootComponent = InteractBox;
+    InteractBox->SetMobility(EComponentMobility::Static); // 🚀 Performance Check
+    InteractBox->SetCollisionProfileName(TEXT("Trigger"));
+    InteractBox->SetGenerateOverlapEvents(false); // trace-based interaction پێویستی بە Overlap events نییە
+    InteractBox->SetCollisionResponseToChannel(ECC_Intract, ECR_Block);
+    InteractBox->PrimaryComponentTick.bCanEverTick = false;
 
     WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
     WeaponMesh->SetupAttachment(RootComponent);
+    WeaponMesh->SetMobility(EComponentMobility::Static); // 🚀 Performance Check
     WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    WeaponMesh->PrimaryComponentTick.bCanEverTick = false;
 }
 
 void AWallWeaponBuy::Interact(AHama* HamaChar)
