@@ -67,4 +67,5 @@ void ABasePowerUp::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* O
 
 void ABasePowerUp::ActivatePowerUp(AHama* Player)
 {
+    GEngine->AddOnScreenDebugMessage(-1, 1, FColor::Black, "Hii");
 }

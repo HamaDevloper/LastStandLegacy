@@ -268,11 +268,9 @@ protected:
     UPROPERTY()
     TObjectPtr<APlayerController> OwnerController;
 
-    // وشەی mutable زیاد کرا بۆ ئەوەی بتوانین Cacheـی بکەین لەناو فەنکشنە constـەکاندا
     UPROPERTY()
     mutable TObjectPtr<ALastStandLegacyGameState> GSCache;
 
-    // کرا بە const بۆ ئەوەی لەناو GetCalculatedReloadTime دا بەکاربهێنرێت
     ALastStandLegacyGameState* GetGameStateCache() const;
 
 public:

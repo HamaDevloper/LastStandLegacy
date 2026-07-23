@@ -75,7 +75,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    if (ActiveZombies.IsEmpty() || ValidTargetPlayers.IsEmpty()) return;
+    if (ActiveZombies.IsEmpty()) return;
 
     int32 ZombieCount = ActiveZombies.Num();
 
@@ -93,29 +93,41 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         float ClosestDistanceSq = UE_BIG_NUMBER;
         const FVector ZombieLoc = Zombie->GetActorLocation();
 
-        for (APawn* TargetPlayer : ValidTargetPlayers)
+        // تەنها گەڕان کاتێک یاریزانی ڕەوا هەیە
+        if (!ValidTargetPlayers.IsEmpty())
         {
-            if (!IsValid(TargetPlayer)) continue;
-
-            float DistSq = FVector::DistSquared(ZombieLoc, TargetPlayer->GetActorLocation());
-            if (DistSq < ClosestDistanceSq)
+            for (APawn* TargetPlayer : ValidTargetPlayers)
             {
-                ClosestDistanceSq = DistSq;
-                NearestPlayer = TargetPlayer;
+                if (!IsValid(TargetPlayer)) continue;
+
+                float DistSq = FVector::DistSquared(ZombieLoc, TargetPlayer->GetActorLocation());
+                if (DistSq < ClosestDistanceSq)
+                {
+                    ClosestDistanceSq = DistSq;
+                    NearestPlayer = TargetPlayer;
+                }
             }
         }
 
+        AAIController* AICon = Zombie->CachedAIController;
+        if (!AICon) continue;
+
         if (NearestPlayer)
         {
-            if (AAIController* AICon = Zombie->CachedAIController)
+            float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, NearestPlayer->GetActorLocation());
+            if (Zombie->CurrentTarget != NearestPlayer || TargetMovedDistSq > PathUpdateDistanceThresholdSq)
             {
-                float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, NearestPlayer->GetActorLocation());
-                if (Zombie->CurrentTarget != NearestPlayer || TargetMovedDistSq > PathUpdateDistanceThresholdSq)
-                {
-                    Zombie->CurrentTarget = NearestPlayer;
-                    Zombie->LastTargetLocation = NearestPlayer->GetActorLocation();
-                    AICon->MoveToActor(NearestPlayer, 40.f, true, true, true);
-                }
+                Zombie->CurrentTarget = NearestPlayer;
+                Zombie->LastTargetLocation = NearestPlayer->GetActorLocation();
+                AICon->MoveToActor(NearestPlayer, 40.f, true, true, true);
+            }
+        }
+        else
+        {
+            if (Zombie->CurrentTarget != nullptr)
+            {
+                Zombie->CurrentTarget = nullptr;
+                AICon->StopMovement();
             }
         }
     }

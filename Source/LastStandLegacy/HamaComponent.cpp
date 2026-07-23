@@ -239,6 +239,13 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 
 void UHamaComponent::Server_SetSprint_Implementation(bool bNewSprinting)
 {
+    if (bNewSprinting && (bIsDowned || Stamina <= 0.f))
+    {
+        bIsSprinting = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
+        return;
+    }
+
     bIsSprinting = bNewSprinting;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
 }
@@ -247,41 +254,37 @@ void UHamaComponent::Server_SetSprint_Implementation(bool bNewSprinting)
 void UHamaComponent::DrainStamina()
 {
     if (!OwnerCharacter || !MoveComp) return;
+    if (MoveComp->IsFalling()) return;
+
     if (!GSCache)
     {
         GSCache = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     }
-    if (GSCache && GSCache->IsTeamAdrenalineActive()) return;
+    
+    FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
+        if (InputVector.SizeSquared() < 0.1f)
+        {
+            SetSprinting(false);
+            return;
+        }
+
+        FVector CurrentVelocity = OwnerCharacter->GetVelocity();
+        CurrentVelocity.Z = 0.f;
+
+        if (CurrentVelocity.SizeSquared() < FMath::Square(750.f))
+        {
+            SetSprinting(false);
+            return;
+        }
+
+    const bool bInfiniteStamina = (GSCache && GSCache->IsTeamAdrenalineActive());
+    if (bInfiniteStamina) return;
 
     if (Stamina <= 0.f)
     {
         GetWorld()->GetTimerManager().SetTimer(StaminaPenaltyTimerHandle, PenaltyStamina, false);
         SetSprinting(false);
         GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, PenaltyStamina);
-        return;
-    }
-
-    if (MoveComp->IsFalling()) return;
-
-    FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
-    if (InputVector.IsNearlyZero())
-    {
-        SetSprinting(false);
-        return;
-    }
-
-    FVector CurrentVelocity = OwnerCharacter->GetVelocity();
-    CurrentVelocity.Z = 0.f;
-
-    if (CurrentVelocity.SizeSquared() < 10000.f) return;
-
-    FVector ForwardVector = OwnerCharacter->GetActorForwardVector();
-    InputVector.Normalize();
-    float ForwardMotion = FVector::DotProduct(InputVector, ForwardVector);
-
-    if (ForwardMotion < 0.5f)
-    {
-        SetSprinting(false);
         return;
     }
 

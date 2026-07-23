@@ -7,6 +7,7 @@
 #include "HamaPlayerState.h"
 #include "Engine/OverlapResult.h"
 #include "Components/CapsuleComponent.h"
+#include "ZombieDirectorSubsystem.h"
 #include "DrawDebugHelpers.h"
 
 UHamaAbilityComponent::UHamaAbilityComponent()
@@ -189,9 +190,22 @@ void UHamaAbilityComponent::ActivateGhostMode()
     if (bIsGhost) return;
 
     bIsGhost = true;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsGhost, this);
     ResetPower();
+
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        if (UWorld* World = GetWorld())
+        {
+            if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+            {
+                if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+                {
+                    Director->SetPlayerTargetable(OwnerPawn, false);
+                }
+            }
+        }
+    }
 
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, TEXT("Ghost Mode Activated on Server!"));
 
@@ -212,8 +226,21 @@ void UHamaAbilityComponent::ActivateGhostMode()
 void UHamaAbilityComponent::DeactivateGhostMode()
 {
     bIsGhost = false;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsGhost, this);
+
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        if (UWorld* World = GetWorld())
+        {
+            if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+            {
+                if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+                {
+                    Director->SetPlayerTargetable(OwnerPawn, true);
+                }
+            }
+        }
+    }
 
     OnRep_IsGhost();
 }

@@ -550,7 +550,7 @@ ALastStandLegacyGameState* ABaseWeapon::GetGameStateCache() const
     {
         if (UWorld* World = GetWorld())
         {
-            const_cast<ABaseWeapon*>(this)->GSCache = World->GetGameState<ALastStandLegacyGameState>();
+            GSCache = World->GetGameState<ALastStandLegacyGameState>();
         }
     }
     return GSCache;
@@ -577,12 +577,8 @@ void ABaseWeapon::RefillAmmo()
 {
     if (!HasAuthority()) return;
 
-    GEngine->AddOnScreenDebugMessage(-1, 5, FColor::Red,
-        FString::Printf(TEXT("Server Local=%d"), OwnerCharacter->IsLocallyControlled()));
-
     bool bWasEmpty = (CurrentAmmo <= 0 && ReserveAmmo <= 0);
-    GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red,
-        FString::Printf(TEXT("Value Is: %s"), bWasEmpty ? TEXT("True") : TEXT("False")));
+
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
 
@@ -593,7 +589,6 @@ void ABaseWeapon::RefillAmmo()
 
     if (bWasEmpty)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Red, "Trigger");
         if (OwnerCharacter && OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
         if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
         {
@@ -609,9 +604,13 @@ void ABaseWeapon::RefillAmmo()
 void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
 {
     if (OwnerCharacter && OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
-    GEngine->AddOnScreenDebugMessage(-1, 5, FColor::Green, "Client_ForceReload");
 
     ReserveAmmo = NewReserveAmmo;
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
 
     Reload();
 }

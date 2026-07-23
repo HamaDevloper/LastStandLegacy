@@ -17,15 +17,15 @@ AWallWeaponBuy::AWallWeaponBuy()
 
     InteractBox = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractBox"));
     RootComponent = InteractBox;
-    InteractBox->SetMobility(EComponentMobility::Static); // 🚀 Performance Check
+    InteractBox->SetMobility(EComponentMobility::Static);
     InteractBox->SetCollisionProfileName(TEXT("Trigger"));
-    InteractBox->SetGenerateOverlapEvents(false); // trace-based interaction پێویستی بە Overlap events نییە
+    InteractBox->SetGenerateOverlapEvents(true);
     InteractBox->SetCollisionResponseToChannel(ECC_Intract, ECR_Block);
     InteractBox->PrimaryComponentTick.bCanEverTick = false;
 
     WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
     WeaponMesh->SetupAttachment(RootComponent);
-    WeaponMesh->SetMobility(EComponentMobility::Static); // 🚀 Performance Check
+    WeaponMesh->SetMobility(EComponentMobility::Static);
     WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     WeaponMesh->PrimaryComponentTick.bCanEverTick = false;
 }
