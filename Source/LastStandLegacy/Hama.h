@@ -19,6 +19,7 @@
 DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
 DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FString&);
 DECLARE_DELEGATE_OneParam(FOnCrosshairUpdateDelegate, bool);
+DECLARE_DELEGATE_OneParam(FOnPerksChangedSignature, const TArray<FName>& /*CurrentPerks*/);
 
 USTRUCT(BlueprintType)
 struct FRoleVisualData
@@ -128,6 +129,7 @@ public:
     FOnAmmoUpdateDelegate OnAmmoUpdateEvent;
     FOnInteractUpdateDelegate OnInteractUpdateEvent;
     FOnCrosshairUpdateDelegate OnCrosshairUpdateEvent;
+    FOnPerksChangedSignature OnPerksChangedEvent;
 
 public:
     UPROPERTY(Transient)
@@ -343,6 +345,7 @@ public:
     FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
     FORCEINLINE bool GetDeathMachine() const { return bIsDeathMachineActive; }
+    const TArray<FName>& GetOwnedPerks() const { return OwnedPerks; }
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
     bool GetDoubleTap() { return bHasDoubleTap; }
     bool HasDeadshot() const { return bHasDeadshot; }

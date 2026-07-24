@@ -1311,6 +1311,11 @@ void AHama::AddPerkByID(FName PerkID)
     {
         OwnedPerks.Add(PerkID);
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
+
+        if (IsLocallyControlled())
+        {
+            OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
+        }
     }
 
     if (PerkID == FName(TEXT("FastHands")))
@@ -1338,7 +1343,7 @@ void AHama::AddPerkByID(FName PerkID)
 
         if (!IsLocallyControlled())
         {
-           Client_OnStaminUpAcquired(250.f);
+            Client_OnStaminUpAcquired(250.f);
         }
     }
 
@@ -1376,7 +1381,7 @@ void AHama::HandleDeath()
     bHasDeadshot = false;
     bHasMuleKick = false;
     bHasQuickRevive = false;
-    
+
     if (HamaComponent) HamaComponent->ResetStamina();
 
     if (!IsLocallyControlled())
@@ -1397,7 +1402,7 @@ void AHama::HandleDeath()
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
         OnRep_CurrentWeapon();
     }
-    
+
     if (IsValid(ThirdWeapon))
     {
         ThirdWeapon->Destroy();
@@ -1411,6 +1416,11 @@ void AHama::HandleDeath()
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasMuleKick, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasQuickRevive, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
+
+    if (IsLocallyControlled())
+    {
+        OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
+    }
 }
 
 
@@ -1468,6 +1478,11 @@ void AHama::OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool 
 
 void AHama::OnRep_OwnedPerks()
 {
+    if (IsLocallyControlled())
+    {
+        OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
+    }
+
     if (OwnedPerks.Num() > 0)
     {
         FName LatestPerk = OwnedPerks.Last();
@@ -1718,7 +1733,7 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
 
 bool AHama::CanInteract(AHama* InteractingPlayer)
 {
-    return HamaComponent && HamaComponent->IsDowned() && !bIsDead;
+    return HamaComponent && !HamaComponent->IsDowned() && !bIsDead;
 }
 
 FString AHama::GetInteractMessage()

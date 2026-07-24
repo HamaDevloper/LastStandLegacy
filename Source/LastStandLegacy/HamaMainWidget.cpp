@@ -5,42 +5,77 @@
 #include "Components/Image.h"
 #include "HamaPlayerState.h"
 #include "BaseWeapon.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Blueprint/WidgetTree.h"
+
+#define LOCTEXT_NAMESPACE "HamaMainWidget"
 
 // -------------------------------------------------------------------------
-// Initialization & Bindings (Separated Concerns)
+// Initialization & Bindings
 // -------------------------------------------------------------------------
+
+void UHamaMainWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+
+    if (PowerImage)
+    {
+        PowerImage->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    if (PowerUpAnim)
+    {
+        PowerUpAnimDelegate.BindDynamic(this, &UHamaMainWidget::OnPowerUpAnimFinished);
+    }
+}
 
 void UHamaMainWidget::BindCharacter(AHama* InHama)
 {
-    if (!InHama) return;
+    if (!InHama || CachedHamaChar == InHama) return;
+
+    if (CachedHamaChar)
+    {
+        CachedHamaChar->OnAmmoUpdateEvent.Unbind();
+        CachedHamaChar->OnInteractUpdateEvent.Unbind();
+        CachedHamaChar->OnCrosshairUpdateEvent.Unbind();
+        CachedHamaChar->OnPerksChangedEvent.Unbind();
+    }
+
     CachedHamaChar = InHama;
 
-    InHama->OnAmmoUpdateEvent.Unbind();
-    InHama->OnInteractUpdateEvent.Unbind();
-    InHama->OnCrosshairUpdateEvent.Unbind();
+    CachedHamaChar->OnAmmoUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleAmmoUpdate);
+    CachedHamaChar->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
+    CachedHamaChar->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);
+    CachedHamaChar->OnPerksChangedEvent.BindUObject(this, &UHamaMainWidget::HandlePerksUpdate);
 
-    InHama->OnAmmoUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleAmmoUpdate);
-    InHama->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
-    InHama->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);
+    HandlePerksUpdate(CachedHamaChar->GetOwnedPerks());
 
-    if (ABaseWeapon* CurrentWep = InHama->GetCurrentWeapon())
+    if (ABaseWeapon* CurrentWep = CachedHamaChar->GetCurrentWeapon())
     {
         HandleAmmoUpdate(CurrentWep->GetCurrentAmmo(), CurrentWep->GetReserveAmmo());
     }
 }
+
 void UHamaMainWidget::BindPlayerState(AHamaPlayerState* InPlayerState)
 {
     if (!InPlayerState || CachedHamaPS == InPlayerState) return;
 
+    if (CachedHamaPS)
+    {
+        CachedHamaPS->OnPointsChanged.Unbind();
+        CachedHamaPS->OnKillsChanged.Unbind();
+    }
+
     CachedHamaPS = InPlayerState;
 
-    InPlayerState->OnPointsChanged.BindUObject(this, &UHamaMainWidget::HandlePointsUpdate);
-    InPlayerState->OnKillsChanged.BindUObject(this, &UHamaMainWidget::HandleKillsUpdate);
+    CachedHamaPS->OnPointsChanged.BindUObject(this, &UHamaMainWidget::HandlePointsUpdate);
+    CachedHamaPS->OnKillsChanged.BindUObject(this, &UHamaMainWidget::HandleKillsUpdate);
 
-    HandlePointsUpdate(InPlayerState->GetPoints());
-    HandleKillsUpdate(InPlayerState->GetKills());
+    HandlePointsUpdate(CachedHamaPS->GetPoints());
+    HandleKillsUpdate(CachedHamaPS->GetKills());
 
-    if (PingText && !GetWorld()->GetTimerManager().IsTimerActive(PingUpdateTimer))
+    if (PingText && GetWorld() && !GetWorld()->GetTimerManager().IsTimerActive(PingUpdateTimer))
     {
         GetWorld()->GetTimerManager().SetTimer(PingUpdateTimer, this, &UHamaMainWidget::UpdatePingDisplay, 1.0f, true);
         UpdatePingDisplay();
@@ -49,13 +84,19 @@ void UHamaMainWidget::BindPlayerState(AHamaPlayerState* InPlayerState)
 
 void UHamaMainWidget::BindGameState(ALastStandLegacyGameState* InGameState)
 {
-    if (!InGameState || bIsGameStateBound) return;
+    if (!InGameState || CachedGameState == InGameState) return;
 
-    InGameState->OnRoundChangedDelegate.AddUObject(this, &UHamaMainWidget::HandleRoundUpdate);
-    InGameState->OnPowerUpAnnouncedDelegate.AddUObject(this, &UHamaMainWidget::ShowPowerMessage);
-    HandleRoundUpdate(InGameState->GetCurrentRound());
+    if (CachedGameState)
+    {
+        CachedGameState->OnRoundChangedDelegate.RemoveAll(this);
+        CachedGameState->OnPowerUpAnnouncedDelegate.RemoveAll(this);
+    }
 
-    bIsGameStateBound = true;
+    CachedGameState = InGameState;
+    CachedGameState->OnRoundChangedDelegate.AddUObject(this, &UHamaMainWidget::HandleRoundUpdate);
+    CachedGameState->OnPowerUpAnnouncedDelegate.AddUObject(this, &UHamaMainWidget::ShowPowerMessage);
+
+    HandleRoundUpdate(CachedGameState->GetCurrentRound());
 }
 
 // -------------------------------------------------------------------------
@@ -92,29 +133,40 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
 
     if (CachedHamaChar && CachedHamaChar->GetDeathMachine())
     {
-        static const FText InfinityText = FText::FromString(TEXT("\u221E / \u221E"));
+        static const FText InfinityText = LOCTEXT("InfinityAmmo", "\u221E / \u221E");
         Ammo->SetText(InfinityText);
 
         if (AmmoWarningText) AmmoWarningText->SetVisibility(ESlateVisibility::Hidden);
         return;
     }
 
-    FText FormattedAmmo = FText::Format(FText::FromString(TEXT("{0} / {1}")), CurrentAmmo, ReserveAmmo);
-    Ammo->SetText(FormattedAmmo);
+    static const FText AmmoFormatPattern = LOCTEXT("AmmoFormat", "{0} / {1}");
+    Ammo->SetText(FText::Format(AmmoFormatPattern, CurrentAmmo, ReserveAmmo));
 
-    if (AmmoWarningText && CachedHamaChar && CachedHamaChar->GetCurrentWeapon())
+    ABaseWeapon* CurrentWeapon = CachedHamaChar ? CachedHamaChar->GetCurrentWeapon() : nullptr;
+
+    if (AmmoWarningText && CurrentWeapon)
     {
-        int32 MaxClipSize = CachedHamaChar->GetCurrentWeapon()->GetMaxClipAmmo();
+        int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo();
         int32 LowAmmoThreshold = FMath::RoundToInt(MaxClipSize * 0.25f);
 
+        // 🔥 چاککردن 3: زیادکردنی حاڵەتی (Clip=0 & Reserve>0) بۆ نیشاندانی RELOAD
         if (CurrentAmmo == 0 && ReserveAmmo <= 0)
         {
-            AmmoWarningText->SetText(FText::FromString(TEXT("No Ammo!")));
+            static const FText NoAmmoText = LOCTEXT("NoAmmo", "NO AMMO");
+            AmmoWarningText->SetText(NoAmmoText);
             AmmoWarningText->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
-        else if (CurrentAmmo <= LowAmmoThreshold && CurrentAmmo > 0)
+        else if (CurrentAmmo == 0 && ReserveAmmo > 0)
         {
-            AmmoWarningText->SetText(FText::FromString(TEXT("LOW AMMO")));
+            static const FText ReloadText = LOCTEXT("ReloadAmmo", "RELOAD");
+            AmmoWarningText->SetText(ReloadText);
+            AmmoWarningText->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
+        else if (CurrentAmmo <= LowAmmoThreshold)
+        {
+            static const FText LowAmmoText = LOCTEXT("LowAmmo", "LOW AMMO");
+            AmmoWarningText->SetText(LowAmmoText);
             AmmoWarningText->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
         else
@@ -126,17 +178,16 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
 
 void UHamaMainWidget::HandleInteractUpdate(const FString& Message)
 {
-    if (InteractText)
+    if (!InteractText) return;
+
+    if (Message.IsEmpty())
     {
-        if (Message.IsEmpty())
-        {
-            InteractText->SetVisibility(ESlateVisibility::Hidden);
-        }
-        else
-        {
-            InteractText->SetText(FText::FromString(Message));
-            InteractText->SetVisibility(ESlateVisibility::HitTestInvisible);
-        }
+        InteractText->SetVisibility(ESlateVisibility::Hidden);
+    }
+    else
+    {
+        InteractText->SetText(FText::FromString(Message));
+        InteractText->SetVisibility(ESlateVisibility::HitTestInvisible);
     }
 }
 
@@ -144,14 +195,7 @@ void UHamaMainWidget::HandleCrosshairUpdate(bool bIsAimingAtEnemy)
 {
     if (CrosshairImage)
     {
-        if (bIsAimingAtEnemy)
-        {
-            CrosshairImage->SetColorAndOpacity(FLinearColor::Red);
-        }
-        else
-        {
-            CrosshairImage->SetColorAndOpacity(FLinearColor::White);
-        }
+        CrosshairImage->SetColorAndOpacity(bIsAimingAtEnemy ? FLinearColor::Red : FLinearColor::White);
     }
 }
 
@@ -170,11 +214,10 @@ void UHamaMainWidget::UpdatePingDisplay()
         PingValue = FMath::RoundToInt(CachedHamaPS->GetPingInMilliseconds());
     }
 
-    FText FormattedPing = FText::Format(FText::FromString(TEXT("{0} ms")), PingValue);
-    PingText->SetText(FormattedPing);
+    static const FText PingFormat = LOCTEXT("PingFormat", "{0} ms");
+    PingText->SetText(FText::Format(PingFormat, PingValue));
 
     FSlateColor PingColor = FLinearColor::Green;
-
     if (PingValue > 150)
         PingColor = FLinearColor::Red;
     else if (PingValue > 80)
@@ -185,24 +228,89 @@ void UHamaMainWidget::UpdatePingDisplay()
 
 void UHamaMainWidget::ShowPowerMessage(EPowerUpType PowerUpType)
 {
-    if (!PowerImgae) return;
+    if (!PowerImage || !PowerUpAnim) return;
 
-    if (UTexture2D** FoundIcon = PowerUpIcons.Find(PowerUpType))
+    const TObjectPtr<UTexture2D>* FoundIcon = PowerUpIcons.Find(PowerUpType);
+    if (!FoundIcon || !(*FoundIcon)) return;
+
+    if (IsAnimationPlaying(PowerUpAnim))
     {
-        if (*FoundIcon)
-        {
-            PowerImgae->SetBrushFromTexture(*FoundIcon);
-            PowerImgae->SetVisibility(ESlateVisibility::HitTestInvisible);
-        }
+        UnbindFromAnimationFinished(PowerUpAnim, PowerUpAnimDelegate);
+        StopAnimation(PowerUpAnim);
     }
 
+    PowerImage->SetBrushFromTexture(*FoundIcon);
+    PowerImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+    BindToAnimationFinished(PowerUpAnim, PowerUpAnimDelegate);
+    PlayAnimation(PowerUpAnim, 0.0f, 1, EUMGSequencePlayMode::Forward, 1.0f, false);
+}
+
+void UHamaMainWidget::OnPowerUpAnimFinished()
+{
     if (PowerUpAnim)
     {
-        if (IsAnimationPlaying(PowerUpAnim))
+        UnbindFromAnimationFinished(PowerUpAnim, PowerUpAnimDelegate);
+    }
+
+    if (PowerImage)
+    {
+        PowerImage->SetVisibility(ESlateVisibility::Collapsed);
+    }
+}
+
+void UHamaMainWidget::HandlePerksUpdate(const TArray<FName>& CurrentPerks)
+{
+    if (!PerkContainer) return;
+
+    PerkContainer->ClearChildren();
+
+    for (const FName& PerkID : CurrentPerks)
+    {
+        if (const TObjectPtr<UTexture2D>* FoundTexture = PerkIcons.Find(PerkID))
         {
-            StopAnimation(PowerUpAnim);
+            if (*FoundTexture)
+            {
+                UImage* NewPerkImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+                if (NewPerkImage)
+                {
+                    NewPerkImage->SetBrushFromTexture(*FoundTexture);
+
+                    if (UHorizontalBoxSlot* PerkSlot = PerkContainer->AddChildToHorizontalBox(NewPerkImage))
+                    {
+                        PerkSlot->SetPadding(FMargin(4.0f, 0.0f, 4.0f, 0.0f));
+                        PerkSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+                        PerkSlot->SetVerticalAlignment(EVerticalAlignment::VAlign_Center);
+                    }
+                }
+            }
         }
-        PlayAnimationForward(PowerUpAnim);
+    }
+}
+
+void UHamaMainWidget::UnbindAllEvents()
+{
+    if (CachedHamaChar)
+    {
+        CachedHamaChar->OnAmmoUpdateEvent.Unbind();
+        CachedHamaChar->OnInteractUpdateEvent.Unbind();
+        CachedHamaChar->OnCrosshairUpdateEvent.Unbind();
+        CachedHamaChar->OnPerksChangedEvent.Unbind();
+        CachedHamaChar = nullptr;
+    }
+
+    if (CachedHamaPS)
+    {
+        CachedHamaPS->OnPointsChanged.Unbind();
+        CachedHamaPS->OnKillsChanged.Unbind();
+        CachedHamaPS = nullptr;
+    }
+
+    if (CachedGameState)
+    {
+        CachedGameState->OnRoundChangedDelegate.RemoveAll(this);
+        CachedGameState->OnPowerUpAnnouncedDelegate.RemoveAll(this);
+        CachedGameState = nullptr;
     }
 }
 
@@ -213,5 +321,9 @@ void UHamaMainWidget::NativeDestruct()
         World->GetTimerManager().ClearTimer(PingUpdateTimer);
     }
 
+    UnbindAllEvents();
+
     Super::NativeDestruct();
 }
+
+#undef LOCTEXT_NAMESPACE

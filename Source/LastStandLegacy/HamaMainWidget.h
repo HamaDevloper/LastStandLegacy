@@ -10,6 +10,7 @@ class UImage;
 class AHama;
 class AHamaPlayerState;
 class ALastStandLegacyGameState;
+class UHorizontalBox;
 
 UCLASS()
 class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
@@ -23,6 +24,7 @@ public:
     void BindPlayerState(AHamaPlayerState* InPlayerState);
     void BindGameState(ALastStandLegacyGameState* InGameState);
 
+    virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
 protected:
@@ -51,15 +53,24 @@ protected:
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UTextBlock> PingText;
 
-    // --- Animations ---
+    // --- Animations & PowerUps ---
     UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
     TObjectPtr<UWidgetAnimation> PowerUpAnim;
 
     UPROPERTY(meta = (BindWidgetOptional))
-    TObjectPtr<UImage> PowerImgae;
+    TObjectPtr<UImage> PowerImage;
 
+    // 🔥 UE5 Modern Standard: بەکارهێنانی TObjectPtr لە ناو Mapەکاندا
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PowerUp Data")
-    TMap<EPowerUpType, UTexture2D*> PowerUpIcons;
+    TMap<EPowerUpType, TObjectPtr<UTexture2D>> PowerUpIcons;
+
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UHorizontalBox> PerkContainer;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk Data")
+    TMap<FName, TObjectPtr<UTexture2D>> PerkIcons;
+
+    FWidgetAnimationDynamicEvent PowerUpAnimDelegate;
 
 public:
     // --- Event Handlers ---
@@ -84,6 +95,12 @@ public:
     UFUNCTION()
     void ShowPowerMessage(EPowerUpType PowerUpType);
 
+    UFUNCTION()
+    void OnPowerUpAnimFinished();
+
+    UFUNCTION()
+    void HandlePerksUpdate(const TArray<FName>& CurrentPerks);
+
 private:
     UPROPERTY()
     TObjectPtr<AHama> CachedHamaChar;
@@ -97,7 +114,7 @@ private:
     UFUNCTION()
     void UpdatePingDisplay();
 
-    bool bIsGameStateBound = false;
+    void UnbindAllEvents();
 
     FTimerHandle PingUpdateTimer;
 };
