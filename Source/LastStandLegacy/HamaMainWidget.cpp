@@ -265,6 +265,9 @@ void UHamaMainWidget::HandlePerksUpdate(const TArray<FName>& CurrentPerks)
 
     PerkContainer->ClearChildren();
 
+    // 🔥 ١. دیاریکردنی سایزی نەگۆڕ بۆ هەموو پێرکەکان (دەتوانیت 48 یان 64 بپێچیت بەپێی ئارەزوو)
+    const FVector2D DesiredPerkSize(Perksize, Perksize);
+
     for (const FName& PerkID : CurrentPerks)
     {
         if (const TObjectPtr<UTexture2D>* FoundTexture = PerkIcons.Find(PerkID))
@@ -274,13 +277,19 @@ void UHamaMainWidget::HandlePerksUpdate(const TArray<FName>& CurrentPerks)
                 UImage* NewPerkImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
                 if (NewPerkImage)
                 {
-                    NewPerkImage->SetBrushFromTexture(*FoundTexture);
+                    FSlateBrush PerkBrush;
+                    PerkBrush.SetResourceObject(*FoundTexture);
+                    PerkBrush.ImageSize = DesiredPerkSize;
+
+                    NewPerkImage->SetBrush(PerkBrush);
+                    NewPerkImage->SetDesiredSizeOverride(DesiredPerkSize);
 
                     if (UHorizontalBoxSlot* PerkSlot = PerkContainer->AddChildToHorizontalBox(NewPerkImage))
                     {
                         PerkSlot->SetPadding(FMargin(4.0f, 0.0f, 4.0f, 0.0f));
                         PerkSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
                         PerkSlot->SetVerticalAlignment(EVerticalAlignment::VAlign_Center);
+                        PerkSlot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Center);
                     }
                 }
             }

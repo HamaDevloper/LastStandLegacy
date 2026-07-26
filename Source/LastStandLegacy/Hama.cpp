@@ -531,29 +531,77 @@ void AHama::RefillAllWeapons()
     if (ThirdWeapon) ThirdWeapon->RefillAmmo();
 }
 
-void AHama::SwapWeapon()
+ABaseWeapon* AHama::GetNextWeaponWithAmmo() const
+{
+    TArray<ABaseWeapon*> SearchOrder;
+
+    if (CurrentWeapon == PrimaryWeapon)
+    {
+        SearchOrder = { SecondaryWeapon, ThirdWeapon };
+    }
+    else if (CurrentWeapon == SecondaryWeapon)
+    {
+        SearchOrder = { ThirdWeapon, PrimaryWeapon };
+    }
+    else if (CurrentWeapon == ThirdWeapon)
+    {
+        SearchOrder = { PrimaryWeapon, SecondaryWeapon };
+    }
+
+    // پشکنین بۆ یەکەم چەک کە فیشەکی تێدایە
+    for (ABaseWeapon* Weapon : SearchOrder)
+    {
+        if (Weapon && Weapon->HasAmmo())
+        {
+            return Weapon;
+        }
+    }
+
+    return nullptr;
+}
+
+void AHama::AutoSwapToAvailableWeapon()
+{
+    if (!IsLocallyControlled()) return;
+
+    ABaseWeapon* WeaponWithAmmo = GetNextWeaponWithAmmo();
+    if (WeaponWithAmmo)
+    {
+        SwapWeapon(WeaponWithAmmo);
+    }
+}
+
+void AHama::Input_SwapWeapon()
+{
+    SwapWeapon(nullptr);
+}
+
+void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 {
     if (!SwapWeaponMontage || !CurrentWeapon) return;
     if (IsDrinkingPerk()) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
     if (PendingWeaponForSwap != nullptr) return;
 
-    ABaseWeapon* NextWeapon = nullptr;
-
-    if (CurrentWeapon == PrimaryWeapon)
+    ABaseWeapon* NextWeapon = TargetWeapon;
+  
+    if (!NextWeapon)
     {
-        if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
-        else if (ThirdWeapon) NextWeapon = ThirdWeapon;
-    }
-    else if (CurrentWeapon == SecondaryWeapon)
-    {
-        if (ThirdWeapon) NextWeapon = ThirdWeapon;
-        else if (PrimaryWeapon) NextWeapon = PrimaryWeapon;
-    }
-    else if (CurrentWeapon == ThirdWeapon)
-    {
-        if (PrimaryWeapon) NextWeapon = PrimaryWeapon;
-        else if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
+        if (CurrentWeapon == PrimaryWeapon)
+        {
+            if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
+            else if (ThirdWeapon) NextWeapon = ThirdWeapon;
+        }
+        else if (CurrentWeapon == SecondaryWeapon)
+        {
+            if (ThirdWeapon) NextWeapon = ThirdWeapon;
+            else if (PrimaryWeapon) NextWeapon = PrimaryWeapon;
+        }
+        else if (CurrentWeapon == ThirdWeapon)
+        {
+            if (PrimaryWeapon) NextWeapon = PrimaryWeapon;
+            else if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
+        }
     }
 
     if (!NextWeapon || NextWeapon == CurrentWeapon) return;
@@ -574,7 +622,6 @@ void AHama::SwapWeapon()
     PendingWeaponForSwap = NextWeapon;
 
     float TargetPlayRate = 1.0f;
-
     if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
         if (HasFastHands() || GS->IsTeamAdrenalineActive())
@@ -607,10 +654,10 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 
     PendingWeaponForSwap = NewWeapon;
 
-    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
-    if (AnimInstance && SwapWeaponMontage)
+    if (SwapWeaponMontage)
     {
-        if (AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+        UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+        if (AnimInstance && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
         {
             AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
         }
@@ -628,15 +675,29 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
             BasePlayRate = 2.0f;
         }
 
-        AnimInstance->Montage_Play(SwapWeaponMontage, BasePlayRate);
+        PlayAnimMontage(SwapWeaponMontage, BasePlayRate);
+        Multicast_PlaySwapMontage(BasePlayRate);
 
-        FOnMontageEnded ServerMontageEndedDelegate;
-        ServerMontageEndedDelegate.BindUObject(this, &AHama::OnSwapWeaponMontageEnded);
-        AnimInstance->Montage_SetEndDelegate(ServerMontageEndedDelegate, SwapWeaponMontage);
+        if (AnimInstance)
+        {
+            FOnMontageEnded ServerMontageEndedDelegate;
+            ServerMontageEndedDelegate.BindUObject(this, &AHama::OnSwapWeaponMontageEnded);
+            AnimInstance->Montage_SetEndDelegate(ServerMontageEndedDelegate, SwapWeaponMontage);
+        }
     }
     else
     {
         CompleteWeaponSwap();
+    }
+}
+
+void AHama::Multicast_PlaySwapMontage_Implementation(float PlayRate)
+{
+    if (IsLocallyControlled()) return;
+
+    if (SwapWeaponMontage)
+    {
+        PlayAnimMontage(SwapWeaponMontage, PlayRate);
     }
 }
 
@@ -698,7 +759,13 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 
     if (CurrentWeapon)
     {
-        if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+        CurrentWeapon->StopFire();
+
+        if (CurrentWeapon->IsReloading())
+        {
+            CurrentWeapon->CancelReload();
+        }
+
         PreDeathMachineWeapon = CurrentWeapon;
         PreDeathMachineWeapon->SetActorHiddenInGame(true);
         PreDeathMachineWeapon->SetActorEnableCollision(false);
@@ -722,8 +789,8 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
         OnRep_CurrentWeapon();
-        //OnWeaponChanged.Broadcast(CurrentWeapon);
     }
+
     GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
 }
 
@@ -736,6 +803,8 @@ void AHama::RemoveDeathMachine()
 
     if (IsValid(ActiveDeathMachine))
     {
+        // 🔥 زۆر گرنگە: وەستاندنی تەقەی Death Machine پێش سڕینەوەی
+        ActiveDeathMachine->StopFire();
         ActiveDeathMachine->Destroy();
         ActiveDeathMachine = nullptr;
     }
@@ -767,6 +836,7 @@ void AHama::RemoveDeathMachine()
         OnRep_CurrentWeapon();
         //OnWeaponChanged.Broadcast(CurrentWeapon);
 
+      
         if (CurrentWeapon->CanReload())
         {
             CurrentWeapon->Reload();
@@ -835,8 +905,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHama::FireActionReleased);
         EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
         EnhancedInput->BindAction(AbilityAction, ETriggerEvent::Started, this, &AHama::AbilityActionPressed);
-        EnhancedInput->BindAction(SwapWeaponAction, ETriggerEvent::Started, this, &AHama::SwapWeapon);
-        EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &AHama::InteractActionPressed);
+        EnhancedInput->BindAction(SwapWeaponAction, ETriggerEvent::Started, this, &AHama::Input_SwapWeapon);        EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &AHama::InteractActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Triggered, this, &AHama::GamepadXActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Completed, this, &AHama::GamepadXActionReleased);
         EnhancedInput->BindAction(MeleeAction, ETriggerEvent::Started, this, &AHama::MeleeActionPressed);

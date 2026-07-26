@@ -72,6 +72,9 @@ protected:
 
     FWidgetAnimationDynamicEvent PowerUpAnimDelegate;
 
+    UPROPERTY(EditDefaultsOnly)
+    float Perksize = 128.0f;
+
 public:
     // --- Event Handlers ---
     UFUNCTION()

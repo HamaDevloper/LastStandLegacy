@@ -556,6 +556,11 @@ ALastStandLegacyGameState* ABaseWeapon::GetGameStateCache() const
     return GSCache;
 }
 
+bool ABaseWeapon::HasAmmo() const
+{
+    return  CurrentAmmo > 0 || ReserveAmmo > 0;
+}
+
 bool ABaseWeapon::NeedsAmmo() const
 {
     return (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
@@ -582,19 +587,22 @@ void ABaseWeapon::RefillAmmo()
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
 
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    bool bIsEquipped = (OwnerCharacter && OwnerCharacter->GetCurrentWeapon() == this);
+
+    if (bIsEquipped && OwnerCharacter->IsLocallyControlled())
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 
-    if (bWasEmpty)
+    if (bWasEmpty && bIsEquipped)
     {
-        if (OwnerCharacter && OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
-        if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+        if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+
+        if (OwnerCharacter->IsLocallyControlled())
         {
             Reload();
         }
-        else if (OwnerCharacter)
+        else
         {
             Client_ForceReload(ReserveAmmo);
         }
@@ -603,16 +611,17 @@ void ABaseWeapon::RefillAmmo()
 
 void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
 {
-    if (OwnerCharacter && OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
-
     ReserveAmmo = NewReserveAmmo;
 
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-    {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
+    bool bIsEquipped = (OwnerCharacter && OwnerCharacter->GetCurrentWeapon() == this);
 
-    Reload();
+    if (bIsEquipped && OwnerCharacter->IsLocallyControlled())
+    {
+        if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+        Reload();
+    }
 }
 
 float ABaseWeapon::GetCalculatedReloadTime() const
@@ -627,17 +636,16 @@ float ABaseWeapon::GetCalculatedReloadTime() const
 
 void ABaseWeapon::Reload()
 {
-    if (ReserveAmmo <= 0 || CurrentAmmo >= MaxAmmoInClip || bIsReloading || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
+    if (ReserveAmmo <= 0)
+    {
+        if (CurrentAmmo <= 0 && OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+        {
+            OwnerCharacter->AutoSwapToAvailableWeapon();
+        }
+        return;
+    }
 
-    GEngine->AddOnScreenDebugMessage(
-        -1,
-        5,
-        FColor::Yellow,
-        FString::Printf(TEXT("Local=%d Reserve=%d Current=%d Reloading=%d"),
-            OwnerCharacter ? OwnerCharacter->IsLocallyControlled() : -1,
-            ReserveAmmo,
-            CurrentAmmo,
-            bIsReloading));
+    if (CurrentAmmo >= MaxAmmoInClip || bIsReloading || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
     GetWorldTimerManager().ClearTimer(ReloadTimerHandle);
     bIsReloading = true;

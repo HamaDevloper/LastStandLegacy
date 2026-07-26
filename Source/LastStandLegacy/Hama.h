@@ -148,19 +148,28 @@ protected:
     UPROPERTY()
     TObjectPtr<ABaseWeapon> PendingWeaponForSwap;
 
+    void Input_SwapWeapon();
+
     UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
-    void SwapWeapon();
+    void SwapWeapon(ABaseWeapon* TargetWeapon = nullptr);
 
     UFUNCTION(Server, Reliable)
     void Server_SwapWeapon(ABaseWeapon* NewWeapon);
+
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_PlaySwapMontage(float PlayRate);
 
     UFUNCTION()
     void OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 public:
+    ABaseWeapon* GetNextWeaponWithAmmo() const;
+    void AutoSwapToAvailableWeapon();
+
     // -----------------------------------------------------------------------------
     // Input Mapping & Actions
     // -----------------------------------------------------------------------------
+protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputMappingContext> DefaultMappingContext;
 

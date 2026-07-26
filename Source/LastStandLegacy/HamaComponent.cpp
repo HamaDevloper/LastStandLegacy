@@ -44,7 +44,7 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 {
     if (bIsAiming == bNewAiming) return;
     bIsAiming = bNewAiming;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsAiming, this);
+
     Server_SetAiming(bIsAiming);
     if (MoveComp) MoveComp->bAiming = bIsAiming;
 
@@ -217,7 +217,6 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
     GetWorld()->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
 
     bIsSprinting = bNewSprinting;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
 
     Server_SetSprint(bIsSprinting);
 
@@ -254,37 +253,58 @@ void UHamaComponent::Server_SetSprint_Implementation(bool bNewSprinting)
 void UHamaComponent::DrainStamina()
 {
     if (!OwnerCharacter || !MoveComp) return;
+
     if (MoveComp->IsFalling()) return;
+
+    FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
+    if (InputVector.SizeSquared() < 0.1f)
+    {
+        SetSprinting(false);
+        return;
+    }
+
+    FVector ForwardVector = OwnerCharacter->GetActorForwardVector();
+    FVector NormalizedInput = InputVector.GetSafeNormal2D();
+
+    float ForwardDot = FVector::DotProduct(ForwardVector, NormalizedInput);
+
+    if (ForwardDot < 0.5f)
+    {
+        SetSprinting(false);
+        return;
+    }
+
+    FVector CurrentVelocity = OwnerCharacter->GetVelocity();
+    CurrentVelocity.Z = 0.f;
+
+    if (CurrentVelocity.SizeSquared() < FMath::Square(750.f))
+    {
+        SetSprinting(false);
+        return;
+    }
 
     if (!GSCache)
     {
         GSCache = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     }
-    
-    FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
-        if (InputVector.SizeSquared() < 0.1f)
-        {
-            SetSprinting(false);
-            return;
-        }
-
-        FVector CurrentVelocity = OwnerCharacter->GetVelocity();
-        CurrentVelocity.Z = 0.f;
-
-        if (CurrentVelocity.SizeSquared() < FMath::Square(750.f))
-        {
-            SetSprinting(false);
-            return;
-        }
 
     const bool bInfiniteStamina = (GSCache && GSCache->IsTeamAdrenalineActive());
     if (bInfiniteStamina) return;
 
     if (Stamina <= 0.f)
     {
-        GetWorld()->GetTimerManager().SetTimer(StaminaPenaltyTimerHandle, PenaltyStamina, false);
         SetSprinting(false);
-        GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, PenaltyStamina);
+
+        GetWorld()->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
+
+        GetWorld()->GetTimerManager().SetTimer(
+            StaminaRegenTimerHandle,
+            this,
+            &UHamaComponent::RegenerateStamina,
+            0.1f,
+            true,
+            PenaltyStamina
+        );
         return;
     }
 
