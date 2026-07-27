@@ -89,4 +89,12 @@ public:
 
 private:
     FTimerHandle SpawnTimerHandle;
+
+    TArray<AZombie*> ZombiesToNuke;
+    FTimerHandle NukeTimerHandle;
+    bool bIsNuking = false;
+    int32 DynamicKillBatchSize = 1;
+
+    UFUNCTION()
+    void ProcessNukeKills();
 };

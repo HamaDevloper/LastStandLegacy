@@ -370,14 +370,20 @@ void ALastStandLegacyGameMode::SpawnPowers(FVector SpawnLocation)
 
 void ALastStandLegacyGameMode::ActivateNuke()
 {
+    if (bIsNuking) return;
+
+    bIsNuking = true;
+    ZombiesToNuke.Empty();
+
     for (TActorIterator<AZombie> It(GetWorld()); It; ++It)
     {
-        AZombie* Zombie = *It;
-        if (Zombie && !Zombie->IsDead())
+        if (*It && !(*It)->IsDead())
         {
-            Zombie->Die(nullptr);
+            ZombiesToNuke.Add(*It);
         }
     }
+
+    DynamicKillBatchSize = FMath::Max(1, FMath::CeilToInt(ZombiesToNuke.Num() / 10.0f));
 
     bool bDoublePoints = false;
     if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
@@ -386,7 +392,6 @@ void ALastStandLegacyGameMode::ActivateNuke()
     }
 
     int32 NukeReward = bDoublePoints ? 800 : 400;
-
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
     {
         if (APlayerController* PC = It->Get())
@@ -395,6 +400,28 @@ void ALastStandLegacyGameMode::ActivateNuke()
             {
                 PS->AddPoints(NukeReward);
             }
+        }
+    }
+
+    GetWorldTimerManager().SetTimer(NukeTimerHandle, this, &ALastStandLegacyGameMode::ProcessNukeKills, 0.05f, true);
+}
+
+void ALastStandLegacyGameMode::ProcessNukeKills()
+{
+    for (int32 i = 0; i < DynamicKillBatchSize; i++)
+    {
+        if (ZombiesToNuke.IsEmpty())
+        {
+            bIsNuking = false;
+            GetWorldTimerManager().ClearTimer(NukeTimerHandle);
+            return;
+        }
+
+        AZombie* ZombieToKill = ZombiesToNuke.Pop();
+
+        if (ZombieToKill && !ZombieToKill->IsDead())
+        {
+            ZombieToKill->Die(nullptr);
         }
     }
 }
