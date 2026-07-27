@@ -34,7 +34,6 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSprinting, Params);
 
     Params.Condition = COND_SkipOwner;
-   
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsAiming, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSlide, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDiving, Params);
@@ -71,6 +70,11 @@ void UHamaComponent::SetDowned(bool NewValue)
     }
 
     if (MoveComp) MoveComp->bDowned = bIsDowned;
+
+    if (bIsDowned)
+    {
+        OwnerCharacter->Server_CancelRevive();
+    }
 }
 
 void UHamaComponent::StartSlide()

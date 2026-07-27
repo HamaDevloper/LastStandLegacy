@@ -5,7 +5,7 @@
 
 ALastStandLegacyGameState::ALastStandLegacyGameState()
 {
-    SetNetUpdateFrequency(1.f);
+    SetNetUpdateFrequency(2.f);
 }
 
 void ALastStandLegacyGameState::Multicast_AnnouncePowerUp_Implementation(EPowerUpType PowerUpType)
@@ -76,7 +76,6 @@ void ALastStandLegacyGameState::StartTeamAdrenaline(float Duration)
     if (HasAuthority())
     {
         bIsAdrenalineActive = true;
-
         MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsAdrenalineActive, this);
 
         OnRep_Adrenaline();
@@ -128,7 +127,6 @@ void ALastStandLegacyGameState::StartDoublePoints(float Duration)
     if (HasAuthority())
     {
         bIsDoublePointsActive = true;
-      
         MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsDoublePointsActive, this);
 
         OnRep_DoublePoints();
@@ -141,7 +139,6 @@ void ALastStandLegacyGameState::EndDoublePoints()
     if (HasAuthority())
     {
         bIsDoublePointsActive = false;
-        
         MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsDoublePointsActive, this);
 
         OnRep_DoublePoints();
@@ -154,7 +151,6 @@ void ALastStandLegacyGameState::StartinstaKill(float Duration)
     if (HasAuthority())
     {
         bHasInstaKill = true;
-        
         MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bHasInstaKill, this);
 
         OnRep_InstaKill();
@@ -167,7 +163,6 @@ void ALastStandLegacyGameState::EndInstaKill()
     if (HasAuthority())
     {
         bHasInstaKill = false;
-        
         MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bHasInstaKill, this);
 
         OnRep_InstaKill();

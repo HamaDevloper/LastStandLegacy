@@ -3,9 +3,11 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "HamaComponent.generated.h"
+
 class AHama;
 class UHamaMovementComponent;
 class ALastStandLegacyGameState;
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class LASTSTANDLEGACY_API UHamaComponent : public UActorComponent
 {

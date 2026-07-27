@@ -344,12 +344,14 @@ protected:
 
 public:
     bool bIsFireButtonHold = false;
+    void ResetValuesAfterSprint();
 
 private:
     FTimerHandle CrossHairTimerHandle;
     bool bLastCrossHairState = false;
 
 public:
+    void StopSprint();
     FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
     FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
@@ -376,7 +378,6 @@ public:
     void ApplyRoleVisuals(EHamaAbilityType NewRole);
 
 public:
-    //FOnWeaponChanged OnWeaponChanged;
     void RefillAllWeapons();
 
 protected:
@@ -487,23 +488,29 @@ protected:
 public:
     void PerformMeleeHitDetection();
 
+public:
     UFUNCTION(Server, Reliable)
     void Server_BeginRevive(AHama* DownedPlayer);
 
     UFUNCTION(Server, Reliable)
     void Server_CancelRevive();
 
+    // ⚡ گۆڕدرا: لادانی Parameter بۆ ڕێگری لە Memory Crash
     UFUNCTION()
-    void Server_CompleteRevive(AHama* DownedPlayer);
+    void Server_CompleteRevive();
+
+    void Server_CheckReviveConditions();
+    void ClearAllReviveTimers();
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama | Revive")
     float DefaultReviveTime = 5.0f;
 
-    void StopSprint();
-    void ResetValuesAfterSprint();
-
 private:
     FTimerHandle ReviveTimerHandle;
+    FTimerHandle ReviveCheckTimerHandle;
+
+    UPROPERTY()
+    TWeakObjectPtr<AHama> CurrentReviveTarget;
 
     bool bIsCurrentlyReviving = false;
 

@@ -249,6 +249,8 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
             {
                 FocusedInteractable = nullptr;
             }
+
+            OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
         }
     }
 }
@@ -290,6 +292,16 @@ void AHama::CheckForInteractables()
 
 void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Datum)
 {
+    if (NearbyInteractablesCount <= 0)
+    {
+        if (FocusedInteractable)
+        {
+            FocusedInteractable = nullptr;
+            OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
+        }
+        return;
+    }
+
     if (Datum.OutHits.IsEmpty() || !Datum.OutHits[0].GetActor())
     {
         if (FocusedInteractable)
@@ -1855,60 +1867,121 @@ void AHama::Interact(AHama* InteractingPlayer)
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 {
-    if (!DownedPlayer || !DownedPlayer->HealthComponent || !DownedPlayer->HamaComponent->IsDowned()) return;
+    if (!DownedPlayer || !DownedPlayer->HealthComponent) return;
 
-    if (bIsDead || (HamaComponent && HamaComponent->IsDowned())) return;
+    // 🔒 پشکنین لە ڕێگەی HealthComponent
+    if (DownedPlayer->HealthComponent->IsBeingRevived()) return;
 
-    float DistanceToTarget = FVector::Dist(GetActorLocation(), DownedPlayer->GetActorLocation());
-    if (DistanceToTarget > SetIntractDistance + 100.f)
+    if (bIsDead || IsDowned() || !DownedPlayer->HealthComponent->IsDowned()) return;
+
+    const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.f);
+    if (FVector::DistSquared(GetActorLocation(), DownedPlayer->GetActorLocation()) > MaxAllowedDistSq)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Cheat Detected: Player %s tried to revive from too far away!"), *GetName());
         return;
     }
 
-    if (GetWorldTimerManager().IsTimerActive(ReviveTimerHandle)) return;
+    ClearAllReviveTimers();
+
+    CurrentReviveTarget = DownedPlayer;
+    DownedPlayer->HealthComponent->SetBeingRevived(true);
 
     float ReviveTime = DefaultReviveTime;
 
-    UHamaAbilityComponent* MyAbilityComp = FindComponentByClass<UHamaAbilityComponent>();
-    if (MyAbilityComp && MyAbilityComp->GetAssignedAbility() == EHamaAbilityType::MedicalSupport)
-    {
-        ReviveTime /= 2.0f;
-    }
-
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-    if (GS && GS->IsTeamAdrenalineActive())
+
+    if (bHasQuickRevive || (GS && GS->IsTeamAdrenalineActive()))
     {
-        ReviveTime /= 2.0f;
+        ReviveTime *= 0.5f;
+    }
+    if (HamaAbilityComponent && HamaAbilityComponent->GetAssignedAbility() == EHamaAbilityType::MedicalSupport)
+    {
+        ReviveTime *= 0.5f;
     }
 
     FTimerDelegate ReviveDel;
-    ReviveDel.BindUFunction(this, FName("Server_CompleteRevive"), DownedPlayer);
-
+    ReviveDel.BindUObject(this, &AHama::Server_CompleteRevive);
     GetWorldTimerManager().SetTimer(ReviveTimerHandle, ReviveDel, ReviveTime, false);
+
+    GetWorldTimerManager().SetTimer(
+        ReviveCheckTimerHandle,
+        this,
+        &AHama::Server_CheckReviveConditions,
+        0.1f,
+        true
+    );
+}
+
+void AHama::Server_CheckReviveConditions()
+{
+    if (bIsDead || IsDowned())
+    {
+        Server_CancelRevive();
+        return;
+    }
+
+    AHama* Target = CurrentReviveTarget.Get();
+
+    if (!IsValid(Target) || !Target->HealthComponent || !Target->HealthComponent->IsDowned())
+    {
+        Server_CancelRevive();
+        return;
+    }
+
+    const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.f);
+    if (FVector::DistSquared(GetActorLocation(), Target->GetActorLocation()) > MaxAllowedDistSq)
+    {
+        Server_CancelRevive();
+        return;
+    }
 }
 
 void AHama::Server_CancelRevive_Implementation()
 {
-    GetWorldTimerManager().ClearTimer(ReviveTimerHandle);
+    ClearAllReviveTimers();
 }
 
-void AHama::Server_CompleteRevive(AHama* DownedPlayer)
+void AHama::ClearAllReviveTimers()
 {
-    if (DownedPlayer && DownedPlayer->HealthComponent && DownedPlayer->HamaComponent->IsDowned())
-    {
-        DownedPlayer->HealthComponent->Revive();
+    GetWorldTimerManager().ClearTimer(ReviveTimerHandle);
+    GetWorldTimerManager().ClearTimer(ReviveCheckTimerHandle);
 
-        if (AHamaPlayerState* MyPS = GetPlayerState<AHamaPlayerState>())
+    if (AHama* Target = CurrentReviveTarget.Get())
+    {
+        if (Target->HealthComponent)
         {
-            MyPS->AddPoints(100);
+            Target->HealthComponent->SetBeingRevived(false);
         }
     }
 
-    if (auto* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+    CurrentReviveTarget = nullptr;
+}
+
+void AHama::Server_CompleteRevive()
+{
+    GetWorldTimerManager().ClearTimer(ReviveCheckTimerHandle);
+
+    if (bIsDead || IsDowned())
     {
-        Director->SetPlayerTargetable(this, true);
+        ClearAllReviveTimers();
+        return;
     }
+
+    AHama* Target = CurrentReviveTarget.Get();
+
+    if (IsValid(Target) && Target->HealthComponent)
+    {
+        if (Target->HealthComponent->IsDowned())
+        {
+            Target->HealthComponent->Revive();
+
+            if (AHamaPlayerState* MyPS = GetPlayerState<AHamaPlayerState>())
+            {
+                MyPS->AddPoints(100);
+            }
+        }
+    }
+
+    ClearAllReviveTimers();
 }
 
 void AHama::Client_OnStaminUpAcquired_Implementation(float NewMaxStamina)

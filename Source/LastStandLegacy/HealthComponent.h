@@ -21,12 +21,14 @@ protected:
     virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    // 🚀 لابردنی ڕەقە ژمارەکان و دانانی باری ڕاستەقینە بۆ فرەیاریزان
     UPROPERTY(ReplicatedUsing = OnRep_CurrentHealth, EditAnywhere, BlueprintReadOnly, Category = "Health")
     float CurrentHealth = 100.f;
 
     UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Health")
     float MaxHealth = 100.f;
+
+    // 🔒 تەنها لەسەر سێرڤەر بەکاردێت بۆ ڕێگری لەوەی دوو یاریزان هاوکات Reviveی بکان (Unreplicated)
+    bool bIsBeingRevived = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health")
     float HealthGenerateDelay = 3.f;
@@ -38,10 +40,14 @@ protected:
     void OnRep_CurrentHealth(float OldHealth);
 
 public:
-    // 🚀 فەنکشنە تازەکە لەبری GetDamageـی کۆن
     void ApplyDamage(float Amount, AActor* DamageCauser);
     void UpgradeHealth(float Amount);
     void Revive();
+
+    bool IsDowned() const;
+
+    FORCEINLINE bool IsBeingRevived() const { return bIsBeingRevived; }
+    FORCEINLINE void SetBeingRevived(bool bState) { bIsBeingRevived = bState; }
 
     UPROPERTY(BlueprintAssignable)
     FOnDeathDelegate OnDeath;
@@ -59,7 +65,6 @@ private:
     TObjectPtr<UHamaComponent> OwnerComponent;
 
     FTimerHandle RegenerateHealthTimer;
-    FTimerHandle ReviveTimerHandle;
     FTimerHandle DownTimerHandle;
     FTimerHandle QuickReviveTimerHandle;
 };

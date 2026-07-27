@@ -140,36 +140,35 @@ void UHamaAbilityComponent::ActivateBulletStorm()
 
 void UHamaAbilityComponent::ActivateMedicalSupport()
 {
-    UWorld* World = GetWorld();
     AActor* Owner = GetOwner();
-    if (!World || !Owner) return;
+    if (!Owner || !Owner->HasAuthority()) return;
 
-    FVector CenterLocation = Owner->GetActorLocation();
-    TArray<FOverlapResult> OverlapResults; // گۆڕا بۆ OverlapResult
-    FCollisionShape SphereShape = FCollisionShape::MakeSphere(SphereRadius);
+    UWorld* World = GetWorld();
+    if (!World) return;
 
-    FCollisionQueryParams Params;
-    Params.AddIgnoredActor(Owner); // خۆت فەرامۆش دەکەیت بۆ ئەوەی خۆت نەگریت
+    ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
+    if (!GS) return;
 
-    // بەکارهێنانی Overlap لەبری Sweep
-    bool bHit = World->OverlapMultiByChannel(OverlapResults, CenterLocation, FQuat::Identity, ECC_Pawn, SphereShape, Params);
+    const FVector CenterLocation = Owner->GetActorLocation();
+    const float SphereRadiusSq = FMath::Square(SphereRadius);
     bool bSuccessfullyRevivedSomeone = false;
 
-    if (bHit)
+    for (APlayerState* PS : GS->PlayerArray)
     {
-        for (const FOverlapResult& Overlap : OverlapResults)
+        if (!PS) continue;
+
+        AHama* TargetHama = Cast<AHama>(PS->GetPawn());
+        if (!TargetHama || TargetHama == Owner) continue;
+
+        UHealthComponent* TargetHealth = TargetHama->HealthComponent;
+        if (!TargetHealth) continue;
+
+        if (FVector::DistSquared(CenterLocation, TargetHama->GetActorLocation()) <= SphereRadiusSq)
         {
-            // وەرگرتنی ئەکتەرەکە لە Overlapـەوە
-            if (AHama* Hama = Cast<AHama>(Overlap.GetActor()))
+            if (TargetHealth->IsDowned())
             {
-                if (UHamaComponent* HamaComponent = Hama->FindComponentByClass<UHamaComponent>())
-                {
-                    if (HamaComponent->IsDowned())
-                    {
-                        //HamaComponent->Revive();
-                        bSuccessfullyRevivedSomeone = true;
-                    }
-                }
+                TargetHealth->Revive();
+                bSuccessfullyRevivedSomeone = true;
             }
         }
     }
@@ -177,11 +176,6 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
     if (bSuccessfullyRevivedSomeone)
     {
         ResetPower();
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Medical Support Successfully Revived Player(s)!"));
-    }
-    else
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow, TEXT("Medical Support Failed: No downed players nearby. Power kept."));
     }
 }
 

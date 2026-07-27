@@ -37,44 +37,43 @@ void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, MaxHealth, Params);
 }
 
+bool UHealthComponent::IsDowned() const
+{
+    return OwnerComponent ? OwnerComponent->IsDowned() : false;
+}
+
 void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
 {
     if (CurrentHealth < OldHealth)
     {
         if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
         {
-            //OwnerCharacter->Client_ShowDamageIndicator();
+            // OwnerCharacter->Client_ShowDamageIndicator();
         }
     }
 }
 
 void UHealthComponent::UpgradeHealth(float Amount)
 {
-    if (!GetOwner()->HasAuthority()) return;
+    if (!GetOwner()->HasAuthority() || Amount <= 0.0f) return;
 
-    MaxHealth = Amount;
+    MaxHealth += Amount;
+    CurrentHealth = FMath::Clamp(CurrentHealth + Amount, 0.f, MaxHealth);
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
-
-    if (UWorld* World = GetWorld())
-    {
-        if (!World->GetTimerManager().IsTimerActive(RegenerateHealthTimer))
-        {
-            World->GetTimerManager().SetTimer(RegenerateHealthTimer, this, &UHealthComponent::RegenerateHealth, HealthTickGenerate, true, HealthGenerateDelay);
-        }
-    }
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 }
 
 void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 {
-    if (!GetOwner()->HasAuthority()) return;
+    // 🔒 پشکنینی IsDowned() لە ڕێگەی HamaComponentـەوە
+    if (!GetOwner()->HasAuthority() || IsDowned()) return;
 
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
 
         CurrentHealth = FMath::Clamp(CurrentHealth - Amount, 0.f, MaxHealth);
-
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 
         if (CurrentHealth <= 0.f)
@@ -94,8 +93,6 @@ void UHealthComponent::RegenerateHealth()
 
     CurrentHealth += HealAmountPerTick;
 
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
-
     if (CurrentHealth >= MaxHealth)
     {
         CurrentHealth = MaxHealth;
@@ -104,11 +101,21 @@ void UHealthComponent::RegenerateHealth()
             World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
         }
     }
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 }
 
 void UHealthComponent::DownPlayer()
 {
-    if (!GetOwner()->HasAuthority()) return;
+    if (!GetOwner()->HasAuthority() || IsDowned()) return;
+
+    bIsBeingRevived = false;
+
+    // 🚀 گۆڕینی Stance لەناو HamaComponent (ئەمە bIsDowned ڕیپڵیکەیت دەکات)
+    if (OwnerComponent)
+    {
+        OwnerComponent->SetDowned(true);
+    }
 
     if (UWorld* World = GetWorld())
     {
@@ -120,19 +127,13 @@ void UHealthComponent::DownPlayer()
 
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
-        
-        // لە داخل کلاسەکەی Hama (کاتێک Down بوو)
-        if (auto* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+
+        if (auto* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
         {
-            Director->SetPlayerTargetable(Cast<APawn>(OwnerCharacter), false);
+            Director->SetPlayerTargetable(Cast<APawn>(GetOwner()), false);
         }
 
-        if (OwnerComponent)
-        {
-            OwnerComponent->SetDowned(true);
-        }
-
-        ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+        ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
         if (GS && GS->bIsSoloMatch && OwnerCharacter && OwnerCharacter->HasQuickRevive())
         {
             OwnerCharacter->HandleDeath();
@@ -146,7 +147,7 @@ void UHealthComponent::DownPlayer()
                 OwnerCharacter->HandleDeath();
             }
         }
-      
+
         World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, 45.0f, false);
     }
 }
@@ -155,51 +156,62 @@ void UHealthComponent::Revive()
 {
     if (!GetOwner()->HasAuthority()) return;
 
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(DownTimerHandle);
-    }
-
-    CurrentHealth = MaxHealth;
-    
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
+    bIsBeingRevived = false;
 
     if (OwnerComponent)
     {
         OwnerComponent->SetDowned(false);
     }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(DownTimerHandle);
+        World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
+
+        if (auto* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            Director->SetPlayerTargetable(Cast<APawn>(GetOwner()), true);
+        }
+    }
+
+    CurrentHealth = MaxHealth;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 }
 
 void UHealthComponent::HandlePlayerDeath()
 {
     if (!GetOwner()->HasAuthority() || !OwnerCharacter || OwnerCharacter->bIsDead) return;
 
-    GetWorld()->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
+        World->GetTimerManager().ClearTimer(DownTimerHandle);
+    }
 
     OnDeath.Broadcast();
 
     APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
     if (PC && GetWorld() && GetWorld()->GetGameState())
     {
-        PC->UnPossess();
-
-        APlayerController* SpectatorPC = nullptr;
+        APawn* SpectatorTargetPawn = nullptr;
         for (auto PlayerState : GetWorld()->GetGameState()->PlayerArray)
         {
             if (PlayerState && PlayerState->GetPawn() && PlayerState->GetPawn() != OwnerCharacter)
             {
-                SpectatorPC = Cast<APlayerController>(PlayerState->GetOwner());
+                SpectatorTargetPawn = PlayerState->GetPawn();
                 break;
             }
         }
 
+        PC->UnPossess();
+
+        if (SpectatorTargetPawn)
+        {
+            PC->SetViewTargetWithBlend(SpectatorTargetPawn, 0.5f);
+        }
+
         PC->ChangeState(NAME_Spectating);
         PC->ClientGotoState(NAME_Spectating);
-
-        if (SpectatorPC && SpectatorPC->GetPawn())
-        {
-            PC->SetViewTargetWithBlend(SpectatorPC->GetPawn(), 0.5f);
-        }
     }
 
     OwnerCharacter->Destroy();
