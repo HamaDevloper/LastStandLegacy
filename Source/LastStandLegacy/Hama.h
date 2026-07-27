@@ -524,4 +524,12 @@ private:
 
     UFUNCTION(Client, Reliable)
     void Client_OnPlayerDowned();
+
+ public:
+     UFUNCTION(BlueprintCallable, Category = "Weapons")
+     TArray<TSubclassOf<class ABaseWeapon>> GetOwnedWeaponClasses() const;
+
+protected:
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapons|Inventory")
+    TArray<TObjectPtr<ABaseWeapon>> EquippedWeapons;
 };

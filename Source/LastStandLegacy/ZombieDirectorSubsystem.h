@@ -6,6 +6,7 @@
 
 class AZombie;
 class APawn;
+class AMysteryBoxSpawnPoint;
 
 UCLASS()
 class LASTSTANDLEGACY_API UZombieDirectorSubsystem : public UTickableWorldSubsystem
@@ -31,6 +32,10 @@ public:
     // فەنکشنێکی زۆر گرنگ بۆ Performance: تەنها ئەو یاریزانانە زیاد بکە کە دەکرێت ببنە ئامانج
     void SetPlayerTargetable(APawn* Player, bool bIsTargetable);
 
+    void RegisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPoint* Point);
+    void UnregisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPoint* Point);
+    AMysteryBoxSpawnPoint* GetRandomFreeMysteryBoxPoint(AMysteryBoxSpawnPoint* CurrentPoint);
+
 private:
     UPROPERTY()
     TArray<AZombie*> ActiveZombies;
@@ -40,6 +45,9 @@ private:
 
     UPROPERTY()
     TArray<APawn*> ValidTargetPlayers;
+
+    UPROPERTY()
+    TArray<TObjectPtr<AMysteryBoxSpawnPoint>> MysteryBoxSpawnPoints;
 
     // --- ڕێکخستنەکانی Time-Slicing بۆ Optimization ---
 

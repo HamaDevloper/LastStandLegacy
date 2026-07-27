@@ -47,12 +47,12 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     HamaMovementComponent = Cast<UHamaMovementComponent>(GetCharacterMovement());
 
     SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
-    SpringArm->SetupAttachment(RootComponent);
+    SpringArm->SetupAttachment(GetMesh());
     SpringArm->TargetArmLength = 300.f;
     SpringArm->bUsePawnControlRotation = true;
 
     TPCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TPCamera"));
-    TPCamera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+    TPCamera->SetupAttachment(SpringArm);
     TPCamera->bUsePawnControlRotation = false;
 
     FPCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FPCamera"));
@@ -431,6 +431,22 @@ void AHama::CreateDefaultWeapon()
     }
 }
 
+TArray<TSubclassOf<ABaseWeapon>> AHama::GetOwnedWeaponClasses() const
+{
+    TArray<TSubclassOf<ABaseWeapon>> OwnedClasses;
+    OwnedClasses.Reserve(EquippedWeapons.Num());
+
+    for (const ABaseWeapon* Weapon : EquippedWeapons)
+    {
+        if (IsValid(Weapon))
+        {
+            OwnedClasses.Add(Weapon->GetClass());
+        }
+    }
+
+    return OwnedClasses;
+}
+
 void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
 {
     if (!HasAuthority() || !WeaponClassToGive) return;
@@ -463,9 +479,33 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
         {
             if (CurrentWeapon)
             {
-                if (CurrentWeapon == PrimaryWeapon) { PrimaryWeapon = SpawnedWeapon; MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this); }
-                else if (CurrentWeapon == SecondaryWeapon) { SecondaryWeapon = SpawnedWeapon; MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this); }
-                else if (CurrentWeapon == ThirdWeapon) { ThirdWeapon = SpawnedWeapon; MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this); }
+                bool bSlotUpdated = false;
+
+                if (CurrentWeapon == PrimaryWeapon)
+                {
+                    PrimaryWeapon = SpawnedWeapon;
+                    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
+                    bSlotUpdated = true;
+                }
+                else if (CurrentWeapon == SecondaryWeapon)
+                {
+                    SecondaryWeapon = SpawnedWeapon;
+                    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this);
+                    bSlotUpdated = true;
+                }
+                else if (CurrentWeapon == ThirdWeapon)
+                {
+                    ThirdWeapon = SpawnedWeapon;
+                    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
+                    bSlotUpdated = true;
+                }
+
+                if (!bSlotUpdated)
+                {
+                    UE_LOG(LogTemp, Error, TEXT("GiveWeapon: CurrentWeapon (%s) matched no weapon slot — falling back to Primary."), *CurrentWeapon->GetName());
+                    PrimaryWeapon = SpawnedWeapon;
+                    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
+                }
 
                 ABaseWeapon* WeaponToDestroy = CurrentWeapon;
                 WeaponToDestroy->Destroy();
@@ -483,13 +523,12 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
 
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
-
         OnRep_CurrentWeapon();
-        //OnWeaponChanged.Broadcast(CurrentWeapon);
 
-        UE_LOG(LogTemp, Warning, TEXT("GiveWeapon Success: %s equipped."), *SpawnedWeapon->GetName());
+        //OnWeaponChanged.Broadcast(CurrentWeapon);
     }
 }
+
 void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 {
     if (WeaponToAttach && GetMesh())

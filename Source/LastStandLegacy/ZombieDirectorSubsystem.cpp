@@ -1,6 +1,7 @@
 ﻿#include "ZombieDirectorSubsystem.h"
 #include "Zombie.h"
 #include "AIController.h"
+#include "MysteryBoxSpawnPoint.h" 
 
 void UZombieDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -11,6 +12,7 @@ void UZombieDirectorSubsystem::Deinitialize()
 {
     ActiveZombies.Empty();
     ActivePlayers.Empty();
+    MysteryBoxSpawnPoints.Empty();
     Super::Deinitialize();
 }
 
@@ -139,4 +141,45 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 TStatId UZombieDirectorSubsystem::GetStatId() const
 {
     RETURN_QUICK_DECLARE_CYCLE_STAT(UZombieDirectorSubsystem, STATGROUP_Tickables);
+}
+
+// ==========================================
+// ⚡ Mystery Box Spawn Point Management
+// ==========================================
+
+void UZombieDirectorSubsystem::RegisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPoint* Point)
+{
+    if (Point && !MysteryBoxSpawnPoints.Contains(Point))
+    {
+        MysteryBoxSpawnPoints.Add(Point);
+    }
+}
+
+void UZombieDirectorSubsystem::UnregisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPoint* Point)
+{
+    if (Point)
+    {
+        MysteryBoxSpawnPoints.RemoveSingleSwap(Point, EAllowShrinking::No);
+    }
+}
+
+AMysteryBoxSpawnPoint* UZombieDirectorSubsystem::GetRandomFreeMysteryBoxPoint(AMysteryBoxSpawnPoint* CurrentPoint)
+{
+    TArray<AMysteryBoxSpawnPoint*> ValidPoints;
+
+    for (AMysteryBoxSpawnPoint* Point : MysteryBoxSpawnPoints)
+    {
+        if (IsValid(Point) && Point != CurrentPoint && !Point->IsOccupied())
+        {
+            ValidPoints.Add(Point);
+        }
+    }
+
+    if (ValidPoints.Num() > 0)
+    {
+        int32 RandomIndex = FMath::RandRange(0, ValidPoints.Num() - 1);
+        return ValidPoints[RandomIndex];
+    }
+
+    return nullptr;
 }
