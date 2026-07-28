@@ -101,6 +101,6 @@ private:
 
 
 public:
-    float TargetSearchCooldown = 0.f;
+    float NextTargetSearchTime = 0.f;
 
 };

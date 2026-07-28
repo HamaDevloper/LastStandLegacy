@@ -153,6 +153,7 @@ void AMysteryBox::OpenMysteryBox(AHama* Player)
     UpdateVisuals();
 
     FlushNetDormancy();
+    ForceNetUpdate();
 
     GetWorldTimerManager().SetTimer(TimerHandle_Spin, this, &AMysteryBox::FinishSpin, SpinDuration, false);
 }
@@ -208,6 +209,7 @@ void AMysteryBox::FinishSpin()
     UpdateVisuals();
 
     FlushNetDormancy();
+    ForceNetUpdate();
 
     GetWorldTimerManager().SetTimer(TimerHandle_OfferTimeout, this, &AMysteryBox::ResetBox, OfferDuration, false);
 }
@@ -233,6 +235,7 @@ void AMysteryBox::HandleTeddyBear()
     UpdateVisuals();
 
     FlushNetDormancy();
+    ForceNetUpdate();
 
     GetWorldTimerManager().SetTimer(TimerHandle_TeddyBear, this, &AMysteryBox::RelocateBox, 4.0f, false);
 }
@@ -272,6 +275,7 @@ void AMysteryBox::ResetBox()
     UpdateVisuals();
 
     FlushNetDormancy();
+    ForceNetUpdate();
 
     GetWorldTimerManager().SetTimer(TimerHandle_ResetToIdle, this, &AMysteryBox::ResetToIdle, 1.5f, false);
 }
@@ -283,6 +287,7 @@ void AMysteryBox::ResetToIdle()
     UpdateVisuals();
 
     FlushNetDormancy();
+    ForceNetUpdate();
 }
 
 void AMysteryBox::OnRep_BoxState()

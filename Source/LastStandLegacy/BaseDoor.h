@@ -2,47 +2,52 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "InteractInterface.h"
 #include "BaseDoor.generated.h"
 
-class AHama;
 class UStaticMeshComponent;
 class UBoxComponent;
+class AHama;
+class AHamaPlayerState;
+class USoundBase;
 
 UCLASS()
-class LASTSTANDLEGACY_API ABaseDoor : public AActor, public IInteractInterface
+class LASTSTANDLEGACY_API ABaseDoor : public AActor
 {
     GENERATED_BODY()
 
 public:
     ABaseDoor();
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door|Components")
-    TObjectPtr<UStaticMeshComponent> DoorMesh;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door|Components")
-    TObjectPtr<UBoxComponent> TriggerBox;
-
-protected:
-    virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    virtual void Interact(AHama* Player) override;
-    virtual FString GetInteractMessage() override;
-    virtual bool CanInteract(AHama* InteractingPlayer) override;
+    UFUNCTION(BlueprintCallable, Category = "Door")
+    bool CanInteract(AHama* InteractingPlayer);
 
-    UPROPERTY(ReplicatedUsing = OnRep_OpenDoor, BlueprintReadOnly, Category = "Door|Settings")
+    UFUNCTION(BlueprintCallable, Category = "Door")
+    void Interact(AHama* Player);
+
+    UFUNCTION(BlueprintCallable, Category = "Door")
+    FString GetInteractMessage() const;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Door|Config")
+    int32 DoorPrice = 750;
+
+    UPROPERTY(ReplicatedUsing = OnRep_OpenDoor, BlueprintReadOnly, Category = "Door|State")
     bool bIsDoorOpen = false;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Door|Settings")
-    int32 DoorPrice = 1000;
-
-    UFUNCTION()
-    void OpenDoor(AHama* Player);
-
+protected:
     UFUNCTION()
     void OnRep_OpenDoor();
 
-    UFUNCTION(BlueprintImplementableEvent)
+    UFUNCTION(BlueprintImplementableEvent, Category = "Door")
     void EventOnDoorOpened(bool bIsOpen);
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door|Components")
+    TObjectPtr<UStaticMeshComponent> DoorMesh;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
+    TObjectPtr<USoundBase> DoorOpenSound;
+
+private:
+    void OpenDoor(AHama* Player, AHamaPlayerState* PS);
 };

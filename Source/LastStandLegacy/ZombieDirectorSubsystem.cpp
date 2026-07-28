@@ -84,13 +84,15 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     if (GetWorld()->GetNetMode() == NM_Client) return;
     if (ActiveZombies.IsEmpty() || ValidTargetPlayers.IsEmpty()) return;
 
-    // ١. نوێکردنەوەی کاشی یاریزانەکان هەموو 0.1 چرکەیەک
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+
+    // ١. نوێکردنەوەی کاشی یاریزانەکان
     PlayerCacheRefreshTimer -= DeltaTime;
     if (PlayerCacheRefreshTimer <= 0.f)
     {
         PlayerCacheRefreshTimer = 0.1f;
-        CachedPlayers.Empty();
-        CachedPlayerLocations.Empty();
+        CachedPlayers.Reset();
+        CachedPlayerLocations.Reset();
 
         for (APawn* P : ValidTargetPlayers)
         {
@@ -111,17 +113,11 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     }
 
     constexpr int32 DesiredCycleFrames = 30;
-
-    // ڕاستکردنەوە: لابردنی int32 بۆ ئەوەی گۆڕاوی گلۆباڵ نەشارێتەوە (Shadowing)
     ZombiesToUpdatePerFrame = FMath::Clamp(FMath::CeilToInt(ZombieCount / (float)DesiredCycleFrames), 1, 30);
 
-    int32 EndIndex = FMath::Min(CurrentZombieIndex + ZombiesToUpdatePerFrame, ZombieCount);
-
     static constexpr float TargetMovedThresholdSq = 150.f * 150.f;
-
-    // ٢. تێکەڵکردنی Time-Budget Safeguard بۆ ڕێگریکردن لە Spikeـی کاتی فرەیم
     const double StartTime = FPlatformTime::Seconds();
-    constexpr double TimeBudgetSeconds = 0.0005; // 0.5ms
+    constexpr double TimeBudgetSeconds = 0.0005; // 0.5ms Time-Budget
 
     int32 i = CurrentZombieIndex;
     for (; i < ZombieCount; ++i)
@@ -133,10 +129,8 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         APawn* TargetPlayer = nullptr;
         FVector PlayerLoc = FVector::ZeroVector;
 
-        Zombie->TargetSearchCooldown -= DeltaTime;
-
-        // ٣. سیستەمی Sticky Target: ئەگەر کۆڵدۆن تەواو نەبووبێت یان ئامانجەکەی هێشتا کارا بێت، ڕاستەوخۆ بەکاریبهێنە بێ گەڕانی نوێ
-        bool bNeedsSearch = (Zombie->TargetSearchCooldown <= 0.f || !IsValid(Zombie->CurrentTarget));
+        // ⚡ [FIX]: پشکنینی کۆڵدۆن بە کاتی ڕاستەقینەی ناو یاری
+        bool bNeedsSearch = (CurrentTime >= Zombie->NextTargetSearchTime || !IsValid(Zombie->CurrentTarget));
 
         if (!bNeedsSearch && Zombie->CurrentTarget)
         {
@@ -144,7 +138,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             if (CurrentTargetIdx != INDEX_NONE)
             {
                 TargetPlayer = Zombie->CurrentTarget;
-                PlayerLoc = CachedPlayerLocations[CurrentTargetIdx]; // وەرگرتنی ڕاستەوخۆی شوێن لە کاش بێ virtual call
+                PlayerLoc = CachedPlayerLocations[CurrentTargetIdx];
             }
             else
             {
@@ -152,11 +146,8 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             }
         }
 
-        // ٤. گەڕانی نوێ تەنها کاتێک پێویست بێت
         if (bNeedsSearch)
         {
-            Zombie->TargetSearchCooldown = FMath::RandRange(0.25f, 0.4f);
-
             int32 NearestPlayerIndex = INDEX_NONE;
             float ClosestDistanceSq = UE_BIG_NUMBER;
 
@@ -174,6 +165,20 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             {
                 TargetPlayer = CachedPlayers[NearestPlayerIndex].Get();
                 PlayerLoc = CachedPlayerLocations[NearestPlayerIndex];
+
+                // ⚡ [SIGNIFICANCE Tiers]: دیاری کردنی داهاتووی پشکنین بەپێی دووری (ClosestDistanceSq)
+                float NextInterval = 0.25f; // High Significance (< 10m)
+
+                if (ClosestDistanceSq > 9000000.f) // > 30 meters
+                {
+                    NextInterval = 2.0f; // Low Significance (پشکنین دوای 2 چڕکە)
+                }
+                else if (ClosestDistanceSq > 1000000.f) // > 10 meters
+                {
+                    NextInterval = 0.75f; // Medium Significance
+                }
+
+                Zombie->NextTargetSearchTime = CurrentTime + NextInterval + FMath::RandRange(0.0f, 0.1f);
             }
         }
 
@@ -189,6 +194,8 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             {
                 Zombie->CurrentTarget = TargetPlayer;
                 Zombie->LastTargetLocation = PlayerLoc;
+
+                // ⚡ MoveToActor تەنها لە شۆفێری پێویستدا بانگ دەکرێت
                 AICon->MoveToActor(TargetPlayer, 40.f, true, true, true);
             }
         }

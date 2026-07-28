@@ -41,10 +41,12 @@ void AZombie::BeginPlay()
 
     CachedMovement = GetCharacterMovement();
 
-    if (!HasAuthority())
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
-        return;
+        MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
     }
+
+    if (!HasAuthority()) return;
 
     CachedGS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     CachedDirector = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>();
@@ -214,7 +216,6 @@ void AZombie::Die(AController* KillerController)
     }
 
     bIsDead = true;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
 
     SetNetUpdateFrequency(1.f);
@@ -238,16 +239,24 @@ void AZombie::Die(AController* KillerController)
 
 void AZombie::OnRep_IsDead()
 {
-    if (USkeletalMeshComponent* CharacterMesh = GetMesh())
-    {
-        CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
-        CharacterMesh->SetSimulatePhysics(true);
-    }
-
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
         Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+
+    if (USkeletalMeshComponent* CharacterMesh = GetMesh())
+    {
+        CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
+
+        if (!HasAuthority())
+        {
+            CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+            CharacterMesh->SetSimulatePhysics(true);
+        }
+        else
+        {
+            CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        }
     }
 
     SetLifeSpan(2.f);
