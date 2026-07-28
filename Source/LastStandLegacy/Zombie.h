@@ -58,14 +58,28 @@ public:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Zombie|Stats")
     float Health;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
+    float MaxHealthZombieReach = 60000.f;
+
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
     float AttackDamage = 50.f;
 
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
     float AttackDistance = 150.f;
 
+protected:
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
+    float MinWalkSpeed = 200.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
+    float MaxBaseWalkSpeed = 500.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
+    float AbsoluteMaxSpeed = 650.f;
+
     float AttackDistanceSq;
 
+public:
     void Die(AController* KillerController);
 
     bool IsDead() const { return bIsDead; }
@@ -76,5 +90,17 @@ public:
 private:
     UPROPERTY()
     TObjectPtr<ALastStandLegacyGameState> CachedGS = nullptr;
+
+    UPROPERTY()
+    TObjectPtr<UCharacterMovementComponent> CachedMovement = nullptr;
+
+    UPROPERTY()
+    TObjectPtr<UZombieDirectorSubsystem> CachedDirector = nullptr;
+
+    bool bRegisteredWithDirector = false;
+
+
+public:
+    float TargetSearchCooldown = 0.f;
 
 };

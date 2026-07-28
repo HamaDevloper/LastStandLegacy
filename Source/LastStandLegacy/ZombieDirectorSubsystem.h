@@ -38,13 +38,17 @@ public:
 
 private:
     UPROPERTY()
-    TArray<AZombie*> ActiveZombies;
-
-    UPROPERTY()
     TArray<APawn*> ActivePlayers;
 
     UPROPERTY()
     TArray<APawn*> ValidTargetPlayers;
+
+    UPROPERTY()
+    TArray<TWeakObjectPtr<AZombie>> ActiveZombies;
+
+    TArray<TWeakObjectPtr<APawn>> CachedPlayers;
+    TArray<FVector> CachedPlayerLocations;
+    float PlayerCacheRefreshTimer = 0.f;
 
     UPROPERTY()
     TArray<TObjectPtr<AMysteryBoxSpawnPoint>> MysteryBoxSpawnPoints;

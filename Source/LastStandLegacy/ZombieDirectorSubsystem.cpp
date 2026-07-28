@@ -2,6 +2,7 @@
 #include "Zombie.h"
 #include "AIController.h"
 #include "MysteryBoxSpawnPoint.h" 
+#include "Navigation/PathFollowingComponent.h"
 
 void UZombieDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -12,6 +13,9 @@ void UZombieDirectorSubsystem::Deinitialize()
 {
     ActiveZombies.Empty();
     ActivePlayers.Empty();
+    ValidTargetPlayers.Empty();
+    CachedPlayers.Empty();
+    CachedPlayerLocations.Empty();
     MysteryBoxSpawnPoints.Empty();
     Super::Deinitialize();
 }
@@ -77,51 +81,115 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    if (ActiveZombies.IsEmpty()) return;
+    if (GetWorld()->GetNetMode() == NM_Client) return;
+    if (ActiveZombies.IsEmpty() || ValidTargetPlayers.IsEmpty()) return;
+
+    // ١. نوێکردنەوەی کاشی یاریزانەکان هەموو 0.1 چرکەیەک
+    PlayerCacheRefreshTimer -= DeltaTime;
+    if (PlayerCacheRefreshTimer <= 0.f)
+    {
+        PlayerCacheRefreshTimer = 0.1f;
+        CachedPlayers.Empty();
+        CachedPlayerLocations.Empty();
+
+        for (APawn* P : ValidTargetPlayers)
+        {
+            if (IsValid(P))
+            {
+                CachedPlayers.Add(P);
+                CachedPlayerLocations.Add(P->GetActorLocation());
+            }
+        }
+    }
+
+    if (CachedPlayers.IsEmpty()) return;
 
     int32 ZombieCount = ActiveZombies.Num();
+    if (CurrentZombieIndex >= ZombieCount)
+    {
+        CurrentZombieIndex = 0;
+    }
 
     constexpr int32 DesiredCycleFrames = 30;
-    ZombiesToUpdatePerFrame = FMath::Clamp(FMath::CeilToInt(ZombieCount / (float)DesiredCycleFrames), 1, 25);
+
+    // ڕاستکردنەوە: لابردنی int32 بۆ ئەوەی گۆڕاوی گلۆباڵ نەشارێتەوە (Shadowing)
+    ZombiesToUpdatePerFrame = FMath::Clamp(FMath::CeilToInt(ZombieCount / (float)DesiredCycleFrames), 1, 30);
 
     int32 EndIndex = FMath::Min(CurrentZombieIndex + ZombiesToUpdatePerFrame, ZombieCount);
 
-    for (int32 i = CurrentZombieIndex; i < EndIndex; ++i)
+    static constexpr float TargetMovedThresholdSq = 150.f * 150.f;
+
+    // ٢. تێکەڵکردنی Time-Budget Safeguard بۆ ڕێگریکردن لە Spikeـی کاتی فرەیم
+    const double StartTime = FPlatformTime::Seconds();
+    constexpr double TimeBudgetSeconds = 0.0005; // 0.5ms
+
+    int32 i = CurrentZombieIndex;
+    for (; i < ZombieCount; ++i)
     {
-        AZombie* Zombie = ActiveZombies[i];
+        AZombie* Zombie = ActiveZombies[i].Get();
         if (!IsValid(Zombie) || Zombie->bIsDead) continue;
 
-        APawn* NearestPlayer = nullptr;
-        float ClosestDistanceSq = UE_BIG_NUMBER;
         const FVector ZombieLoc = Zombie->GetActorLocation();
+        APawn* TargetPlayer = nullptr;
+        FVector PlayerLoc = FVector::ZeroVector;
 
-        // تەنها گەڕان کاتێک یاریزانی ڕەوا هەیە
-        if (!ValidTargetPlayers.IsEmpty())
+        Zombie->TargetSearchCooldown -= DeltaTime;
+
+        // ٣. سیستەمی Sticky Target: ئەگەر کۆڵدۆن تەواو نەبووبێت یان ئامانجەکەی هێشتا کارا بێت، ڕاستەوخۆ بەکاریبهێنە بێ گەڕانی نوێ
+        bool bNeedsSearch = (Zombie->TargetSearchCooldown <= 0.f || !IsValid(Zombie->CurrentTarget));
+
+        if (!bNeedsSearch && Zombie->CurrentTarget)
         {
-            for (APawn* TargetPlayer : ValidTargetPlayers)
+            int32 CurrentTargetIdx = CachedPlayers.IndexOfByKey(Zombie->CurrentTarget);
+            if (CurrentTargetIdx != INDEX_NONE)
             {
-                if (!IsValid(TargetPlayer)) continue;
+                TargetPlayer = Zombie->CurrentTarget;
+                PlayerLoc = CachedPlayerLocations[CurrentTargetIdx]; // وەرگرتنی ڕاستەوخۆی شوێن لە کاش بێ virtual call
+            }
+            else
+            {
+                bNeedsSearch = true;
+            }
+        }
 
-                float DistSq = FVector::DistSquared(ZombieLoc, TargetPlayer->GetActorLocation());
+        // ٤. گەڕانی نوێ تەنها کاتێک پێویست بێت
+        if (bNeedsSearch)
+        {
+            Zombie->TargetSearchCooldown = FMath::RandRange(0.25f, 0.4f);
+
+            int32 NearestPlayerIndex = INDEX_NONE;
+            float ClosestDistanceSq = UE_BIG_NUMBER;
+
+            for (int32 p = 0; p < CachedPlayers.Num(); ++p)
+            {
+                float DistSq = FVector::DistSquared(ZombieLoc, CachedPlayerLocations[p]);
                 if (DistSq < ClosestDistanceSq)
                 {
                     ClosestDistanceSq = DistSq;
-                    NearestPlayer = TargetPlayer;
+                    NearestPlayerIndex = p;
                 }
+            }
+
+            if (NearestPlayerIndex != INDEX_NONE)
+            {
+                TargetPlayer = CachedPlayers[NearestPlayerIndex].Get();
+                PlayerLoc = CachedPlayerLocations[NearestPlayerIndex];
             }
         }
 
         AAIController* AICon = Zombie->CachedAIController;
         if (!AICon) continue;
 
-        if (NearestPlayer)
+        if (TargetPlayer)
         {
-            float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, NearestPlayer->GetActorLocation());
-            if (Zombie->CurrentTarget != NearestPlayer || TargetMovedDistSq > PathUpdateDistanceThresholdSq)
+            float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, PlayerLoc);
+            bool bIsAIIdle = AICon->GetMoveStatus() == EPathFollowingStatus::Idle;
+
+            if (Zombie->CurrentTarget != TargetPlayer || TargetMovedDistSq > TargetMovedThresholdSq || bIsAIIdle)
             {
-                Zombie->CurrentTarget = NearestPlayer;
-                Zombie->LastTargetLocation = NearestPlayer->GetActorLocation();
-                AICon->MoveToActor(NearestPlayer, 40.f, true, true, true);
+                Zombie->CurrentTarget = TargetPlayer;
+                Zombie->LastTargetLocation = PlayerLoc;
+                AICon->MoveToActor(TargetPlayer, 40.f, true, true, true);
             }
         }
         else
@@ -132,10 +200,15 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 AICon->StopMovement();
             }
         }
+
+        if ((FPlatformTime::Seconds() - StartTime) > TimeBudgetSeconds)
+        {
+            ++i;
+            break;
+        }
     }
 
-    CurrentZombieIndex = EndIndex;
-    if (CurrentZombieIndex >= ZombieCount) CurrentZombieIndex = 0;
+    CurrentZombieIndex = (i >= ZombieCount) ? 0 : i;
 }
 
 TStatId UZombieDirectorSubsystem::GetStatId() const
