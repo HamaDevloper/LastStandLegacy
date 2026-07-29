@@ -1330,17 +1330,33 @@ void AHama::SwitchCameraReleased()
     bIsHoldedTrigger = false;
 }
 
+bool AHama::IsMovingForward() const
+{
+    const FVector InputVector = GetLastMovementInputVector();
+
+    if (InputVector.IsNearlyZero())
+    {
+        return false;
+    }
+
+    const FVector Forward2D = GetActorForwardVector().GetSafeNormal2D();
+    const FVector Input2D = InputVector.GetSafeNormal2D();
+
+    const float ForwardDot = FVector::DotProduct(Forward2D, Input2D);
+
+    return ForwardDot > 0.5f;
+}
+
 void AHama::SprintActionPressed()
 {
-    if (!HamaComponent || HamaComponent->GetStamina() < 15.f || GetCharacterMovement()->IsFalling()) return;
-    if (IsDrinkingPerk()) return;
-    if (HamaComponent && HamaComponent->IsDowned()) return;
+    if (!HamaComponent || !HamaComponent->CanSprint()) return;
+
     if (HamaComponent->IsAiming())
     {
         HamaComponent->SetAiming(false);
         OnAim(false);
     }
-    if (HamaComponent->IsSlide()) return;
+
     if (bIsFireButtonHold && CurrentWeapon) CurrentWeapon->StopFire();
     if (CurrentWeapon && CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
     if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching()) UnCrouch();

@@ -165,7 +165,7 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
         }
         else if (CurrentAmmo <= LowAmmoThreshold)
         {
-            static const FText LowAmmoText = LOCTEXT("LowAmmo", "LOW AMMO");
+            static const FText LowAmmoText = LOCTEXT("LowAmmo", "LOW AMMO!");
             AmmoWarningText->SetText(LowAmmoText);
             AmmoWarningText->SetVisibility(ESlateVisibility::HitTestInvisible);
         }

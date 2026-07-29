@@ -356,6 +356,7 @@ public:
     FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
     FORCEINLINE bool GetDeathMachine() const { return bIsDeathMachineActive; }
+    bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     const TArray<FName>& GetOwnedPerks() const { return OwnedPerks; }
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
     bool GetDoubleTap() { return bHasDoubleTap; }
@@ -363,7 +364,8 @@ public:
     bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
     bool IsDrinkingPerk() const { return CurrentSpawnedBottle != nullptr; }
     bool HasQuickRevive() const { return bHasQuickRevive; }
-    bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
+    bool IsMovingForward() const;
+
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
     float NormalSensitivity = 1.f;

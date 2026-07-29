@@ -99,7 +99,6 @@ void ALastStandLegacyGameMode::BeginPlay()
     ActiveZombiesCount = 0;
     ZombiesSpawnedThisRound = 0;
 
-    // ناردنی ڕاوندی یەکەم بۆ Game专业State بۆ نوێکردنەوەی شاشەی هەمووان
     if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
         GS->SetCurrentRound(CurrentRound);
@@ -111,7 +110,9 @@ void ALastStandLegacyGameMode::BeginPlay()
             FString::Printf(TEXT("Round %d Started! Zombies this round: %d"), CurrentRound, ZombiesToKill));
     }
 
-    GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, 1.5f, true);
+    const float InitialInterval = GetCalculateSpawnInterval();
+
+    GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, InitialInterval, true);
 }
 
 void ALastStandLegacyGameMode::MyShufflePerks(TArray<TSubclassOf<ABasePerk>>& ArrayToShuffle)
@@ -168,8 +169,6 @@ void ALastStandLegacyGameMode::SpawnRandomPerks()
 
 void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AController* KillerController)
 {
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Death Handler Triggered!"));
-
     if (KillerController)
     {
         APawn* KillerPawn = KillerController->GetPawn();
@@ -220,6 +219,12 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
     }
 }
 
+float ALastStandLegacyGameMode::GetCalculateSpawnInterval() const
+{
+    const float CalculatedInterval = BaseSpawnInterval - ((CurrentRound - 1) * SpawnIntervalDecreasePerRound);
+    return FMath::Max(MinSpawnInterval, CalculatedInterval);
+}
+
 void ALastStandLegacyGameMode::StartNextRound()
 {
     CurrentRound++;
@@ -239,7 +244,7 @@ void ALastStandLegacyGameMode::StartNextRound()
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
-            FString::Printf(TEXT("Round %d Started!"), CurrentRound));
+            FString::Printf(TEXT("Round %d Started Zombie To Kill = %d"), CurrentRound, ZombiesToKill));
     }
 
     for (TActorIterator<AZombie> It(GetWorld()); It; ++It)
@@ -250,7 +255,9 @@ void ALastStandLegacyGameMode::StartNextRound()
         }
     }
 
-    GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, 1.5f, true);
+    const float NewInterval = GetCalculateSpawnInterval();
+
+    GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, NewInterval, true);
 }
 
 void ALastStandLegacyGameMode::ProcessSpawning()

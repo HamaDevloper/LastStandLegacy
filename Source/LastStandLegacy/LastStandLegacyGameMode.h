@@ -56,7 +56,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     int32 ZombiesToKill = 10;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     int32 CurrentRound = 1;
+
     int32 ZombiesSpawnedThisRound = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
@@ -97,4 +99,16 @@ private:
 
     UFUNCTION()
     void ProcessNukeKills();
+
+protected:
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie Spawning|Timing")
+    float BaseSpawnInterval = 2.5f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie Spawning|Timing")
+    float SpawnIntervalDecreasePerRound = 0.2f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie Spawning|Timing")
+    float MinSpawnInterval = 0.3f;
+
+    float GetCalculateSpawnInterval() const;
 };

@@ -34,6 +34,9 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_IsGhost, BlueprintReadOnly, Category = "Abilities")
     bool bIsGhost = false;
 
+    UPROPERTY(ReplicatedUsing = OnRep_IsAbilityActive)
+    bool bIsAbilityActive = false;
+
     void SetAssignedAbility(EHamaAbilityType NewAbility);
     void AddPower(float Amount);
     UFUNCTION(Server, Reliable, BlueprintCallable)
@@ -44,7 +47,6 @@ public:
 
     bool GetGhost() const { return bIsGhost; }
 
-    // 🚀 ئەمە ئەو دێڕەیە کە زیاد کراوە
     EHamaAbilityType GetAssignedAbility() const { return CurrentAssignedAbility; }
 
 protected:
@@ -71,10 +73,16 @@ protected:
     UFUNCTION()
     void OnRep_CurrentPower();
 
+    UFUNCTION()
+    void OnRep_IsAbilityActive();
+
     void ActivateBulletStorm();
     void ActivateMedicalSupport();
     void ActivateGhostMode();
     void ActivateBlitz();
+
+    void StartAbilityCooldown(float Duration);
+    void EndAbilityCooldown();
 
     UFUNCTION()
     void DeactivateGhostMode();
@@ -91,4 +99,5 @@ protected:
 
 private:
     FTimerHandle GhostTimerHandle;
+    FTimerHandle AbilityDurationTimerHandle;
 };

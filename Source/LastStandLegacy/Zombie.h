@@ -45,7 +45,12 @@ protected:
     UFUNCTION()
     void OnRep_IsDead();
 
-public:
+    UFUNCTION()
+    void OnRep_SelectedIndex();
+
+    void ApplySelectedMesh();
+
+protected:
     UPROPERTY(ReplicatedUsing = OnRep_IsDead, BlueprintReadOnly, Category = "Zombie|State")
     bool bIsDead = false;
 
@@ -57,6 +62,9 @@ public:
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Zombie|Stats")
     float Health;
+
+    UPROPERTY(ReplicatedUsing = OnRep_SelectedIndex, BlueprintReadOnly, Category = "Zombie|Stats")
+    uint8 MeshIndexSelected = 255;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
     float MaxHealthZombieReach = 60000.f;
@@ -77,15 +85,18 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
     float AbsoluteMaxSpeed = 650.f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie|Visuals")
+    TArray<TObjectPtr<USkeletalMesh>> MeshToSelect;
+
     float AttackDistanceSq;
 
 public:
     void Die(AController* KillerController);
 
-    bool IsDead() const { return bIsDead; }
-
     UPROPERTY(Transient)
     TObjectPtr<AAIController> CachedAIController = nullptr;
+
+    FORCEINLINE bool IsDead() const { return bIsDead; }
 
 private:
     UPROPERTY()
@@ -101,6 +112,7 @@ private:
 
 
 public:
-    float NextTargetSearchTime = 0.f;
+    float NextTargetSearchTime = 0.0f;
+    float NextForceRepathTime = 0.f;
 
 };

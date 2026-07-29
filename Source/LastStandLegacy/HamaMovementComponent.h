@@ -11,7 +11,7 @@ class LASTSTANDLEGACY_API UHamaMovementComponent : public UCharacterMovementComp
 
 public:
     UHamaMovementComponent();
-
+    virtual void BeginPlay() override;
     virtual float GetMaxSpeed() const override;
     virtual void UpdateFromCompressedFlags(uint8 Flags) override;
     virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
@@ -35,6 +35,9 @@ public:
     float DiveImpulseHorizontal = 900.f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Movement | Dive")
     float DiveImpulseVertical = 350.f;
+
+    float DefaultGroundFriction;
+    float DefaultBrakingDecelerationWalking;
 
 private:
     bool bWasSliding = false;

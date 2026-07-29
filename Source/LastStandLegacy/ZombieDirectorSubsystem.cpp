@@ -3,6 +3,7 @@
 #include "AIController.h"
 #include "MysteryBoxSpawnPoint.h" 
 #include "Navigation/PathFollowingComponent.h"
+#include "Engine/World.h"
 
 void UZombieDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -14,9 +15,10 @@ void UZombieDirectorSubsystem::Deinitialize()
     ActiveZombies.Empty();
     ActivePlayers.Empty();
     ValidTargetPlayers.Empty();
-    CachedPlayers.Empty();
-    CachedPlayerLocations.Empty();
+    CachedPlayerMap.Reset();
     MysteryBoxSpawnPoints.Empty();
+    ReusableMysteryBoxPoints.Empty();
+
     Super::Deinitialize();
 }
 
@@ -30,15 +32,19 @@ void UZombieDirectorSubsystem::RegisterZombie(AZombie* Zombie)
 
 void UZombieDirectorSubsystem::UnregisterZombie(AZombie* Zombie)
 {
-    int32 Index = ActiveZombies.Find(Zombie);
-    if (Index != INDEX_NONE)
-    {
-        ActiveZombies.RemoveAtSwap(Index, 1, EAllowShrinking::No);
+    if (!Zombie) return;
 
-        if (Index <= CurrentZombieIndex && CurrentZombieIndex > 0)
+    const int32 RemovedCount = ActiveZombies.RemoveAllSwap(
+        [Zombie](const TWeakObjectPtr<AZombie>& Item)
         {
-            CurrentZombieIndex--;
-        }
+            return !Item.IsValid() || Item.Get() == Zombie;
+        },
+        EAllowShrinking::No
+    );
+
+    if (RemovedCount > 0 && CurrentZombieIndex >= ActiveZombies.Num())
+    {
+        CurrentZombieIndex = 0;
     }
 }
 
@@ -53,14 +59,9 @@ void UZombieDirectorSubsystem::RegisterPlayer(APawn* Player)
 
 void UZombieDirectorSubsystem::UnregisterPlayer(APawn* Player)
 {
-    int32 Index = ActivePlayers.Find(Player);
-
+    if (!Player) return;
     SetPlayerTargetable(Player, false);
-
-    if (Index != INDEX_NONE)
-    {
-        ActivePlayers.RemoveAtSwap(Index, 1, EAllowShrinking::No);
-    }
+    ActivePlayers.RemoveSwap(Player, EAllowShrinking::No);
 }
 
 void UZombieDirectorSubsystem::SetPlayerTargetable(APawn* Player, bool bIsTargetable)
@@ -69,11 +70,22 @@ void UZombieDirectorSubsystem::SetPlayerTargetable(APawn* Player, bool bIsTarget
 
     if (bIsTargetable)
     {
-        if (!ValidTargetPlayers.Contains(Player)) ValidTargetPlayers.Add(Player);
+        if (!ValidTargetPlayers.Contains(Player))
+        {
+            ValidTargetPlayers.Add(Player);
+        }
     }
     else
     {
-        ValidTargetPlayers.RemoveSingleSwap(Player, EAllowShrinking::No);
+        ValidTargetPlayers.RemoveAllSwap(
+            [Player](const TWeakObjectPtr<APawn>& Item)
+            {
+                return !Item.IsValid() || Item.Get() == Player;
+            },
+            EAllowShrinking::No
+        );
+
+        CachedPlayerMap.Remove(Player);
     }
 }
 
@@ -82,63 +94,109 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 
     if (GetWorld()->GetNetMode() == NM_Client) return;
-    if (ActiveZombies.IsEmpty() || ValidTargetPlayers.IsEmpty()) return;
+    if (ActiveZombies.IsEmpty()) return;
 
-    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (ValidTargetPlayers.IsEmpty())
+    {
+        for (const TWeakObjectPtr<AZombie>& ZombieWeak : ActiveZombies)
+        {
+            AZombie* Zombie = ZombieWeak.Get();
+            if (!IsValid(Zombie) || Zombie->IsDead()) continue;
 
-    // ١. نوێکردنەوەی کاشی یاریزانەکان
+            if (Zombie->CurrentTarget != nullptr)
+            {
+                Zombie->CurrentTarget = nullptr;
+                if (Zombie->CachedAIController)
+                {
+                    Zombie->CachedAIController->StopMovement();
+                }
+            }
+        }
+        return;
+    }
+
     PlayerCacheRefreshTimer -= DeltaTime;
+
     if (PlayerCacheRefreshTimer <= 0.f)
     {
-        PlayerCacheRefreshTimer = 0.1f;
-        CachedPlayers.Reset();
-        CachedPlayerLocations.Reset();
+        PlayerCacheRefreshTimer = 0.2f;
 
-        for (APawn* P : ValidTargetPlayers)
+        CachedPlayerMap.Reset();
+        SpatialGrid.Reset();
+
+        for (int32 i = ValidTargetPlayers.Num() - 1; i >= 0; --i)
         {
-            if (IsValid(P))
+            if (ValidTargetPlayers[i].IsValid())
             {
-                CachedPlayers.Add(P);
-                CachedPlayerLocations.Add(P->GetActorLocation());
+                APawn* P = ValidTargetPlayers[i].Get();
+                if (IsValid(P))
+                {
+                    const FVector Loc = P->GetActorLocation();
+                    CachedPlayerMap.Add(P, Loc);
+                    SpatialGrid.InsertPlayer(P, Loc);
+                }
             }
+            else
+            {
+                ValidTargetPlayers.RemoveAtSwap(i, 1, EAllowShrinking::No);
+            }
+        }
+
+        // 2. Sweep & Purge Dead Zombies
+        for (int32 i = ActiveZombies.Num() - 1; i >= 0; --i)
+        {
+            AZombie* Z = ActiveZombies[i].Get();
+            if (!IsValid(Z) || Z->IsDead())
+            {
+                ActiveZombies.RemoveAtSwap(i, 1, EAllowShrinking::No);
+            }
+        }
+
+        if (CurrentZombieIndex >= ActiveZombies.Num())
+        {
+            CurrentZombieIndex = 0;
         }
     }
 
-    if (CachedPlayers.IsEmpty()) return;
+    if (CachedPlayerMap.IsEmpty() || ActiveZombies.IsEmpty()) return;
 
-    int32 ZombieCount = ActiveZombies.Num();
-    if (CurrentZombieIndex >= ZombieCount)
-    {
-        CurrentZombieIndex = 0;
-    }
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    const int32 ZombieCount = ActiveZombies.Num();
 
-    constexpr int32 DesiredCycleFrames = 30;
-    ZombiesToUpdatePerFrame = FMath::Clamp(FMath::CeilToInt(ZombieCount / (float)DesiredCycleFrames), 1, 30);
-
-    static constexpr float TargetMovedThresholdSq = 150.f * 150.f;
+    const double DynamicTimeBudget = FMath::Clamp(DeltaTime * 0.05f, 0.0005f, 0.002f);
     const double StartTime = FPlatformTime::Seconds();
-    constexpr double TimeBudgetSeconds = 0.0005; // 0.5ms Time-Budget
+    static constexpr float TargetMovedThresholdSq = 150.f * 150.f;
 
     int32 i = CurrentZombieIndex;
     for (; i < ZombieCount; ++i)
     {
+        if ((FPlatformTime::Seconds() - StartTime) > DynamicTimeBudget)
+        {
+            break;
+        }
+
         AZombie* Zombie = ActiveZombies[i].Get();
-        if (!IsValid(Zombie) || Zombie->bIsDead) continue;
+        if (!IsValid(Zombie) || Zombie->IsDead()) continue;
 
         const FVector ZombieLoc = Zombie->GetActorLocation();
         APawn* TargetPlayer = nullptr;
         FVector PlayerLoc = FVector::ZeroVector;
 
-        // ⚡ [FIX]: پشکنینی کۆڵدۆن بە کاتی ڕاستەقینەی ناو یاری
         bool bNeedsSearch = (CurrentTime >= Zombie->NextTargetSearchTime || !IsValid(Zombie->CurrentTarget));
 
         if (!bNeedsSearch && Zombie->CurrentTarget)
         {
-            int32 CurrentTargetIdx = CachedPlayers.IndexOfByKey(Zombie->CurrentTarget);
-            if (CurrentTargetIdx != INDEX_NONE)
+            if (IsValid(Zombie->CurrentTarget))
             {
-                TargetPlayer = Zombie->CurrentTarget;
-                PlayerLoc = CachedPlayerLocations[CurrentTargetIdx];
+                if (const FVector* FoundLoc = CachedPlayerMap.Find(Zombie->CurrentTarget))
+                {
+                    TargetPlayer = Zombie->CurrentTarget;
+                    PlayerLoc = *FoundLoc;
+                }
+                else
+                {
+                    bNeedsSearch = true;
+                }
             }
             else
             {
@@ -148,34 +206,46 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
         if (bNeedsSearch)
         {
-            int32 NearestPlayerIndex = INDEX_NONE;
             float ClosestDistanceSq = UE_BIG_NUMBER;
 
-            for (int32 p = 0; p < CachedPlayers.Num(); ++p)
+            // ⚡ [SPATIAL GRID SEARCH]: لەبری لۆپی $O(M)$ بەسەر هەموو یاریزانەکاندا، تەنها 9 Grid Cell ی دەورەوبەر دەپشکنێت
+            TargetPlayer = SpatialGrid.FindNearestPlayerInRadius(ZombieLoc, ClosestDistanceSq);
+
+            if (TargetPlayer && !CachedPlayerMap.Contains(TargetPlayer))
             {
-                float DistSq = FVector::DistSquared(ZombieLoc, CachedPlayerLocations[p]);
-                if (DistSq < ClosestDistanceSq)
+                TargetPlayer = nullptr;
+                ClosestDistanceSq = UE_BIG_NUMBER;
+            }
+
+            if (!TargetPlayer && !CachedPlayerMap.IsEmpty())
+            {
+                for (const auto& Kvp : CachedPlayerMap)
                 {
-                    ClosestDistanceSq = DistSq;
-                    NearestPlayerIndex = p;
+                    APawn* PlayerPawn = Kvp.Key;
+                    if (!IsValid(PlayerPawn)) continue;
+
+                    float DistSq = FVector::DistSquared(ZombieLoc, Kvp.Value);
+                    if (DistSq < ClosestDistanceSq)
+                    {
+                        ClosestDistanceSq = DistSq;
+                        TargetPlayer = PlayerPawn;
+                    }
                 }
             }
 
-            if (NearestPlayerIndex != INDEX_NONE)
+            if (TargetPlayer)
             {
-                TargetPlayer = CachedPlayers[NearestPlayerIndex].Get();
-                PlayerLoc = CachedPlayerLocations[NearestPlayerIndex];
+                PlayerLoc = TargetPlayer->GetActorLocation();
 
-                // ⚡ [SIGNIFICANCE Tiers]: دیاری کردنی داهاتووی پشکنین بەپێی دووری (ClosestDistanceSq)
-                float NextInterval = 0.25f; // High Significance (< 10m)
-
-                if (ClosestDistanceSq > 9000000.f) // > 30 meters
+                // Distance LOD Throttling
+                float NextInterval = 0.25f;
+                if (ClosestDistanceSq > 16000000.f) // > 40m
                 {
-                    NextInterval = 2.0f; // Low Significance (پشکنین دوای 2 چڕکە)
+                    NextInterval = 2.0f;
                 }
-                else if (ClosestDistanceSq > 1000000.f) // > 10 meters
+                else if (ClosestDistanceSq > 1000000.f) // > 10m
                 {
-                    NextInterval = 0.75f; // Medium Significance
+                    NextInterval = 0.75f;
                 }
 
                 Zombie->NextTargetSearchTime = CurrentTime + NextInterval + FMath::RandRange(0.0f, 0.1f);
@@ -188,14 +258,22 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         if (TargetPlayer)
         {
             float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, PlayerLoc);
-            bool bIsAIIdle = AICon->GetMoveStatus() == EPathFollowingStatus::Idle;
 
-            if (Zombie->CurrentTarget != TargetPlayer || TargetMovedDistSq > TargetMovedThresholdSq || bIsAIIdle)
+            bool bIsAIIdle = AICon->GetMoveStatus() == EPathFollowingStatus::Idle;
+            bool bShouldRepath = (Zombie->CurrentTarget != TargetPlayer) ||
+                (TargetMovedDistSq > TargetMovedThresholdSq) ||
+                (bIsAIIdle && CurrentTime >= Zombie->NextForceRepathTime);
+
+            if (bShouldRepath)
             {
                 Zombie->CurrentTarget = TargetPlayer;
                 Zombie->LastTargetLocation = PlayerLoc;
 
-                // ⚡ MoveToActor تەنها لە شۆفێری پێویستدا بانگ دەکرێت
+                if (bIsAIIdle)
+                {
+                    Zombie->NextForceRepathTime = CurrentTime + 0.5f;
+                }
+
                 AICon->MoveToActor(TargetPlayer, 40.f, true, true, true);
             }
         }
@@ -206,12 +284,6 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 Zombie->CurrentTarget = nullptr;
                 AICon->StopMovement();
             }
-        }
-
-        if ((FPlatformTime::Seconds() - StartTime) > TimeBudgetSeconds)
-        {
-            ++i;
-            break;
         }
     }
 
@@ -224,7 +296,7 @@ TStatId UZombieDirectorSubsystem::GetStatId() const
 }
 
 // ==========================================
-// ⚡ Mystery Box Spawn Point Management
+// Mystery Box Spawn Point Management
 // ==========================================
 
 void UZombieDirectorSubsystem::RegisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPoint* Point)
@@ -240,25 +312,26 @@ void UZombieDirectorSubsystem::UnregisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPo
     if (Point)
     {
         MysteryBoxSpawnPoints.RemoveSingleSwap(Point, EAllowShrinking::No);
+        ReusableMysteryBoxPoints.RemoveSingleSwap(Point, EAllowShrinking::No);
     }
 }
 
 AMysteryBoxSpawnPoint* UZombieDirectorSubsystem::GetRandomFreeMysteryBoxPoint(AMysteryBoxSpawnPoint* CurrentPoint)
 {
-    TArray<AMysteryBoxSpawnPoint*> ValidPoints;
+    ReusableMysteryBoxPoints.Reset();
 
     for (AMysteryBoxSpawnPoint* Point : MysteryBoxSpawnPoints)
     {
         if (IsValid(Point) && Point != CurrentPoint && !Point->IsOccupied())
         {
-            ValidPoints.Add(Point);
+            ReusableMysteryBoxPoints.Add(Point);
         }
     }
 
-    if (ValidPoints.Num() > 0)
+    if (ReusableMysteryBoxPoints.Num() > 0)
     {
-        int32 RandomIndex = FMath::RandRange(0, ValidPoints.Num() - 1);
-        return ValidPoints[RandomIndex];
+        int32 RandomIndex = FMath::RandRange(0, ReusableMysteryBoxPoints.Num() - 1);
+        return ReusableMysteryBoxPoints[RandomIndex];
     }
 
     return nullptr;

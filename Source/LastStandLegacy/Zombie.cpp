@@ -41,12 +41,28 @@ void AZombie::BeginPlay()
 
     CachedMovement = GetCharacterMovement();
 
+    if (CachedMovement)
+    {
+        CachedMovement->bEnablePhysicsInteraction = false;
+    }
+
     if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
-        MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+        if (!IsRunningDedicatedServer())
+        {
+            MeshComp->bEnableUpdateRateOptimizations = true;
+            MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+            MeshComp->bCastFarShadow = false;
+        }
     }
 
     if (!HasAuthority()) return;
+
+    if (!MeshToSelect.IsEmpty())
+    {
+        MeshIndexSelected = static_cast<uint8>(FMath::RandRange(0, MeshToSelect.Num() - 1));
+        ApplySelectedMesh();
+    }
 
     CachedGS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     CachedDirector = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>();
@@ -78,6 +94,8 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, bIsDead, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, Health, Params);
+  
+    DOREPLIFETIME_CONDITION(AZombie, MeshIndexSelected, COND_InitialOnly);
     DOREPLIFETIME_CONDITION(AZombie, MaxHealth, COND_InitialOnly);
 }
 
@@ -114,8 +132,24 @@ void AZombie::SetStatsForRound(int32 CurrentRound)
     {
         CachedMovement->MaxWalkSpeed = FMath::Clamp(
             BaseSpeed + TierOffsets[RandTier],
-            MinWalkSpeed - 40.f,
+            MinWalkSpeed,
             AbsoluteMaxSpeed);
+    }
+}
+
+void AZombie::OnRep_SelectedIndex()
+{
+    ApplySelectedMesh();
+}
+
+void AZombie::ApplySelectedMesh()
+{
+    if (MeshToSelect.IsValidIndex(MeshIndexSelected))
+    {
+        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        {
+            MeshComp->SetSkeletalMeshAsset(MeshToSelect[MeshIndexSelected]);
+        }
     }
 }
 
@@ -242,14 +276,14 @@ void AZombie::OnRep_IsDead()
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
         Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
     }
 
     if (USkeletalMeshComponent* CharacterMesh = GetMesh())
     {
-        CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
-
-        if (!HasAuthority())
+        if (!IsRunningDedicatedServer())
         {
+            CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
             CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
             CharacterMesh->SetSimulatePhysics(true);
         }

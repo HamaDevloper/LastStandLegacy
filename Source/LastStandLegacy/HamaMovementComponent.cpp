@@ -9,6 +9,23 @@ UHamaMovementComponent::UHamaMovementComponent()
     bDiving = false;
     bDowned = false;
     bSlide = false;
+
+    // Default values
+    DefaultGroundFriction = 8.0f;
+    DefaultBrakingDecelerationWalking = 2048.0f;
+}
+
+void UHamaMovementComponent::BeginPlay()
+{
+    Super::BeginPlay();
+
+    DefaultGroundFriction = GroundFriction;
+    DefaultBrakingDecelerationWalking = BrakingDecelerationWalking;
+
+    if (CharacterOwner)
+    {
+        CachedHamaComp = CharacterOwner->FindComponentByClass<UHamaComponent>();
+    }
 }
 
 UHamaComponent* UHamaMovementComponent::GetHamaComp()
@@ -44,39 +61,24 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 {
     Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
-    if (bSlide && bWasSliding)
+    // ⚡ [FIX DESYNC & REPLAY BUG]: ئەنجامدانی State Transitions بەبێ دەستکاریکردنی راستەوخۆی HamaComp
+    if (bSlide)
     {
         if (Velocity.SizeSquared2D() < FMath::Square(200.f))
         {
             bSlide = false;
-
-            if (CharacterOwner)
-            {
-                if (UHamaComponent* HamaComp = GetHamaComp())
-                {
-                    HamaComp->bIsSlide = false;
-                }
-            }
         }
     }
 
-    if (bDiving && bWasDiving)
+    if (bDiving)
     {
         if (MovementMode != MOVE_Falling)
         {
             bDiving = false;
-
-            if (CharacterOwner)
-            {
-                if (UHamaComponent* HamaComp = GetHamaComp())
-                {
-                    HamaComp->bIsDiving = false;
-                }
-            }
         }
     }
-    // ----------------------------------------------------------------------
 
+    // ⚡ [FIX REPLAY DOUBLE-IMPULSE]: تەنها کاتێک Velocity دەگۆڕدرێت کە لە سەرەتای State بێت و لە ناو Replayدا نەبێت
     if (bSlide && !bWasSliding)
     {
         if (CharacterOwner)
@@ -103,8 +105,8 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
     }
     else
     {
-        GroundFriction = 10.0f;
-        BrakingDecelerationWalking = 2800.0f;
+        GroundFriction = DefaultGroundFriction;
+        BrakingDecelerationWalking = DefaultBrakingDecelerationWalking;
     }
 
     bWasSliding = bSlide;
