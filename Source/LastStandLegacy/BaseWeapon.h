@@ -91,6 +91,9 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
     float DefaultReloadTime = 2.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|PackAPunch")
+    TSubclassOf<ABaseWeapon> UpgradedWeaponClass;
+
     // --- Visuals & Animations ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Visuals")
     TSoftObjectPtr<USkeletalMesh> WeaponMeshAsset;
@@ -279,7 +282,7 @@ public:
     UAnimSequence* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
     FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
     FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
-
+    TSubclassOf<ABaseWeapon> GetUpgradedWeaponClass() const { return CurrentWeaponData.UpgradedWeaponClass; }
     bool CanReload() const { return CurrentAmmo <= 0 && ReserveAmmo > 0; }
     bool IsReloading() const { return bIsReloading; }
     bool HasAmmo() const;

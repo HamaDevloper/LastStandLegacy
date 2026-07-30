@@ -44,19 +44,12 @@ void UHamaComponent::SetAiming(bool bNewAiming)
     if (bIsAiming == bNewAiming) return;
     bIsAiming = bNewAiming;
 
-    Server_SetAiming(bIsAiming);
     if (MoveComp) MoveComp->bAiming = bIsAiming;
 
     if (bNewAiming)
     {
         SetSprinting(false);
     }
-}
-
-void UHamaComponent::Server_SetAiming_Implementation(bool bNewAiming)
-{
-    bIsAiming = bNewAiming;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsAiming, this);
 }
 
 void UHamaComponent::SetDowned(bool NewValue)
@@ -82,28 +75,15 @@ void UHamaComponent::StartSlide()
     if (bIsSlide || !OwnerCharacter) return;
 
     bIsSlide = true;
-    if (MoveComp) MoveComp->bSlide = true;
 
-    if (!OwnerCharacter->HasAuthority())
+    if (MoveComp)
     {
-        Server_SetSlideState(true);
+        MoveComp->bSlide = true;
     }
-    else
+
+    if (OwnerCharacter->HasAuthority())
     {
         MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
-    }
-}
-
-void UHamaComponent::Server_SetSlideState_Implementation(bool bNewSlideState)
-{
-    if (bIsSlide == bNewSlideState) return;
-    bIsSlide = bNewSlideState;
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
-
-    if (GetNetMode() == NM_ListenServer)
-    {
-        OnRep_Slide();
     }
 }
 
@@ -112,88 +92,62 @@ void UHamaComponent::StopSlide()
     if (!bIsSlide || !OwnerCharacter) return;
 
     bIsSlide = false;
-    if (MoveComp) MoveComp->bSlide = false;
 
-    if (!OwnerCharacter->HasAuthority())
+    if (MoveComp)
     {
-        Server_SetSlideState(false);
+        MoveComp->bSlide = bIsSlide;
     }
-    else
+
+    if (OwnerCharacter->HasAuthority())
     {
         MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
     }
 }
 
+bool UHamaComponent::CanDive() const
+{
+    if (!OwnerCharacter || !MoveComp) return false;
+
+    if (bIsDiving || bIsDowned || bIsSlide || MoveComp->IsFalling()) return false;
+
+    if (Stamina < 25.f) return false;
+
+    return true;
+}
+
 void UHamaComponent::StartDive()
 {
-    if (bIsDiving || !OwnerCharacter) return;
+    if (!CanDive()) return;
 
-    FVector DiveDirection = OwnerCharacter->GetActorForwardVector() * 900.f;
-    DiveDirection.Z = 350.f;
+    bIsDiving = true;
+
+    if (MoveComp)
+    {
+        MoveComp->bDiving = bIsDiving;
+    }
 
     if (OwnerCharacter->HasAuthority())
     {
-        if (Stamina < 25.f) return;
-
-        bIsDiving = true;
-        DecreaseStamina(25.f);
-
-        OwnerCharacter->LaunchCharacter(DiveDirection, true, true);
         MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
-    }
-    else
-    {
-        bIsDiving = true;
-        OwnerCharacter->LaunchCharacter(DiveDirection, true, true);
-        Server_SetDiving(true);
     }
 }
 
 void UHamaComponent::StopDive()
 {
-    if (!bIsDiving || !OwnerCharacter) return;
+    if (!bIsDiving) return;
+
     bIsDiving = false;
-    if (!OwnerCharacter->HasAuthority())
+    if (MoveComp)
     {
-        Server_SetDiving(false);
+        MoveComp->bDiving = false;
     }
-    else
+
+    if (OwnerCharacter && OwnerCharacter->HasAuthority())
     {
         MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
     }
 }
 
-void UHamaComponent::Server_SetDiving_Implementation(bool bNewDiveState)
-{
-    if (bIsDiving == bNewDiveState) return;
-
-    if (bNewDiveState)
-    {
-        if (Stamina < 25.f)
-        {
-            Client_RejectDive();
-            return;
-        }
-        DecreaseStamina(25.f);
-
-        FVector DiveDirection = OwnerCharacter->GetActorForwardVector() * 900.f;
-        DiveDirection.Z = 350.f;
-        OwnerCharacter->LaunchCharacter(DiveDirection, true, true);
-    }
-
-    bIsDiving = bNewDiveState;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
-
-    if (GetNetMode() == NM_ListenServer)
-    {
-        OnRep_Dive();
-    }
-}
-
-void UHamaComponent::Client_RejectDive_Implementation()
-{
-    bIsDiving = false;
-}
 
 void UHamaComponent::DecreaseStamina(float Amount)
 {
@@ -222,8 +176,6 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 
     bIsSprinting = bNewSprinting;
 
-    Server_SetSprint(bIsSprinting);
-
     if (MoveComp) MoveComp->bSprinting = bIsSprinting;
 
     if (bIsSprinting)
@@ -238,19 +190,6 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
         if (GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
         GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
     }
-}
-
-void UHamaComponent::Server_SetSprint_Implementation(bool bNewSprinting)
-{
-    if (bNewSprinting && (bIsDowned || Stamina <= 0.f))
-    {
-        bIsSprinting = false;
-        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
-        return;
-    }
-
-    bIsSprinting = bNewSprinting;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
 }
 
 
@@ -399,15 +338,20 @@ void UHamaComponent::OnRep_Down()
 
 void UHamaComponent::OnRep_Dive()
 {
-    if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
+    if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
+
+    USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
+    if (!Mesh) return;
+
+    UAnimInstance* AnimInstance = Mesh->GetAnimInstance();
+    if (!AnimInstance || !OwnerCharacter->DiveMontage) return;
+
+    if (bIsDiving)
     {
-        USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
-        if (!Mesh) return;
-
-        UAnimInstance* AnimInstance = Mesh->GetAnimInstance();
-        if (!AnimInstance || !OwnerCharacter->DiveMontage) return;
-
-        if (bIsDiving) AnimInstance->Montage_Play(OwnerCharacter->DiveMontage);
-        else           AnimInstance->Montage_Stop(0.2f, OwnerCharacter->DiveMontage);
+        AnimInstance->Montage_Play(OwnerCharacter->DiveMontage);
+    }
+    else
+    {
+        AnimInstance->Montage_Stop(0.2f, OwnerCharacter->DiveMontage);
     }
 }

@@ -88,6 +88,14 @@ void ABaseWeapon::InitializeWeaponData()
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
     Damage = CurrentWeaponData.Damage;
 
+    if (HasAuthority())
+    {
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, MaxAmmoInClip, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, Damage, this);
+    }
+
     if (WeaponMesh && !CurrentWeaponData.WeaponMeshAsset.IsNull())
     {
         TWeakObjectPtr<ABaseWeapon> WeakThis(this);

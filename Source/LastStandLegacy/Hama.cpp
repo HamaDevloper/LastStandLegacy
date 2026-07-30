@@ -469,76 +469,67 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
     ABaseWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ABaseWeapon>(WeaponClassToGive, GetActorLocation(), GetActorRotation(), SpawnParams);
+    if (!SpawnedWeapon) return;
 
-    if (SpawnedWeapon)
+    if (!PrimaryWeapon)
     {
-        if (!PrimaryWeapon)
+        PrimaryWeapon = SpawnedWeapon;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
+    }
+    else if (!SecondaryWeapon)
+    {
+        SecondaryWeapon = SpawnedWeapon;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this);
+    }
+    else if (!ThirdWeapon && bHasMuleKick)
+    {
+        ThirdWeapon = SpawnedWeapon;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
+    }
+    else
+    {
+        ABaseWeapon* WeaponToDestroy = CurrentWeapon;
+
+        if (CurrentWeapon == PrimaryWeapon)
         {
             PrimaryWeapon = SpawnedWeapon;
             MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
         }
-        else if (!SecondaryWeapon)
+        else if (CurrentWeapon == SecondaryWeapon)
         {
             SecondaryWeapon = SpawnedWeapon;
             MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this);
         }
-        else if (!ThirdWeapon && bHasMuleKick)
+        else if (CurrentWeapon == ThirdWeapon)
         {
             ThirdWeapon = SpawnedWeapon;
             MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
         }
         else
         {
-            if (CurrentWeapon)
-            {
-                bool bSlotUpdated = false;
-
-                if (CurrentWeapon == PrimaryWeapon)
-                {
-                    PrimaryWeapon = SpawnedWeapon;
-                    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
-                    bSlotUpdated = true;
-                }
-                else if (CurrentWeapon == SecondaryWeapon)
-                {
-                    SecondaryWeapon = SpawnedWeapon;
-                    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this);
-                    bSlotUpdated = true;
-                }
-                else if (CurrentWeapon == ThirdWeapon)
-                {
-                    ThirdWeapon = SpawnedWeapon;
-                    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
-                    bSlotUpdated = true;
-                }
-
-                if (!bSlotUpdated)
-                {
-                    UE_LOG(LogTemp, Error, TEXT("GiveWeapon: CurrentWeapon (%s) matched no weapon slot — falling back to Primary."), *CurrentWeapon->GetName());
-                    PrimaryWeapon = SpawnedWeapon;
-                    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
-                }
-
-                ABaseWeapon* WeaponToDestroy = CurrentWeapon;
-                WeaponToDestroy->Destroy();
-            }
+            WeaponToDestroy = PrimaryWeapon;
+            PrimaryWeapon = SpawnedWeapon;
+            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
         }
 
-        if (IsValid(CurrentWeapon) && CurrentWeapon != SpawnedWeapon)
+        if (IsValid(WeaponToDestroy))
         {
-            CurrentWeapon->SetActorHiddenInGame(true);
-            CurrentWeapon->SetActorEnableCollision(false);
+            WeaponToDestroy->Destroy();
         }
-
-        CurrentWeapon = SpawnedWeapon;
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
-
-        CurrentWeapon->EquipWeapon(this);
-        AttachWeaponToMesh(CurrentWeapon);
-        OnRep_CurrentWeapon();
-
-        //OnWeaponChanged.Broadcast(CurrentWeapon);
     }
+
+    if (IsValid(CurrentWeapon) && CurrentWeapon != SpawnedWeapon)
+    {
+        CurrentWeapon->SetActorHiddenInGame(true);
+        CurrentWeapon->SetActorEnableCollision(false);
+    }
+
+    CurrentWeapon = SpawnedWeapon;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
+    CurrentWeapon->EquipWeapon(this);
+    AttachWeaponToMesh(CurrentWeapon);
+    OnRep_CurrentWeapon();
 }
 
 void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
@@ -609,6 +600,51 @@ ABaseWeapon* AHama::GetNextWeaponWithAmmo() const
     }
 
     return nullptr;
+}
+
+void AHama::RemoveCurrentWeapon()
+{
+    if (!HasAuthority() || !IsValid(CurrentWeapon)) return;
+
+    ABaseWeapon* WeaponToDestroy = CurrentWeapon;
+
+    if (CurrentWeapon == PrimaryWeapon)
+    {
+        PrimaryWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
+    }
+    else if (CurrentWeapon == SecondaryWeapon)
+    {
+        SecondaryWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this);
+    }
+    else if (CurrentWeapon == ThirdWeapon)
+    {
+        ThirdWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
+    }
+
+    CurrentWeapon = GetNextWeaponWithAmmo();
+    if (!CurrentWeapon)
+    {
+        if (PrimaryWeapon) CurrentWeapon = PrimaryWeapon;
+        else if (SecondaryWeapon) CurrentWeapon = SecondaryWeapon;
+        else if (ThirdWeapon) CurrentWeapon = ThirdWeapon;
+    }
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
+    WeaponToDestroy->Destroy();
+
+    if (CurrentWeapon)
+    {
+        CurrentWeapon->SetActorHiddenInGame(false);
+        CurrentWeapon->SetActorEnableCollision(true);
+        CurrentWeapon->EquipWeapon(this);
+        AttachWeaponToMesh(CurrentWeapon);
+    }
+
+    OnRep_CurrentWeapon();
 }
 
 void AHama::AutoSwapToAvailableWeapon()
@@ -1259,7 +1295,6 @@ void AHama::StopSlideRoutine()
 void AHama::StartDiving()
 {
     if (!HamaComponent) return;
-    if (HamaComponent->GetCurrentStamina() < 25.0f) return;
     if (IsSprinting())  HamaComponent->StopSprinting();
     PlayAnimMontage(DiveMontage);
     HamaComponent->StartDive();
@@ -1349,14 +1384,18 @@ bool AHama::IsMovingForward() const
 
 void AHama::SprintActionPressed()
 {
-    if (!HamaComponent || !HamaComponent->CanSprint()) return;
+    if (!IsMovingForward()) return;
+    if (!HamaComponent) return;
+    if (IsDrinkingPerk()) return;
+    if (IsSliding()) return;
+    if (IsDiving()) return;
+    if (GetCharacterMovement()->IsFalling()) return;
 
     if (HamaComponent->IsAiming())
     {
         HamaComponent->SetAiming(false);
         OnAim(false);
     }
-
     if (bIsFireButtonHold && CurrentWeapon) CurrentWeapon->StopFire();
     if (CurrentWeapon && CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
     if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching()) UnCrouch();

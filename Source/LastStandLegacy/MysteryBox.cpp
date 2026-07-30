@@ -8,6 +8,7 @@
 #include "HamaPlayerState.h"
 #include "MysteryBoxSpawnPoint.h"
 #include "ZombieDirectorSubsystem.h"
+#include "PackAPunchMachine.h"
 
 AMysteryBox::AMysteryBox()
 {

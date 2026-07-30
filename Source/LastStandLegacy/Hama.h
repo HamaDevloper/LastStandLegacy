@@ -365,6 +365,8 @@ public:
     bool IsDrinkingPerk() const { return CurrentSpawnedBottle != nullptr; }
     bool HasQuickRevive() const { return bHasQuickRevive; }
     bool IsMovingForward() const;
+    bool IsSliding() const { return HamaComponent->IsSlide(); }
+    bool IsDiving() const { return HamaComponent->IsDiving(); }
 
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
@@ -381,6 +383,9 @@ public:
 
 public:
     void RefillAllWeapons();
+
+    UFUNCTION(BlueprintCallable, Category = "Weapon System")
+    void RemoveCurrentWeapon();
 
 protected:
     void HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo);
