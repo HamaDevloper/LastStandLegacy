@@ -9,10 +9,12 @@
 #include "Net/Core/PushModel/PushModel.h"
 #include "MeleeDamageType.h"
 #include "ZombieDirectorSubsystem.h"
+#include "Engine/AssetManager.h"
 
 AZombie::AZombie()
 {
     PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bStartWithTickEnabled = false;
 
     bReplicates = true;
     SetReplicateMovement(true);
@@ -20,7 +22,7 @@ AZombie::AZombie()
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
     SetNetUpdateFrequency(10.f);
-    SetMinNetUpdateFrequency(3.f);
+    SetMinNetUpdateFrequency(2.f);
 
     MaxHealth = BaseHealth;
     Health = MaxHealth;
@@ -44,6 +46,7 @@ void AZombie::BeginPlay()
     if (CachedMovement)
     {
         CachedMovement->bEnablePhysicsInteraction = false;
+        CachedMovement->bUseRVOAvoidance = false;
     }
 
     if (USkeletalMeshComponent* MeshComp = GetMesh())
@@ -51,8 +54,14 @@ void AZombie::BeginPlay()
         if (!IsRunningDedicatedServer())
         {
             MeshComp->bEnableUpdateRateOptimizations = true;
-            MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+            MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
             MeshComp->bCastFarShadow = false;
+            MeshComp->SetGenerateOverlapEvents(false);
+        }
+        else
+        {
+            MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
+            MeshComp->bNoSkeletonUpdate = true;
         }
     }
 
@@ -93,7 +102,6 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
     Params.bIsPushBased = true;
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, bIsDead, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, Health, Params);
   
     DOREPLIFETIME_CONDITION(AZombie, MeshIndexSelected, COND_InitialOnly);
     DOREPLIFETIME_CONDITION(AZombie, MaxHealth, COND_InitialOnly);
@@ -110,8 +118,6 @@ void AZombie::SetStatsForRound(int32 CurrentRound)
 
     MaxHealth = FMath::Clamp(NewHealth, BaseHealth, MaxHealthZombieReach);
     Health = MaxHealth;
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, Health, this);
 
     const float Alpha = FMath::Clamp((CurrentRound - 1) / 19.f, 0.f, 1.f);
     const float BaseSpeed = FMath::Lerp(MinWalkSpeed, MaxBaseWalkSpeed, Alpha);
@@ -144,13 +150,35 @@ void AZombie::OnRep_SelectedIndex()
 
 void AZombie::ApplySelectedMesh()
 {
-    if (MeshToSelect.IsValidIndex(MeshIndexSelected))
+    if (!MeshToSelect.IsValidIndex(MeshIndexSelected)) return;
+
+    TSoftObjectPtr<USkeletalMesh> SoftMesh = MeshToSelect[MeshIndexSelected];
+
+    if (USkeletalMesh* LoadedMesh = SoftMesh.Get())
     {
         if (USkeletalMeshComponent* MeshComp = GetMesh())
         {
-            MeshComp->SetSkeletalMeshAsset(MeshToSelect[MeshIndexSelected]);
+            MeshComp->SetSkeletalMeshAsset(LoadedMesh);
         }
+
+        return;
     }
+
+    FStreamableManager& Streamable = UAssetManager::GetStreamableManager();
+
+    Streamable.RequestAsyncLoad(
+        SoftMesh.ToSoftObjectPath(),
+        [this, SoftMesh]()
+        {
+            if (USkeletalMesh* AsyncLoadedMesh = SoftMesh.Get())
+            {
+                if (USkeletalMeshComponent* MeshComp = GetMesh())
+                {
+                    MeshComp->SetSkeletalMeshAsset(AsyncLoadedMesh);
+                }
+            }
+        }
+    );
 }
 
 void AZombie::ExecuteMeleeHit()
@@ -209,8 +237,6 @@ float AZombie::TakeDamage(
     }
 
     Health -= DamageApplied;
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, Health, this);
 
     AHamaPlayerState* TargetPlayerState =
         EventInstigator

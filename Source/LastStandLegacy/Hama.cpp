@@ -33,7 +33,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 
     bReplicates = true;
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(60.f);
+    SetNetUpdateFrequency(100.f);
     SetMinNetUpdateFrequency(33.f);
 
     if (GetCharacterMovement())
@@ -178,8 +178,6 @@ void AHama::Tick(float DeltaTime)
     {
         return;
     }
-
-   
 
     if (SnapTarget->IsDead())
     {
@@ -552,8 +550,6 @@ void AHama::OnRep_CurrentWeapon()
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
     }
-
-    //OnWeaponChanged.Broadcast(CurrentWeapon);
 }
 
 void AHama::HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo)

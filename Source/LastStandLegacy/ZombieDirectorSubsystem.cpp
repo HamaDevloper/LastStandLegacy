@@ -15,9 +15,10 @@ void UZombieDirectorSubsystem::Deinitialize()
     ActiveZombies.Empty();
     ActivePlayers.Empty();
     ValidTargetPlayers.Empty();
-    CachedPlayerMap.Reset();
     MysteryBoxSpawnPoints.Empty();
     ReusableMysteryBoxPoints.Empty();
+    CachedPlayerMap.Reset();
+    SpatialGrid.Reset();
 
     Super::Deinitialize();
 }
@@ -142,7 +143,6 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             }
         }
 
-        // 2. Sweep & Purge Dead Zombies
         for (int32 i = ActiveZombies.Num() - 1; i >= 0; --i)
         {
             AZombie* Z = ActiveZombies[i].Get();
@@ -163,9 +163,12 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     const int32 ZombieCount = ActiveZombies.Num();
 
-    const double DynamicTimeBudget = FMath::Clamp(DeltaTime * 0.05f, 0.0005f, 0.002f);
+    const double DynamicTimeBudget = FMath::Clamp(DeltaTime * 0.04f, 0.0003f, 0.0015f);
     const double StartTime = FPlatformTime::Seconds();
-    static constexpr float TargetMovedThresholdSq = 150.f * 150.f;
+    static constexpr float TargetMovedThresholdSq = 180.f * 180.f;
+
+    int32 MaxRepathRequestsThisFrame = 3;
+    int32 CurrentRepathCount = 0;
 
     int32 i = CurrentZombieIndex;
     for (; i < ZombieCount; ++i)
@@ -186,17 +189,10 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
         if (!bNeedsSearch && Zombie->CurrentTarget)
         {
-            if (IsValid(Zombie->CurrentTarget))
+            if (const FVector* FoundLoc = CachedPlayerMap.Find(Zombie->CurrentTarget))
             {
-                if (const FVector* FoundLoc = CachedPlayerMap.Find(Zombie->CurrentTarget))
-                {
-                    TargetPlayer = Zombie->CurrentTarget;
-                    PlayerLoc = *FoundLoc;
-                }
-                else
-                {
-                    bNeedsSearch = true;
-                }
+                TargetPlayer = Zombie->CurrentTarget;
+                PlayerLoc = *FoundLoc;
             }
             else
             {
@@ -207,45 +203,46 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         if (bNeedsSearch)
         {
             float ClosestDistanceSq = UE_BIG_NUMBER;
-
-            // ⚡ [SPATIAL GRID SEARCH]: لەبری لۆپی $O(M)$ بەسەر هەموو یاریزانەکاندا، تەنها 9 Grid Cell ی دەورەوبەر دەپشکنێت
             TargetPlayer = SpatialGrid.FindNearestPlayerInRadius(ZombieLoc, ClosestDistanceSq);
 
-            if (TargetPlayer && !CachedPlayerMap.Contains(TargetPlayer))
+            if (TargetPlayer)
             {
-                TargetPlayer = nullptr;
-                ClosestDistanceSq = UE_BIG_NUMBER;
+                if (const FVector* FoundLoc = CachedPlayerMap.Find(TargetPlayer))
+                {
+                    PlayerLoc = *FoundLoc;
+                }
+                else
+                {
+                    TargetPlayer = nullptr;
+                }
             }
 
-            if (!TargetPlayer && !CachedPlayerMap.IsEmpty())
+            if (!TargetPlayer)
             {
-                for (const auto& Kvp : CachedPlayerMap)
+                for (const TPair<APawn*, FVector>& Pair : CachedPlayerMap)
                 {
-                    APawn* PlayerPawn = Kvp.Key;
-                    if (!IsValid(PlayerPawn)) continue;
+                    APawn* CandidatePlayer = Pair.Key;
+                    if (!IsValid(CandidatePlayer)) continue;
 
-                    float DistSq = FVector::DistSquared(ZombieLoc, Kvp.Value);
+                    const float DistSq = FVector::DistSquared(ZombieLoc, Pair.Value);
                     if (DistSq < ClosestDistanceSq)
                     {
                         ClosestDistanceSq = DistSq;
-                        TargetPlayer = PlayerPawn;
+                        TargetPlayer = CandidatePlayer;
                     }
                 }
             }
 
             if (TargetPlayer)
             {
-                PlayerLoc = TargetPlayer->GetActorLocation();
-
-                // Distance LOD Throttling
                 float NextInterval = 0.25f;
-                if (ClosestDistanceSq > 16000000.f) // > 40m
+                if (ClosestDistanceSq > 16000000.f)
                 {
-                    NextInterval = 2.0f;
+                    NextInterval = 1.8f;
                 }
-                else if (ClosestDistanceSq > 1000000.f) // > 10m
+                else if (ClosestDistanceSq > 1000000.f)
                 {
-                    NextInterval = 0.75f;
+                    NextInterval = 0.6f;
                 }
 
                 Zombie->NextTargetSearchTime = CurrentTime + NextInterval + FMath::RandRange(0.0f, 0.1f);
@@ -257,14 +254,14 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
         if (TargetPlayer)
         {
-            float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, PlayerLoc);
+            const float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, PlayerLoc);
+            const bool bIsAIIdle = AICon->GetMoveStatus() == EPathFollowingStatus::Idle;
 
-            bool bIsAIIdle = AICon->GetMoveStatus() == EPathFollowingStatus::Idle;
-            bool bShouldRepath = (Zombie->CurrentTarget != TargetPlayer) ||
+            const bool bShouldRepath = (Zombie->CurrentTarget != TargetPlayer) ||
                 (TargetMovedDistSq > TargetMovedThresholdSq) ||
                 (bIsAIIdle && CurrentTime >= Zombie->NextForceRepathTime);
 
-            if (bShouldRepath)
+            if (bShouldRepath && CurrentRepathCount < MaxRepathRequestsThisFrame)
             {
                 Zombie->CurrentTarget = TargetPlayer;
                 Zombie->LastTargetLocation = PlayerLoc;
@@ -274,7 +271,13 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                     Zombie->NextForceRepathTime = CurrentTime + 0.5f;
                 }
 
-                AICon->MoveToActor(TargetPlayer, 40.f, true, true, true);
+                FAIMoveRequest MoveReq(TargetPlayer);
+                MoveReq.SetAcceptanceRadius(40.f);
+                MoveReq.SetUsePathfinding(true);
+
+                AICon->MoveTo(MoveReq);
+
+                CurrentRepathCount++;
             }
         }
         else

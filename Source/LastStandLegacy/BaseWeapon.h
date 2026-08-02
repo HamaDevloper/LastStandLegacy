@@ -130,10 +130,6 @@ public:
     // دەتوانرێت کاتێک یاریزان چەکەکە هەڵدەگرێت بانگ بکرێت
     void EquipWeapon(AHama* NewOwnerCharacter);
 
-    // نوێکردنەوەی چەک لە ئاستی سێرڤەر (Pack-A-Punch)
-    UFUNCTION(BlueprintCallable, Server, Reliable)
-    void ServerUpgradeWeapon_PackAPunch();
-
     UFUNCTION(BlueprintCallable, Category = "Weapon")
     void RefillAmmo();
 
@@ -158,7 +154,7 @@ public:
 protected:
     FWeaponData CurrentWeaponData;
 
-    UPROPERTY(ReplicatedUsing = OnRep_CurrentAmmo, EditAnywhere, BlueprintReadWrite, Category = "Weapon|Ammo")
+    UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "Weapon|Ammo")
     int32 CurrentAmmo;
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon|LiveStats")
@@ -169,7 +165,6 @@ protected:
 
     bool bInfiniteAmmo = false;
 
-    // گۆڕاوێک بۆ دروستکردنی هەڕەمەکی (Randomness)ـی تەقەکردن کە لە سێرڤەر و Client هاوتا بێت
     UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
     uint8 BurstCounter = 0;
 
@@ -180,16 +175,13 @@ protected:
     int32 CurrentBurstShotsLeft = 0;
     int32 ServerBurstShotsLeft = 0;
 
-    // سڕدرایەوە چونکە ئێستا ڕاستەوخۆ حیسابی بۆ دەکرێت پێش Desync:
-    // int32 ReloadStartReserveAmmo = 0; 
-
     float NextAllowedFireTime;
 
 public:
     UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon|LiveStats")
     bool bIsReloading = false;
 
-    UPROPERTY(ReplicatedUsing = OnRep_ReserveAmmo, EditAnywhere, BlueprintReadWrite, Category = "Weapon|Ammo")
+    UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category = "Weapon|Ammo")
     int32 ReserveAmmo;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Effects")
@@ -216,12 +208,6 @@ public:
     UFUNCTION()
     void OnRep_BurstCounter();
 
-    UFUNCTION()
-    void OnRep_CurrentAmmo();
-
-    UFUNCTION()
-    void OnRep_ReserveAmmo();
-
     // --- ڕێکخستنی Reload (Anti-Bloat & Desync Fixes) ---
     void Reload();
 
@@ -245,9 +231,6 @@ public:
 
     UFUNCTION()
     void OnRep_Reload();
-
-    UFUNCTION(Client, Reliable)
-    void Client_ApplyPackAPunchFX(int32 NewReserveAmmo);
 
 protected:
     void Local_ReloadComplete();

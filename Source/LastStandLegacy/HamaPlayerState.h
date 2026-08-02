@@ -38,7 +38,6 @@ protected:
     UFUNCTION()
     void OnRep_Kills();
 
-    // فەنکشنی نوێ بۆ ئەپدەیتکردنی ڕۆڵەکە لای کڵایەنتەکان
     UFUNCTION()
     void OnRep_AssignedRole();
 
@@ -57,6 +56,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Player State")
     int32 GetKills() const { return Kills; }
+
+    UFUNCTION(Client, Unreliable)
+    void Client_OnPointGained(int32 NewPoints);
+
+    UFUNCTION(Client, Unreliable)
+    void Client_OnKillGained(int32 NewKill);
 
     UFUNCTION(BlueprintCallable, Category = "Player State")
     void SetAssignedRole(EHamaAbilityType NewRole);

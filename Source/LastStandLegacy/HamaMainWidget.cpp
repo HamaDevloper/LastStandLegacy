@@ -150,7 +150,6 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
         int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo();
         int32 LowAmmoThreshold = FMath::RoundToInt(MaxClipSize * 0.25f);
 
-        // 🔥 چاککردن 3: زیادکردنی حاڵەتی (Clip=0 & Reserve>0) بۆ نیشاندانی RELOAD
         if (CurrentAmmo == 0 && ReserveAmmo <= 0)
         {
             static const FText NoAmmoText = LOCTEXT("NoAmmo", "NO AMMO");
@@ -265,7 +264,6 @@ void UHamaMainWidget::HandlePerksUpdate(const TArray<FName>& CurrentPerks)
 
     PerkContainer->ClearChildren();
 
-    // 🔥 ١. دیاریکردنی سایزی نەگۆڕ بۆ هەموو پێرکەکان (دەتوانیت 48 یان 64 بپێچیت بەپێی ئارەزوو)
     const FVector2D DesiredPerkSize(Perksize, Perksize);
 
     for (const FName& PerkID : CurrentPerks)

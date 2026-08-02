@@ -130,11 +130,10 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
     Params.Condition = COND_None;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, CurrentAmmo, Params);
-
+   
     Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, BurstCounter, Params);
-   
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, CurrentAmmo, Params);
 
     Params.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, ReserveAmmo, Params);
@@ -142,38 +141,6 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, MaxAmmoInClip, Params);
 }
 
-void ABaseWeapon::ServerUpgradeWeapon_PackAPunch_Implementation()
-{
-    if (!HasAuthority()) return;
-
-    Damage *= 2.f;
-    MaxAmmoInClip = FMath::RoundToInt(MaxAmmoInClip * 2.f);
-    CurrentWeaponData.MaxReserveAmmo *= 2;
-    ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, Damage, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, MaxAmmoInClip, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
-
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-    {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
-    else
-    {
-        Client_ApplyPackAPunchFX(ReserveAmmo);
-    }
-}
-
-void ABaseWeapon::Client_ApplyPackAPunchFX_Implementation(int32 NewReserveAmmo)
-{
-    ReserveAmmo = NewReserveAmmo;
-
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-    {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
-}
 
 void ABaseWeapon::StartFire()
 {
@@ -258,15 +225,44 @@ float ABaseWeapon::CalculateBulletSpread()
 float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
 {
     float ActualDamage = Damage;
+    FString HitLocationName = TEXT("Body");
 
     if (Hit.PhysMaterial.IsValid())
     {
         EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
-        if (SurfaceType == EPhysicalSurface::SurfaceType1) ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
-        else if (SurfaceType == EPhysicalSurface::SurfaceType2) ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
+
+        if (SurfaceType == EPhysicalSurface::SurfaceType1)
+        {
+            ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
+            HitLocationName = TEXT("HEAD");
+        }
+        else if (SurfaceType == EPhysicalSurface::SurfaceType2)
+        {
+            ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
+            HitLocationName = TEXT("LEG");
+        }
     }
 
-    if (IsInfiniteAmmoActive()) ActualDamage *= 2.0f;
+    if (IsInfiniteAmmoActive())
+    {
+        ActualDamage *= 2.0f;
+    }
+
+    // -------------------------------------------------------------
+    // DEBUG OUTPUT (Print String)
+    // -------------------------------------------------------------
+    FString DebugMsg = FString::Printf(TEXT("[%s] Shot Hit: %s | Final Damage: %.1f"),
+        HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+        *HitLocationName,
+        ActualDamage);
+
+    FColor MsgColor = (HitLocationName == TEXT("HEAD")) ? FColor::Green :
+        (HitLocationName == TEXT("LEG") ? FColor::Yellow : FColor::White);
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 3.0f, MsgColor, DebugMsg);
+    }
 
     return ActualDamage;
 }
@@ -825,21 +821,5 @@ void ABaseWeapon::OnRep_Reload()
         {
             AnimInstance->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
         }
-    }
-}
-
-void ABaseWeapon::OnRep_CurrentAmmo()
-{
-    if (!bIsReloading)
-    {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
-}
-
-void ABaseWeapon::OnRep_ReserveAmmo()
-{
-    if (!bIsReloading)
-    {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 }

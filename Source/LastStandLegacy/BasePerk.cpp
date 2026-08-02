@@ -13,6 +13,7 @@ ABasePerk::ABasePerk()
 
     NetDormancy = DORM_Initial;
     SetNetUpdateFrequency(1.0f);
+    SetMinNetUpdateFrequency(0.5f);
 
     TriggerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TriggerBox"));
     RootComponent = TriggerBox;

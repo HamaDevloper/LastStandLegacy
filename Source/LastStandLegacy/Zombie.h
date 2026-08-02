@@ -60,7 +60,7 @@ protected:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Zombie|Stats")
     float MaxHealth;
 
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Zombie|Stats")
+    UPROPERTY(BlueprintReadOnly, Category = "Zombie|Stats")
     float Health;
 
     UPROPERTY(ReplicatedUsing = OnRep_SelectedIndex, BlueprintReadOnly, Category = "Zombie|Stats")
@@ -86,7 +86,7 @@ protected:
     float AbsoluteMaxSpeed = 650.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie|Visuals")
-    TArray<TObjectPtr<USkeletalMesh>> MeshToSelect;
+    TArray<TSoftObjectPtr<USkeletalMesh>> MeshToSelect;
 
     float AttackDistanceSq;
 

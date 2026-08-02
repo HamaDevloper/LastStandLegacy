@@ -6,6 +6,7 @@
 ALastStandLegacyGameState::ALastStandLegacyGameState()
 {
     SetNetUpdateFrequency(2.f);
+    SetMinNetUpdateFrequency(1.f);
 }
 
 void ALastStandLegacyGameState::Multicast_AnnouncePowerUp_Implementation(EPowerUpType PowerUpType)
