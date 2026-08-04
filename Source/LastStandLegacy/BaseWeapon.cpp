@@ -215,7 +215,7 @@ float ABaseWeapon::CalculateBulletSpread()
         UCharacterMovementComponent* MoveComp = OwnerCharacter->GetCharacterMovement();
         if (MoveComp->IsCrouching()) CurrentSpread *= CurrentWeaponData.CrouchSpreadMultiplier;
         else if (MoveComp->IsFalling()) CurrentSpread *= CurrentWeaponData.AirSpreadMultiplier;
-    }
+    } 
 
     if (OwnerCharacter && OwnerCharacter->HasDeadshot()) CurrentSpread *= 0.65f;
 
@@ -261,7 +261,7 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
 
     if (GEngine)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 3.0f, MsgColor, DebugMsg);
+        GEngine->AddOnScreenDebugMessage(1, 3.0f, MsgColor, DebugMsg);
     }
 
     return ActualDamage;
@@ -606,14 +606,13 @@ void ABaseWeapon::RefillAmmo()
         {
             Reload();
         }
-        else
-        {
-            Client_ForceReload(ReserveAmmo);
-        }
     }
+
+
+    Client_ForceReload(ReserveAmmo, bWasEmpty);
 }
 
-void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
+void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo, bool bCanReload)
 {
     ReserveAmmo = NewReserveAmmo;
 
@@ -621,10 +620,13 @@ void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo)
 
     if (bIsEquipped && OwnerCharacter->IsLocallyControlled())
     {
-        if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
-
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-        Reload();
+
+        if (bCanReload)
+        {
+            if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+            Reload();
+        }   
     }
 }
 

@@ -181,7 +181,7 @@ void UHamaMainWidget::HandleInteractUpdate(const FString& Message)
 
     if (Message.IsEmpty())
     {
-        InteractText->SetVisibility(ESlateVisibility::Hidden);
+        InteractText->SetVisibility(ESlateVisibility::Collapsed);
     }
     else
     {
@@ -204,14 +204,7 @@ void UHamaMainWidget::UpdatePingDisplay()
 
     int32 PingValue = 0;
 
-    if (GetOwningPlayer() && GetOwningPlayer()->HasAuthority())
-    {
-        PingValue = 0;
-    }
-    else
-    {
-        PingValue = FMath::RoundToInt(CachedHamaPS->GetPingInMilliseconds());
-    }
+    PingValue = FMath::RoundToInt(CachedHamaPS->GetPingInMilliseconds());
 
     static const FText PingFormat = LOCTEXT("PingFormat", "{0} ms");
     PingText->SetText(FText::Format(PingFormat, PingValue));

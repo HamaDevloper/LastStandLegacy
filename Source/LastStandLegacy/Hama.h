@@ -169,10 +169,11 @@ public:
     // -----------------------------------------------------------------------------
     // Input Mapping & Actions
     // -----------------------------------------------------------------------------
-protected:
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputMappingContext> DefaultMappingContext;
 
+protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> MoveAction;
 

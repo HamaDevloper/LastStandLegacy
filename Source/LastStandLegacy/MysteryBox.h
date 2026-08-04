@@ -51,11 +51,19 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|Settings")
     int32 MysteryBoxPrice = 950;
 
+    UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|Costs")
+    int32 FireSalePrice = 10;
+
     UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|Settings")
     float SpinDuration = 4.0f;
 
     UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|Settings")
     float OfferDuration = 10.0f;
+
+    UPROPERTY(ReplicatedUsing = OnRep_IsFireSaleActive)
+    bool bIsFireSaleActive = false;
+
+    bool bIsTemporaryFireSaleBox = false;
 
     UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|TeddyBear")
     TObjectPtr<UStaticMesh> TeddyBearMesh;
@@ -82,6 +90,9 @@ protected:
     void OnRep_BoxState();
 
     UFUNCTION()
+    void OnRep_IsFireSaleActive();
+
+    UFUNCTION()
     void OnRep_OfferedWeaponClass();
 
     void OpenMysteryBox(AHama* Player);
@@ -91,7 +102,6 @@ protected:
     void ResetBox();
     void ResetToIdle();
 
-    // ⚡ لۆجیکی فلتەرکردنی ئەو چەکانەی یاریزانەکە هەیەتی
     TArray<TSubclassOf<ABaseWeapon>> GetFilteredWeaponsForPlayer(AHama* Player) const;
 
     void UpdateVisuals();
@@ -106,4 +116,13 @@ private:
     FTimerHandle TimerHandle_TeddyBear;
 
     int32 CurrentSpinCount = 0;
+    uint8 bPendingFireSaleDestroy : 1 = false;
+
+public:
+    void SetFireSaleActive(bool bActive);
+    void HandleFireSaleEnd();
+    bool IsTemporaryFireSaleBox() const { return bIsTemporaryFireSaleBox; }
+    void SetIsTemporaryFireSaleBox(bool bTemp) { bIsTemporaryFireSaleBox = bTemp; }
+    int32 GetCurrentPrice() const;
+    AMysteryBoxSpawnPoint* GetCurrentSpawnPoint() const { return CurrentSpawnPoint; }
 };

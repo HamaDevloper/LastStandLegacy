@@ -219,7 +219,7 @@ public:
     void ServerReload(bool bClientEmpty);
 
     UFUNCTION(Client, Reliable)
-    void Client_ForceReload(int32 NewReserveAmmo);
+    void Client_ForceReload(int32 NewReserveAmmo, bool bCanReload);
 
     void CancelReload();
 

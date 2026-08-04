@@ -155,6 +155,7 @@ void AHama::Landed(const FHitResult& Hit)
             StartSlideRoutine();
         }
     }
+
     bCanJumpSlide = false;
 }
 
@@ -255,7 +256,6 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
 
 void AHama::CheckForInteractables()
 {
-    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, TEXT("Checking for interactables..."));
     if (!IsLocallyControlled() || !OwnerController) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
 
@@ -297,6 +297,7 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
             FocusedInteractable = nullptr;
             OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
         }
+
         return;
     }
 
@@ -307,6 +308,7 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
             FocusedInteractable = nullptr;
             OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
         }
+
         return;
     }
 
@@ -319,6 +321,7 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
             FocusedInteractable = nullptr;
             OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
         }
+
         return;
     }
 
@@ -405,6 +408,7 @@ void AHama::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* Old
                     HamaAbilityComponent->SetAssignedAbility(MyRole);
                 }
             }
+
             ApplyRoleVisuals(MyRole);
         }
     }
@@ -437,7 +441,6 @@ void AHama::CreateDefaultWeapon()
         CurrentWeapon->EquipWeapon(this);
         OnRep_CurrentWeapon();
         AttachWeaponToMesh(CurrentWeapon);
-        //OnWeaponChanged.Broadcast(CurrentWeapon);
     }
 }
 
@@ -586,7 +589,6 @@ ABaseWeapon* AHama::GetNextWeaponWithAmmo() const
         SearchOrder = { PrimaryWeapon, SecondaryWeapon };
     }
 
-    // پشکنین بۆ یەکەم چەک کە فیشەکی تێدایە
     for (ABaseWeapon* Weapon : SearchOrder)
     {
         if (Weapon && Weapon->HasAmmo())
@@ -886,7 +888,6 @@ void AHama::RemoveDeathMachine()
 
     if (IsValid(ActiveDeathMachine))
     {
-        // 🔥 زۆر گرنگە: وەستاندنی تەقەی Death Machine پێش سڕینەوەی
         ActiveDeathMachine->StopFire();
         ActiveDeathMachine->Destroy();
         ActiveDeathMachine = nullptr;
@@ -917,8 +918,6 @@ void AHama::RemoveDeathMachine()
         AttachWeaponToMesh(CurrentWeapon);
 
         OnRep_CurrentWeapon();
-        //OnWeaponChanged.Broadcast(CurrentWeapon);
-
       
         if (CurrentWeapon->CanReload())
         {
@@ -963,14 +962,6 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
     Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-    if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
-    {
-        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-        {
-            Subsystem->AddMappingContext(DefaultMappingContext, 0);
-        }
-    }
-
     if (UEnhancedInputComponent* EnhancedInput = CastChecked<UEnhancedInputComponent>(PlayerInputComponent))
     {
         EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AHama::Move);
@@ -988,7 +979,8 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHama::FireActionReleased);
         EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
         EnhancedInput->BindAction(AbilityAction, ETriggerEvent::Started, this, &AHama::AbilityActionPressed);
-        EnhancedInput->BindAction(SwapWeaponAction, ETriggerEvent::Started, this, &AHama::Input_SwapWeapon);        EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &AHama::InteractActionPressed);
+        EnhancedInput->BindAction(SwapWeaponAction, ETriggerEvent::Started, this, &AHama::Input_SwapWeapon);
+        EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &AHama::InteractActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Triggered, this, &AHama::GamepadXActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Completed, this, &AHama::GamepadXActionReleased);
         EnhancedInput->BindAction(MeleeAction, ETriggerEvent::Started, this, &AHama::MeleeActionPressed);
@@ -1919,10 +1911,7 @@ void AHama::Interact(AHama* InteractingPlayer)
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 {
     if (!DownedPlayer || !DownedPlayer->HealthComponent) return;
-
-    // 🔒 پشکنین لە ڕێگەی HealthComponent
     if (DownedPlayer->HealthComponent->IsBeingRevived()) return;
-
     if (bIsDead || IsDowned() || !DownedPlayer->HealthComponent->IsDowned()) return;
 
     const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.f);

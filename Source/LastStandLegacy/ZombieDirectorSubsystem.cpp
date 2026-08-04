@@ -4,6 +4,7 @@
 #include "MysteryBoxSpawnPoint.h" 
 #include "Navigation/PathFollowingComponent.h"
 #include "Engine/World.h"
+#include "MysteryBox.h"
 
 void UZombieDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -12,11 +13,18 @@ void UZombieDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UZombieDirectorSubsystem::Deinitialize()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TimerHandle_FireSale);
+    }
+
     ActiveZombies.Empty();
     ActivePlayers.Empty();
     ValidTargetPlayers.Empty();
     MysteryBoxSpawnPoints.Empty();
     ReusableMysteryBoxPoints.Empty();
+    RegisteredBoxes.Empty();
+    TempFireSaleBoxes.Empty();
     CachedPlayerMap.Reset();
     SpatialGrid.Reset();
 
@@ -338,4 +346,97 @@ AMysteryBoxSpawnPoint* UZombieDirectorSubsystem::GetRandomFreeMysteryBoxPoint(AM
     }
 
     return nullptr;
+}
+
+void UZombieDirectorSubsystem::RegisterMysteryBox(AMysteryBox* Box)
+{
+    if (Box && !RegisteredBoxes.Contains(Box))
+    {
+        RegisteredBoxes.Add(Box);
+
+        if (bIsFireSaleActive)
+        {
+            Box->SetFireSaleActive(true);
+        }
+    }
+}
+
+void UZombieDirectorSubsystem::UnregisterMysteryBox(AMysteryBox* Box)
+{
+    if (Box)
+    {
+        RegisteredBoxes.RemoveSingleSwap(Box, EAllowShrinking::No);
+    }
+}
+
+void UZombieDirectorSubsystem::StartFireSale(float Duration)
+{
+    UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() == NM_Client) return;
+
+    bIsFireSaleActive = true;
+
+    for (const TObjectPtr<AMysteryBox>& Box : RegisteredBoxes)
+    {
+        if (IsValid(Box) && !Box->IsTemporaryFireSaleBox())
+        {
+            Box->SetFireSaleActive(true);
+        }
+    }
+
+    TSubclassOf<AMysteryBox> ClassToSpawn = MysteryBoxClass;
+    if (!ClassToSpawn && RegisteredBoxes.Num() > 0 && IsValid(RegisteredBoxes[0]))
+    {
+        ClassToSpawn = RegisteredBoxes[0]->GetClass();
+    }
+
+    if (!ClassToSpawn) return;
+
+    for (const TObjectPtr<AMysteryBoxSpawnPoint>& Point : MysteryBoxSpawnPoints)
+    {
+        if (IsValid(Point) && !Point->IsOccupied())
+        {
+            AMysteryBox* TempBox = World->SpawnActorDeferred<AMysteryBox>(ClassToSpawn, Point->GetActorTransform());
+            if (TempBox)
+            {
+                TempBox->SetIsTemporaryFireSaleBox(true);
+                TempBox->AssignSpawnPoint(Point);
+                TempBox->SetFireSaleActive(true);
+
+                UGameplayStatics::FinishSpawningActor(TempBox, Point->GetActorTransform());
+
+                Point->SetOccupied(true);
+                TempFireSaleBoxes.Add(TempBox);
+            }
+        }
+    }
+
+    World->GetTimerManager().ClearTimer(TimerHandle_FireSale);
+    World->GetTimerManager().SetTimer(TimerHandle_FireSale, this, &UZombieDirectorSubsystem::EndFireSale, Duration, false);
+}
+
+void UZombieDirectorSubsystem::EndFireSale()
+{
+    UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() == NM_Client) return;
+
+    bIsFireSaleActive = false;
+
+    for (const TObjectPtr<AMysteryBox>& Box : RegisteredBoxes)
+    {
+        if (IsValid(Box))
+        {
+            Box->SetFireSaleActive(false);
+        }
+    }
+
+    for (const TObjectPtr<AMysteryBox>& TempBox : TempFireSaleBoxes)
+    {
+        if (IsValid(TempBox))
+        {
+            TempBox->HandleFireSaleEnd();
+        }
+    }
+
+    TempFireSaleBoxes.Reset();
 }

@@ -8,7 +8,6 @@
 #include "HamaPlayerState.h"
 #include "MysteryBoxSpawnPoint.h"
 #include "ZombieDirectorSubsystem.h"
-#include "PackAPunchMachine.h"
 
 AMysteryBox::AMysteryBox()
 {
@@ -49,6 +48,8 @@ void AMysteryBox::BeginPlay()
         FTimerHandle InitialSetupHandle;
         GetWorldTimerManager().SetTimer(InitialSetupHandle, [this]()
             {
+                if (CurrentSpawnPoint != nullptr) return;
+
                 if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
                 {
                     AMysteryBoxSpawnPoint* InitialPoint = Director->GetRandomFreeMysteryBoxPoint(nullptr);
@@ -57,6 +58,9 @@ void AMysteryBox::BeginPlay()
                         CurrentSpawnPoint = InitialPoint;
                         CurrentSpawnPoint->SetOccupied(true);
                         SetActorTransform(CurrentSpawnPoint->GetActorTransform());
+
+                        FlushNetDormancy();
+                        ForceNetUpdate();
                     }
                 }
             }, 0.2f, false);
@@ -79,6 +83,12 @@ void AMysteryBox::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, BoxState, Param);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, OfferedWeaponClass, Param);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, CurrentBuyer, Param);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, bIsFireSaleActive, Param);
+}
+
+int32 AMysteryBox::GetCurrentPrice() const
+{
+    return bIsFireSaleActive ? FireSalePrice : MysteryBoxPrice;
 }
 
 bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
@@ -93,7 +103,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
     if (BoxState == EMysteryBoxState::Idle)
     {
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-        return PS && PS->GetPoints() >= MysteryBoxPrice;
+        return PS && PS->GetPoints() >= GetCurrentPrice();
     }
     else if (BoxState == EMysteryBoxState::WeaponOffered)
     {
@@ -107,12 +117,14 @@ void AMysteryBox::Interact(AHama* Player)
 {
     if (!HasAuthority() || !Player || !CanInteract(Player)) return;
 
+    const int32 Cost = GetCurrentPrice();
+
     if (BoxState == EMysteryBoxState::Idle)
     {
         AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
-        if (PS && PS->GetPoints() >= MysteryBoxPrice)
+        if (PS && PS->GetPoints() >= Cost)
         {
-            PS->RemovePoints(MysteryBoxPrice);
+            PS->RemovePoints(Cost);
             OpenMysteryBox(Player);
         }
     }
@@ -132,7 +144,7 @@ FString AMysteryBox::GetInteractMessage()
 {
     if (BoxState == EMysteryBoxState::Idle)
     {
-        return FString::Printf(TEXT("Press F to Open MysteryBox [Cost %d]"), MysteryBoxPrice);
+        return FString::Printf(TEXT("Press F to Open MysteryBox [Cost %d]"), GetCurrentPrice());
     }
     else if (BoxState == EMysteryBoxState::WeaponOffered)
     {
@@ -165,7 +177,6 @@ TArray<TSubclassOf<ABaseWeapon>> AMysteryBox::GetFilteredWeaponsForPlayer(AHama*
 
     if (!Player) return ValidWeapons;
 
-    // وەستاندنی هەڵبژاردنی ئەو چەکانەی یاریزانەکە پێشتر هەیەتی
     TArray<TSubclassOf<ABaseWeapon>> PlayerCurrentWeapons = Player->GetOwnedWeaponClasses();
 
     for (const TSubclassOf<ABaseWeapon>& WeaponClass : PlayerCurrentWeapons)
@@ -178,7 +189,8 @@ TArray<TSubclassOf<ABaseWeapon>> AMysteryBox::GetFilteredWeaponsForPlayer(AHama*
 
 void AMysteryBox::FinishSpin()
 {
-    bool bShouldSpawnTeddy = (CurrentSpinCount >= MinSpinsBeforeTeddy) && (FMath::FRand() <= TeddyBearChance);
+    // لە کاتی Fire Saleدا چانسی دەرچوونی Teddy Bear دەبێتە 0
+    bool bShouldSpawnTeddy = !bIsFireSaleActive && (CurrentSpinCount >= MinSpinsBeforeTeddy) && (FMath::FRand() <= TeddyBearChance);
 
     if (bShouldSpawnTeddy)
     {
@@ -188,7 +200,6 @@ void AMysteryBox::FinishSpin()
 
     TArray<TSubclassOf<ABaseWeapon>> FilteredWeapons = GetFilteredWeaponsForPlayer(CurrentBuyer);
 
-    // ئەگەر هەموو چەکەکانی هێنابووەوە یان هیچی نەمابوو، بگەڕێوە سەر تەواوی چەکەکان
     if (FilteredWeapons.Num() == 0)
     {
         FilteredWeapons = AvailableWeapons;
@@ -221,7 +232,7 @@ void AMysteryBox::HandleTeddyBear()
     {
         if (AHamaPlayerState* PS = CurrentBuyer->GetPlayerState<AHamaPlayerState>())
         {
-            PS->AddPoints(MysteryBoxPrice); // گەڕاندنەوەی ٩٥٠ پۆینت بە یاریزانەکە
+            PS->AddPoints(GetCurrentPrice());
         }
     }
 
@@ -283,12 +294,53 @@ void AMysteryBox::ResetBox()
 
 void AMysteryBox::ResetToIdle()
 {
+    if (bPendingFireSaleDestroy)
+    {
+        if (CurrentSpawnPoint)
+        {
+            CurrentSpawnPoint->SetOccupied(false);
+        }
+
+        Destroy();
+        return;
+    }
+
     BoxState = EMysteryBoxState::Idle;
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
     UpdateVisuals();
+}
+
+void AMysteryBox::SetFireSaleActive(bool bActive)
+{
+    if (!HasAuthority()) return;
+
+    bIsFireSaleActive = bActive;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, bIsFireSaleActive, this);
 
     FlushNetDormancy();
     ForceNetUpdate();
+}
+
+void AMysteryBox::HandleFireSaleEnd()
+{
+    if (BoxState == EMysteryBoxState::Idle || BoxState == EMysteryBoxState::Cooldown)
+    {
+        if (CurrentSpawnPoint)
+        {
+            CurrentSpawnPoint->SetOccupied(false);
+        }
+
+        Destroy();
+    }
+    else
+    {
+        bPendingFireSaleDestroy = true;
+    }
+}
+
+void AMysteryBox::OnRep_IsFireSaleActive()
+{
+    // لێدان یان گۆڕینی UI لەسەر کلاینتەکان لە کاتی دەستپێکردن/کۆتایی Fire Sale
 }
 
 void AMysteryBox::OnRep_BoxState()

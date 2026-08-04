@@ -8,7 +8,7 @@
 class AZombie;
 class APawn;
 class AMysteryBoxSpawnPoint;
-
+class AMysteryBox;
 
 UCLASS()
 class LASTSTANDLEGACY_API UZombieDirectorSubsystem : public UTickableWorldSubsystem
@@ -23,18 +23,29 @@ public:
     virtual TStatId GetStatId() const override;
     virtual bool IsTickable() const override { return !IsTemplate(); }
 
+    // --- Zombie Management ---
     void RegisterZombie(AZombie* Zombie);
     void UnregisterZombie(AZombie* Zombie);
 
-    void IsPlayerTargetable(APawn* PlayerPawn) const;
+    // --- Player Management ---
     void RegisterPlayer(APawn* Player);
     void UnregisterPlayer(APawn* Player);
-
     void SetPlayerTargetable(APawn* Player, bool bIsTargetable);
 
+    // --- MysteryBox & FireSale API ---
     void RegisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPoint* Point);
     void UnregisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPoint* Point);
     AMysteryBoxSpawnPoint* GetRandomFreeMysteryBoxPoint(AMysteryBoxSpawnPoint* CurrentPoint);
+
+    void RegisterMysteryBox(AMysteryBox* Box);
+    void UnregisterMysteryBox(AMysteryBox* Box);
+
+    void StartFireSale(float Duration);
+    void EndFireSale();
+    bool IsFireSaleActive() const { return bIsFireSaleActive; }
+
+    UPROPERTY(EditDefaultsOnly, Category = "Mystery Box")
+    TSubclassOf<AMysteryBox> MysteryBoxClass;
 
 private:
     UPROPERTY()
@@ -46,14 +57,23 @@ private:
     UPROPERTY()
     TArray<TWeakObjectPtr<AZombie>> ActiveZombies;
 
-    TMap<APawn*, FVector> CachedPlayerMap;
+    TMap<TWeakObjectPtr<APawn>, FVector> CachedPlayerMap;
     float PlayerCacheRefreshTimer = 0.f;
 
     UPROPERTY()
     TArray<TObjectPtr<AMysteryBoxSpawnPoint>> MysteryBoxSpawnPoints;
 
     UPROPERTY()
-    TArray<AMysteryBoxSpawnPoint*> ReusableMysteryBoxPoints;
+    TArray<TObjectPtr<AMysteryBoxSpawnPoint>> ReusableMysteryBoxPoints;
+
+    UPROPERTY()
+    TArray<TObjectPtr<AMysteryBox>> RegisteredBoxes;
+
+    UPROPERTY()
+    TArray<TObjectPtr<AMysteryBox>> TempFireSaleBoxes;
+
+    FTimerHandle TimerHandle_FireSale;
+    bool bIsFireSaleActive = false;
 
     FSpatialHashGrid2D SpatialGrid;
 

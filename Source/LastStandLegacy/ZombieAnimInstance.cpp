@@ -12,5 +12,11 @@ void UZombieAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
     Super::NativeUpdateAnimation(DeltaSeconds);
 
+    if (!Zombie)
+    {
+        Zombie = Cast<AZombie>(TryGetPawnOwner());
+        if(!Zombie)  return;
+    }
+
     GroundSpeed = Zombie->GetVelocity().Size2D();
 }

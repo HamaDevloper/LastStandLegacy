@@ -4,6 +4,7 @@
 #include "Hama.h"
 #include "Blueprint/UserWidget.h"
 #include "LastStandLegacyGameState.h"
+#include "EnhancedInputSubsystems.h"
 
 void AHamaPlayerController::BeginPlay()
 {
@@ -20,7 +21,30 @@ void AHamaPlayerController::OnRep_PlayerState()
 void AHamaPlayerController::AcknowledgePossession(APawn* P)
 {
     Super::AcknowledgePossession(P);
-    if (IsLocalController()) CheckAndBindUI();
+
+    if (IsLocalController())
+    {
+        CheckAndBindUI();
+
+        FInputModeGameOnly GameInputMode;
+        SetInputMode(GameInputMode);
+        bShowMouseCursor = false;
+
+        ResetIgnoreMoveInput();
+        ResetIgnoreLookInput();
+
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+        {
+            if (AHama* HamaPawn = Cast<AHama>(P))
+            {
+                if (HamaPawn->DefaultMappingContext)
+                {
+                    Subsystem->RemoveMappingContext(HamaPawn->DefaultMappingContext);
+                    Subsystem->AddMappingContext(HamaPawn->DefaultMappingContext, 0);
+                }
+            }
+        }
+    }
 }
 
 void AHamaPlayerController::CheckAndBindUI()
