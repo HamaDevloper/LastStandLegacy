@@ -5,6 +5,9 @@
 #include "BaseWeapon.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/TimelineComponent.h"
+#include "NiagaraComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "HamaPlayerState.h"
 #include "MysteryBoxSpawnPoint.h"
 #include "ZombieDirectorSubsystem.h"
@@ -14,7 +17,8 @@ AMysteryBox::AMysteryBox()
     PrimaryActorTick.bCanEverTick = false;
     bReplicates = true;
 
-    SetReplicatingMovement(true);
+    // Static Box: پێویست بە Movement Replication بەردەوام ناکات، تەنها لە کاتی Relocateدا Transform دادەنرێت
+    SetReplicatingMovement(false);
     NetDormancy = DORM_DormantAll;
 
     SetNetUpdateFrequency(10.f);
@@ -37,11 +41,31 @@ AMysteryBox::AMysteryBox()
     OfferedWeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     OfferedWeaponMesh->SetVisibility(false);
     OfferedWeaponMesh->PrimaryComponentTick.bCanEverTick = false;
+
+    RiseTimelineComponent = CreateDefaultSubobject<UTimelineComponent>(TEXT("RiseTimelineComponent"));
+
+    LightBeamVFX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("LightBeamVFX"));
+    LightBeamVFX->SetupAttachment(BoxBaseMesh);
+    LightBeamVFX->SetAutoActivate(false);
 }
 
 void AMysteryBox::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (OfferedWeaponMesh)
+    {
+        InitialOfferedMeshRelativeLocation = OfferedWeaponMesh->GetRelativeTransform().GetLocation();
+    }
+
+    if (RiseCurve && RiseTimelineComponent)
+    {
+        FOnTimelineFloat ProgressUpdate;
+        ProgressUpdate.BindUFunction(this, FName("HandleRiseTimelineProgress"));
+        RiseTimelineComponent->AddInterpFloat(RiseCurve, ProgressUpdate);
+    }
+
+    CacheWeaponMeshes();
 
     if (HasAuthority())
     {
@@ -50,30 +74,60 @@ void AMysteryBox::BeginPlay()
             Director->RegisterMysteryBox(this);
         }
 
-        GetWorldTimerManager().SetTimer(TimerHandle_InitialSetup, [this]()
+        GetWorldTimerManager().SetTimer(TimerHandle_InitialSetup, this, &AMysteryBox::TryInitialSpawnSetup, 0.2f, true);
+    }
+}
+
+void AMysteryBox::TryInitialSpawnSetup()
+{
+    if (CurrentSpawnPoint != nullptr)
+    {
+        GetWorldTimerManager().ClearTimer(TimerHandle_InitialSetup);
+        return;
+    }
+
+    if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+    {
+        AMysteryBoxSpawnPoint* InitialPoint = Director->GetRandomFreeMysteryBoxPoint(nullptr);
+        if (InitialPoint)
+        {
+            CurrentSpawnPoint = InitialPoint;
+            CurrentSpawnPoint->SetOccupied(true);
+            SetActorTransform(CurrentSpawnPoint->GetActorTransform());
+
+            FlushNetDormancy();
+            ForceNetUpdate();
+
+            GetWorldTimerManager().ClearTimer(TimerHandle_InitialSetup);
+        }
+    }
+}
+
+void AMysteryBox::CacheWeaponMeshes()
+{
+    CachedWeaponMeshes.Reset();
+    for (const TSubclassOf<ABaseWeapon>& WeaponClass : AvailableWeapons)
+    {
+        if (WeaponClass)
+        {
+            if (const ABaseWeapon* DefaultWeapon = WeaponClass->GetDefaultObject<ABaseWeapon>())
             {
-                if (CurrentSpawnPoint != nullptr) return;
-
-                if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+                if (const UStaticMeshComponent* MeshComp = DefaultWeapon->FindComponentByClass<UStaticMeshComponent>())
                 {
-                    AMysteryBoxSpawnPoint* InitialPoint = Director->GetRandomFreeMysteryBoxPoint(nullptr);
-                    if (InitialPoint)
+                    if (UStaticMesh* Mesh = MeshComp->GetStaticMesh())
                     {
-                        CurrentSpawnPoint = InitialPoint;
-                        CurrentSpawnPoint->SetOccupied(true);
-                        SetActorTransform(CurrentSpawnPoint->GetActorTransform());
-
-                        FlushNetDormancy();
-                        ForceNetUpdate();
+                        CachedWeaponMeshes.Add(Mesh);
                     }
                 }
-            }, 0.2f, false);
+            }
+        }
     }
 }
 
 void AMysteryBox::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     GetWorldTimerManager().ClearTimer(TimerHandle_InitialSetup);
+    GetWorldTimerManager().ClearTimer(TimerHandle_VisualSpinCycle);
     GetWorldTimerManager().ClearAllTimersForObject(this);
 
     if (HasAuthority())
@@ -107,7 +161,7 @@ int32 AMysteryBox::GetCurrentPrice() const
 
 bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 {
-    if (!InteractingPlayer) return false;
+    if (!IsValid(InteractingPlayer)) return false;
 
     if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
     {
@@ -121,7 +175,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
     }
     else if (BoxState == EMysteryBoxState::WeaponOffered)
     {
-        return InteractingPlayer == CurrentBuyer;
+        return IsValid(CurrentBuyer) && InteractingPlayer == CurrentBuyer;
     }
 
     return false;
@@ -129,7 +183,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 
 void AMysteryBox::Interact(AHama* Player)
 {
-    if (!HasAuthority() || !Player || !CanInteract(Player)) return;
+    if (!HasAuthority() || !IsValid(Player) || !CanInteract(Player)) return;
 
     const int32 Cost = GetCurrentPrice();
 
@@ -177,7 +231,7 @@ void AMysteryBox::OpenMysteryBox(AHama* Player)
 
     BoxState = EMysteryBoxState::Spinning;
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
-    UpdateVisuals();
+    HandleBoxStateChanged();
 
     FlushNetDormancy();
     ForceNetUpdate();
@@ -189,7 +243,7 @@ TArray<TSubclassOf<ABaseWeapon>> AMysteryBox::GetFilteredWeaponsForPlayer(AHama*
 {
     TArray<TSubclassOf<ABaseWeapon>> ValidWeapons = AvailableWeapons;
 
-    if (!Player) return ValidWeapons;
+    if (!IsValid(Player)) return ValidWeapons;
 
     TArray<TSubclassOf<ABaseWeapon>> PlayerCurrentWeapons = Player->GetOwnedWeaponClasses();
 
@@ -231,7 +285,7 @@ void AMysteryBox::FinishSpin()
 
     BoxState = EMysteryBoxState::WeaponOffered;
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
-    UpdateVisuals();
+    HandleBoxStateChanged();
 
     FlushNetDormancy();
     ForceNetUpdate();
@@ -241,7 +295,7 @@ void AMysteryBox::FinishSpin()
 
 void AMysteryBox::HandleTeddyBear()
 {
-    if (CurrentBuyer)
+    if (IsValid(CurrentBuyer))
     {
         if (AHamaPlayerState* PS = CurrentBuyer->GetPlayerState<AHamaPlayerState>())
         {
@@ -257,7 +311,7 @@ void AMysteryBox::HandleTeddyBear()
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, OfferedWeaponClass, this);
 
-    UpdateVisuals();
+    HandleBoxStateChanged();
 
     FlushNetDormancy();
     ForceNetUpdate();
@@ -316,7 +370,7 @@ void AMysteryBox::ResetBox()
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, OfferedWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, CurrentBuyer, this);
 
-    UpdateVisuals();
+    HandleBoxStateChanged();
 
     FlushNetDormancy();
     ForceNetUpdate();
@@ -339,7 +393,7 @@ void AMysteryBox::ResetToIdle()
 
     BoxState = EMysteryBoxState::Idle;
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
-    UpdateVisuals();
+    HandleBoxStateChanged();
 }
 
 void AMysteryBox::SetFireSaleActive(bool bActive)
@@ -372,12 +426,79 @@ void AMysteryBox::HandleFireSaleEnd()
 
 void AMysteryBox::OnRep_IsFireSaleActive()
 {
-    // لێدان یان گۆڕینی UI لەسەر کلاینتەکان لە کاتی دەستپێکردن/کۆتایی Fire Sale
+}
+
+void AMysteryBox::HandleBoxStateChanged()
+{
+    if (GetNetMode() == NM_DedicatedServer) return;
+
+    UpdateVisuals();
+
+    switch (BoxState)
+    {
+    case EMysteryBoxState::Spinning:
+    {
+        if (OfferedWeaponMesh) OfferedWeaponMesh->SetVisibility(true);
+        if (LightBeamVFX) LightBeamVFX->Activate();
+
+        if (SpinSound) UGameplayStatics::PlaySoundAtLocation(this, SpinSound, GetActorLocation());
+
+        if (RiseTimelineComponent)
+        {
+            RiseTimelineComponent->PlayFromStart();
+        }
+
+        GetWorldTimerManager().SetTimer(TimerHandle_VisualSpinCycle, this, &AMysteryBox::CycleRandomWeaponMesh, 0.07f, true);
+        break;
+    }
+
+    case EMysteryBoxState::WeaponOffered:
+    {
+        GetWorldTimerManager().ClearTimer(TimerHandle_VisualSpinCycle);
+
+        if (RiseCurve && RiseTimelineComponent)
+        {
+            HandleRiseTimelineProgress(1.0f);
+        }
+        break;
+    }
+
+    case EMysteryBoxState::TeddyBear:
+    {
+        GetWorldTimerManager().ClearTimer(TimerHandle_VisualSpinCycle);
+
+        if (TeddyBearSound)
+        {
+            UGameplayStatics::PlaySoundAtLocation(this, TeddyBearSound, GetActorLocation());
+        }
+
+        if (RiseTimelineComponent)
+        {
+            RiseTimelineComponent->PlayFromStart();
+        }
+        break;
+    }
+
+    case EMysteryBoxState::Cooldown:
+    case EMysteryBoxState::Idle:
+    {
+        GetWorldTimerManager().ClearTimer(TimerHandle_VisualSpinCycle);
+        if (RiseTimelineComponent) RiseTimelineComponent->Stop();
+        if (LightBeamVFX) LightBeamVFX->Deactivate();
+
+        if (OfferedWeaponMesh)
+        {
+            OfferedWeaponMesh->SetRelativeLocation(InitialOfferedMeshRelativeLocation);
+            OfferedWeaponMesh->SetVisibility(false);
+        }
+        break;
+    }
+    }
 }
 
 void AMysteryBox::OnRep_BoxState()
 {
-    UpdateVisuals();
+    HandleBoxStateChanged();
 }
 
 void AMysteryBox::OnRep_OfferedWeaponClass()
@@ -385,11 +506,32 @@ void AMysteryBox::OnRep_OfferedWeaponClass()
     UpdateVisuals();
 }
 
+void AMysteryBox::CycleRandomWeaponMesh()
+{
+    if (CachedWeaponMeshes.Num() == 0 || !OfferedWeaponMesh) return;
+
+    int32 RandomIndex = FMath::RandRange(0, CachedWeaponMeshes.Num() - 1);
+    if (UStaticMesh* Mesh = CachedWeaponMeshes[RandomIndex])
+    {
+        OfferedWeaponMesh->SetStaticMesh(Mesh);
+    }
+}
+
+void AMysteryBox::HandleRiseTimelineProgress(float Value)
+{
+    if (OfferedWeaponMesh)
+    {
+        FVector NewLoc = InitialOfferedMeshRelativeLocation;
+        NewLoc.Z += (Value * MaxRiseHeight);
+        OfferedWeaponMesh->SetRelativeLocation(NewLoc);
+    }
+}
+
 void AMysteryBox::UpdateVisuals()
 {
     if (BoxState == EMysteryBoxState::TeddyBear)
     {
-        if (TeddyBearMesh)
+        if (TeddyBearMesh && OfferedWeaponMesh)
         {
             OfferedWeaponMesh->SetStaticMesh(TeddyBearMesh);
             OfferedWeaponMesh->SetVisibility(true);
@@ -413,5 +555,8 @@ void AMysteryBox::UpdateVisuals()
         }
     }
 
-    OfferedWeaponMesh->SetVisibility(false);
+    if (BoxState == EMysteryBoxState::Idle || BoxState == EMysteryBoxState::Cooldown)
+    {
+        if (OfferedWeaponMesh) OfferedWeaponMesh->SetVisibility(false);
+    }
 }

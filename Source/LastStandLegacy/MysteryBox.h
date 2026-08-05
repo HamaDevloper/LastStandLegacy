@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "InteractInterface.h"
+#include "Components/TimelineComponent.h"
 #include "MysteryBox.generated.h"
 
 class UStaticMeshComponent;
@@ -10,6 +11,10 @@ class UBoxComponent;
 class AHama;
 class ABaseWeapon;
 class AMysteryBoxSpawnPoint;
+class USoundBase;
+class UNiagaraComponent;
+class UCurveFloat;
+class UNiagaraComponent;
 
 UENUM(BlueprintType)
 enum class EMysteryBoxState : uint8
@@ -105,9 +110,17 @@ protected:
     void ResetBox();
     void ResetToIdle();
 
+    void CacheWeaponMeshes(); 
+    void TryInitialSpawnSetup();
+
     TArray<TSubclassOf<ABaseWeapon>> GetFilteredWeaponsForPlayer(AHama* Player) const;
 
     void UpdateVisuals();
+    void HandleBoxStateChanged();
+    void CycleRandomWeaponMesh();
+
+    UFUNCTION()
+    void HandleRiseTimelineProgress(float Value);
 
 private:
     FTimerHandle TimerHandle_Spin;
@@ -115,6 +128,8 @@ private:
     FTimerHandle TimerHandle_ResetToIdle;
     FTimerHandle TimerHandle_TeddyBear;
     FTimerHandle TimerHandle_InitialSetup;
+    FTimerHandle TimerHandle_VisualSpinCycle;
+    FVector InitialOfferedMeshRelativeLocation;
 
     int32 CurrentSpinCount = 0;
     uint8 bPendingFireSaleDestroy : 1 = false;
@@ -127,4 +142,30 @@ public:
     int32 GetCurrentPrice() const;
     AMysteryBoxSpawnPoint* GetCurrentSpawnPoint() const { return CurrentSpawnPoint; }
     void AssignSpawnPoint(AMysteryBoxSpawnPoint* NewSpawnPoint);
+
+protected:
+    // 🟢 timeline بۆ جوڵاندنی چەکەکە بە ئاڕاستەی Z
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    UTimelineComponent* RiseTimelineComponent;
+
+    // 🟢 Curve Float لە ئەدیتۆر دادەنرێت تا خێرایی بەرزبوونەوەی چەکەکە بپێوێت (0 تا 1)
+    UPROPERTY(EditDefaultsOnly, Category = "Mystery Box|Effects")
+    UCurveFloat* RiseCurve;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Mystery Box|Effects")
+    float MaxRiseHeight = 80.0f;
+
+    // 🟢 Audio & VFX
+    UPROPERTY(EditDefaultsOnly, Category = "Mystery Box|Audio")
+    TObjectPtr<USoundBase> SpinSound;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Mystery Box|Audio")
+    TObjectPtr<USoundBase> TeddyBearSound;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    TObjectPtr<UNiagaraComponent> LightBeamVFX;
+
+    TArray<TObjectPtr<UStaticMesh>> CachedWeaponMeshes;
+
+
 };

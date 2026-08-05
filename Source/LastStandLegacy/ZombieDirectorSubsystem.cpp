@@ -229,7 +229,9 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             {
                 for (const auto& Pair : CachedPlayerMap)
                 {
-                    APawn* CandidatePlayer = Pair.Key;
+                    // ⚡ FIX: TWeakObjectPtr هیچ implicit conversion-ی بۆ raw pointer نییە
+                    // (بەپێچەوانەی TObjectPtr) — پێویستە .Get() بانگ بکرێت
+                    APawn* CandidatePlayer = Pair.Key.Get();
                     if (!IsValid(CandidatePlayer)) continue;
 
                     const float DistSq = FVector::DistSquared(ZombieLoc, Pair.Value);
