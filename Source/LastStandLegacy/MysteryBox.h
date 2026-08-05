@@ -86,6 +86,9 @@ protected:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "MysteryBox")
     TObjectPtr<AHama> CurrentBuyer;
 
+    UPROPERTY()
+    TObjectPtr<AMysteryBoxSpawnPoint> CurrentSpawnPoint;
+
     UFUNCTION()
     void OnRep_BoxState();
 
@@ -106,14 +109,12 @@ protected:
 
     void UpdateVisuals();
 
-    UPROPERTY()
-    TObjectPtr<AMysteryBoxSpawnPoint> CurrentSpawnPoint;
-
 private:
     FTimerHandle TimerHandle_Spin;
     FTimerHandle TimerHandle_OfferTimeout;
     FTimerHandle TimerHandle_ResetToIdle;
     FTimerHandle TimerHandle_TeddyBear;
+    FTimerHandle TimerHandle_InitialSetup;
 
     int32 CurrentSpinCount = 0;
     uint8 bPendingFireSaleDestroy : 1 = false;
@@ -125,4 +126,5 @@ public:
     void SetIsTemporaryFireSaleBox(bool bTemp) { bIsTemporaryFireSaleBox = bTemp; }
     int32 GetCurrentPrice() const;
     AMysteryBoxSpawnPoint* GetCurrentSpawnPoint() const { return CurrentSpawnPoint; }
+    void AssignSpawnPoint(AMysteryBoxSpawnPoint* NewSpawnPoint);
 };

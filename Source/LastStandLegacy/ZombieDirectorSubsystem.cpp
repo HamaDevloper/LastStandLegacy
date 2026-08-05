@@ -227,7 +227,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
             if (!TargetPlayer)
             {
-                for (const TPair<APawn*, FVector>& Pair : CachedPlayerMap)
+                for (const auto& Pair : CachedPlayerMap)
                 {
                     APawn* CandidatePlayer = Pair.Key;
                     if (!IsValid(CandidatePlayer)) continue;

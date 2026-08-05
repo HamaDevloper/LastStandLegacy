@@ -5,10 +5,8 @@
 
 struct FSpatialHashGrid2D
 {
-    // CellSize = 2000cm (20m).
     float CellSize = 2000.f;
 
-    // ⚡ [MEMORY SAFE]: بەکارهێنانی TWeakObjectPtr بۆ پاراستنی Memory لە Dangling Pointers
     TMap<FIntPoint, TArray<TWeakObjectPtr<APawn>>> Grid;
 
     FORCEINLINE FIntPoint GetCellCoords(const FVector& WorldLocation) const
@@ -31,7 +29,6 @@ struct FSpatialHashGrid2D
         Grid.FindOrAdd(Coords).Add(Player);
     }
 
-    // ⚡ [3x3 SEARCH]: پشکنینی گەرەنتیکراوی ناوچەی ~20m (واتە 1x CellSize) بە دەوری زۆمبییەکەدا
     APawn* FindNearestPlayerInRadius(const FVector& ZombieLocation, float& OutDistSq) const
     {
         const FIntPoint ZombieCell = GetCellCoords(ZombieLocation);

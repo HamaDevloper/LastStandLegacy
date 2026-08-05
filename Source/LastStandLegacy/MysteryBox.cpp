@@ -45,8 +45,12 @@ void AMysteryBox::BeginPlay()
 
     if (HasAuthority())
     {
-        FTimerHandle InitialSetupHandle;
-        GetWorldTimerManager().SetTimer(InitialSetupHandle, [this]()
+        if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            Director->RegisterMysteryBox(this);
+        }
+
+        GetWorldTimerManager().SetTimer(TimerHandle_InitialSetup, [this]()
             {
                 if (CurrentSpawnPoint != nullptr) return;
 
@@ -69,7 +73,17 @@ void AMysteryBox::BeginPlay()
 
 void AMysteryBox::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearTimer(TimerHandle_InitialSetup);
     GetWorldTimerManager().ClearAllTimersForObject(this);
+
+    if (HasAuthority())
+    {
+        if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            Director->UnregisterMysteryBox(this);
+        }
+    }
+
     Super::EndPlay(EndPlayReason);
 }
 
@@ -189,7 +203,6 @@ TArray<TSubclassOf<ABaseWeapon>> AMysteryBox::GetFilteredWeaponsForPlayer(AHama*
 
 void AMysteryBox::FinishSpin()
 {
-    // لە کاتی Fire Saleدا چانسی دەرچوونی Teddy Bear دەبێتە 0
     bool bShouldSpawnTeddy = !bIsFireSaleActive && (CurrentSpinCount >= MinSpinsBeforeTeddy) && (FMath::FRand() <= TeddyBearChance);
 
     if (bShouldSpawnTeddy)
@@ -269,9 +282,28 @@ void AMysteryBox::RelocateBox()
         CurrentSpawnPoint = NewPoint;
         CurrentSpawnPoint->SetOccupied(true);
         SetActorTransform(CurrentSpawnPoint->GetActorTransform());
+
+        FlushNetDormancy();
+        ForceNetUpdate();
     }
 
     ResetBox();
+}
+
+void AMysteryBox::AssignSpawnPoint(AMysteryBoxSpawnPoint* NewSpawnPoint)
+{
+    CurrentSpawnPoint = NewSpawnPoint;
+
+    if (CurrentSpawnPoint)
+    {
+        SetActorTransform(CurrentSpawnPoint->GetActorTransform());
+    }
+
+    if (HasAuthority())
+    {
+        FlushNetDormancy();
+        ForceNetUpdate();
+    }
 }
 
 void AMysteryBox::ResetBox()
