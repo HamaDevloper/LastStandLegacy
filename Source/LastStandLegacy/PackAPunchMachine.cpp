@@ -6,6 +6,7 @@
 #include "Net/Core/PushModel/PushModel.h"
 #include "Components/StaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Components/BoxComponent.h"
 
 APackAPunchMachine::APackAPunchMachine()
 {
@@ -26,7 +27,15 @@ APackAPunchMachine::APackAPunchMachine()
     DisplayWeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("DisplayWeaponMesh"));
     DisplayWeaponMesh->SetupAttachment(WeaponDisplaySocket);
     DisplayWeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    DisplayWeaponMesh->SetVisibility(false);
+    DisplayWeaponMesh->SetVisibility(true);
+
+    InteractionVolume = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionVolume"));
+    InteractionVolume->SetupAttachment(RootComponent);
+
+    InteractionVolume->SetBoxExtent(FVector(45.f, 45.f, 45.f));
+    InteractionVolume->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    InteractionVolume->SetCollisionResponseToAllChannels(ECR_Ignore);
+    InteractionVolume->SetCollisionResponseToChannel(ECC_Intract, ECR_Block);
 }
 
 void APackAPunchMachine::BeginPlay()
@@ -127,7 +136,6 @@ FString APackAPunchMachine::GetInteractMessage()
 
 void APackAPunchMachine::ExecuteServerInteraction(AHama* InteractingPlayer)
 {
-    // Fix B: Strict Anti-Cheat & Validation Check on Server
     if (!HasAuthority() || !CanInteract(InteractingPlayer)) return;
 
     switch (MachineState)
@@ -157,9 +165,12 @@ void APackAPunchMachine::StartUpgradeProcess(AHama* InteractingPlayer)
     UpgradedWeaponClass = NextClass;
     MachineState = EPaPState::Upgrading;
 
+    InteractingPlayer->SetCurrentlyUpgradingWeaponClass(CurrentWeapon->GetClass());
     InteractingPlayer->RemoveCurrentWeapon();
 
     FlushNetDormancy();
+    ForceNetUpdate();
+
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, CurrentOwnerPlayer, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, UpgradedWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
@@ -188,6 +199,8 @@ void APackAPunchMachine::CompleteUpgradeProcess()
     MachineState = EPaPState::ReadyForPickup;
 
     FlushNetDormancy();
+    ForceNetUpdate();
+
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
 
     UpdateVisuals();
@@ -225,11 +238,17 @@ void APackAPunchMachine::ResetMachineState()
     GetWorldTimerManager().ClearTimer(UpgradeTimerHandle);
     GetWorldTimerManager().ClearTimer(ExpirationTimerHandle);
 
+    if (IsValid(CurrentOwnerPlayer))
+    {
+        CurrentOwnerPlayer->SetCurrentlyUpgradingWeaponClass(nullptr);
+    }
+
     MachineState = EPaPState::Idle;
     CurrentOwnerPlayer = nullptr;
     UpgradedWeaponClass = nullptr;
 
     FlushNetDormancy();
+    ForceNetUpdate();
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, CurrentOwnerPlayer, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, UpgradedWeaponClass, this);
@@ -242,7 +261,6 @@ void APackAPunchMachine::OnRep_PapMachineState()
     UpdateVisuals();
 }
 
-// Fix A: Added OnRep for UpgradedWeaponClass to fix replication race condition
 void APackAPunchMachine::OnRep_UpgradedWeaponClass()
 {
     UpdateVisuals();

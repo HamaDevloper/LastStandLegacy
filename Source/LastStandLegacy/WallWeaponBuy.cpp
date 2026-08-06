@@ -30,36 +30,63 @@ AWallWeaponBuy::AWallWeaponBuy()
     WeaponMesh->PrimaryComponentTick.bCanEverTick = false;
 }
 
+bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
+{
+    if (!InteractingPlayer || !WeaponClass) return false;
+
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
+    {
+        return false;
+    }
+
+    // ١. ڕێگریکردن لە کڕینی چەک لە دیوار ئەگەر چەکەکە ئێستا لە Pack-a-Punch بێت
+    if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass))
+    {
+        return false;
+    }
+
+    ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponOrUpgradedInstance(WeaponClass);
+
+    if (OwnedWeapon)
+    {
+        return OwnedWeapon->NeedsAmmo();
+    }
+
+    return true;
+}
+
 void AWallWeaponBuy::Interact(AHama* HamaChar)
 {
     if (!HamaChar || !HasAuthority() || !WeaponClass) return;
+    if (HamaChar->IsWeaponCurrentlyUpgrading(WeaponClass)) return;
 
     AHamaPlayerState* PS = HamaChar->GetPlayerState<AHamaPlayerState>();
     if (!PS) return;
 
-    ABaseWeapon* TargetWeaponToRefill = HamaChar->GetWeaponByClass(WeaponClass);
+    ABaseWeapon* TargetWeaponToRefill = HamaChar->GetWeaponOrUpgradedInstance(WeaponClass);
 
     if (TargetWeaponToRefill)
     {
         if (TargetWeaponToRefill->NeedsAmmo())
         {
-            if (PS->GetPoints() >= AmmoCost)
+            const bool bIsWeaponUpgraded = (TargetWeaponToRefill->GetClass() != WeaponClass);
+
+            const int32 FinalAmmoCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
+
+            if (PS->GetPoints() >= FinalAmmoCost)
             {
-                PS->RemovePoints(AmmoCost);
-                HamaChar->RefillSpecificWeaponAmmo(WeaponClass);
+                PS->RemovePoints(FinalAmmoCost);
+                TargetWeaponToRefill->RefillAmmo();
 
                 if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Green, TEXT("AMMO BOUGHT!"));
             }
             else
             {
-                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Not enough points!"));
+                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Not enough points for ammo!"));
             }
         }
-        else
-        {
-            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Yellow, TEXT("Ammo is already full!"));
-        }
     }
+       
     else
     {
         if (PS->GetPoints() >= WeaponCost)
@@ -72,24 +99,7 @@ void AWallWeaponBuy::Interact(AHama* HamaChar)
 
 FString AWallWeaponBuy::GetInteractMessage()
 {
-    return FString::Printf(TEXT("Press F to Buy %s [Cost: %d] / Ammo [Cost: %d]"), *WeaponName, WeaponCost, AmmoCost);
-}
+    if (!WeaponClass) return FString();
 
-bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
-{
-    if (!InteractingPlayer || !WeaponClass) return false;
-    
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
-    {
-        return false;
-    }
-
-    ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponByClass(WeaponClass);
-
-    if (OwnedWeapon)
-    {
-        return OwnedWeapon->NeedsAmmo();
-    }
-
-    return true;
+    return FString::Printf(TEXT("Hold [E] Buy Weapon [%d Points]"), WeaponCost);
 }

@@ -17,7 +17,6 @@ AMysteryBox::AMysteryBox()
     PrimaryActorTick.bCanEverTick = false;
     bReplicates = true;
 
-    // Static Box: پێویست بە Movement Replication بەردەوام ناکات، تەنها لە کاتی Relocateدا Transform دادەنرێت
     SetReplicatingMovement(false);
     NetDormancy = DORM_DormantAll;
 

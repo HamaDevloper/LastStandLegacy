@@ -37,9 +37,11 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Buy")
     int32 WeaponCost = 500;
 
-    // نرخی فیشەک (ئەگەر یاریزانەکە چەکەکەی هەبوو)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Buy")
     int32 AmmoCost = 250;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Buy")
+    int32 UpgradedAmmoCost = 4500;
 
 public:
     virtual void Interact(AHama* HamaChar) override;

@@ -7,6 +7,7 @@
 
 class ABaseWeapon;
 class AHama;
+class UBoxComponent;
 
 UENUM(BlueprintType)
 enum class EPaPState : uint8
@@ -46,6 +47,9 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
     TObjectPtr<USoundBase> RejectSound;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    TObjectPtr<UBoxComponent> InteractionVolume;
 
     // --- Replicated State ---
     UPROPERTY(ReplicatedUsing = OnRep_PapMachineState)

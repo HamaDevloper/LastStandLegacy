@@ -144,6 +144,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
     void GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive);
 
+    ABaseWeapon* GetWeaponOrUpgradedInstance(TSubclassOf<ABaseWeapon> TargetWeaponClass);
+    void SetCurrentlyUpgradingWeaponClass(TSubclassOf<class ABaseWeapon> InWeaponClass);
+    bool IsWeaponCurrentlyUpgrading(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;
+
+    UPROPERTY(Replicated)
+    TSubclassOf<ABaseWeapon> CurrentlyUpgradingWeaponClass;
+
 protected:
     UPROPERTY()
     TObjectPtr<ABaseWeapon> PendingWeaponForSwap;

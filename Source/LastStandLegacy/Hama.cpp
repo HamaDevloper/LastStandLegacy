@@ -142,6 +142,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ThirdWeapon, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, OwnedPerks, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsDeathMachineActive, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentlyUpgradingWeaponClass, Params);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -954,6 +955,60 @@ void AHama::RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefil
         ThirdWeapon->RefillAmmo();
     }
 }
+
+ABaseWeapon* AHama::GetWeaponOrUpgradedInstance(TSubclassOf<ABaseWeapon> TargetWeaponClass)
+{
+    if (!TargetWeaponClass) return nullptr;
+
+    TSubclassOf<ABaseWeapon> UpgradedClass = nullptr;
+
+    ABaseWeapon* CDO = TargetWeaponClass.GetDefaultObject();
+
+    if (CDO && CDO->WeaponDataTable && !CDO->WeaponRowName.IsNone())
+    {
+        FWeaponData* RowData = CDO->WeaponDataTable->FindRow<FWeaponData>(CDO->WeaponRowName, TEXT("WeaponUpgradeCheck"));
+        if (RowData)
+        {
+            UpgradedClass = RowData->UpgradedWeaponClass;
+        }
+    }
+
+    TArray<TObjectPtr<ABaseWeapon>> PlayerWeapons = { PrimaryWeapon, SecondaryWeapon, ThirdWeapon };
+
+    for (TObjectPtr<ABaseWeapon> Wep : PlayerWeapons)
+    {
+        if (IsValid(Wep))
+        {
+            if (Wep->IsA(TargetWeaponClass) || (UpgradedClass && Wep->IsA(UpgradedClass)))
+            {
+                return Wep;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+void AHama::SetCurrentlyUpgradingWeaponClass(TSubclassOf<ABaseWeapon> InWeaponClass)
+{
+    if (!HasAuthority()) return;
+
+    CurrentlyUpgradingWeaponClass = InWeaponClass;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentlyUpgradingWeaponClass, this);
+}
+
+bool AHama::IsWeaponCurrentlyUpgrading(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const
+{
+    if (!WeaponClassToCheck) return false;
+
+    if (CurrentlyUpgradingWeaponClass == WeaponClassToCheck)
+    {
+        return true;
+    }
+
+    return false;
+}
+
 
 // -----------------------------------------------------------------------------
 // Input Binding
