@@ -5,6 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/BoxComponent.h"
 
@@ -27,7 +28,7 @@ APackAPunchMachine::APackAPunchMachine()
     DisplayWeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("DisplayWeaponMesh"));
     DisplayWeaponMesh->SetupAttachment(WeaponDisplaySocket);
     DisplayWeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    DisplayWeaponMesh->SetVisibility(true);
+    DisplayWeaponMesh->SetVisibility(false);
 
     InteractionVolume = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionVolume"));
     InteractionVolume->SetupAttachment(RootComponent);
@@ -45,13 +46,13 @@ void APackAPunchMachine::BeginPlay()
 
 void APackAPunchMachine::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    Super::EndPlay(EndPlayReason);
-
     if (HasAuthority())
     {
         GetWorldTimerManager().ClearTimer(UpgradeTimerHandle);
         GetWorldTimerManager().ClearTimer(ExpirationTimerHandle);
     }
+
+    Super::EndPlay(EndPlayReason);
 }
 
 void APackAPunchMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -63,13 +64,37 @@ void APackAPunchMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
     Params.Condition = COND_None;
 
     DOREPLIFETIME_WITH_PARAMS_FAST(APackAPunchMachine, MachineState, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(APackAPunchMachine, RawWeaponClass, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(APackAPunchMachine, UpgradedWeaponClass, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(APackAPunchMachine, CurrentOwnerPlayer, Params);
 }
 
 // -----------------------------------------------------------------------------
-// Interaction Interface
+// Interaction Interface & Network RPC
 // -----------------------------------------------------------------------------
+
+bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
+{
+    if (!InteractingPlayer) return false;
+    if (InteractingPlayer->GetDeathMachine()) return false;
+
+            
+    if (MachineState == EPaPState::Idle)
+    {
+        AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
+        if (!PS || PS->GetPoints() < UpgradeCost)
+        {
+            if (RejectSound && InteractingPlayer->IsLocallyControlled())
+            {
+                UGameplayStatics::PlaySound2D(this, RejectSound);
+            }
+
+            return false;
+        }
+    }
+
+    return true;
+}
 
 bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
 {
@@ -82,6 +107,10 @@ bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
         if (!Weapon) return false;
 
         return Weapon->GetUpgradedWeaponClass() != nullptr;
+    }
+    else if (MachineState == EPaPState::Upgrading)
+    {
+        return false;
     }
     else if (MachineState == EPaPState::ReadyForPickup)
     {
@@ -98,13 +127,8 @@ void APackAPunchMachine::Interact(AHama* Player)
     if (MachineState == EPaPState::Idle)
     {
         AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
-
         if (!PS || PS->GetPoints() < UpgradeCost)
         {
-            if (RejectSound)
-            {
-                UGameplayStatics::PlaySound2D(GetWorld(), RejectSound);
-            }
             return;
         }
     }
@@ -115,7 +139,8 @@ void APackAPunchMachine::Interact(AHama* Player)
     }
 }
 
-FString APackAPunchMachine::GetInteractMessage()
+
+FString APackAPunchMachine::GetInteractMessage(AHama* InteractingPlayer)
 {
     switch (MachineState)
     {
@@ -131,7 +156,7 @@ FString APackAPunchMachine::GetInteractMessage()
 }
 
 // -----------------------------------------------------------------------------
-// Server Interaction Logic
+// Server Logic
 // -----------------------------------------------------------------------------
 
 void APackAPunchMachine::ExecuteServerInteraction(AHama* InteractingPlayer)
@@ -162,6 +187,7 @@ void APackAPunchMachine::StartUpgradeProcess(AHama* InteractingPlayer)
     PS->RemovePoints(UpgradeCost);
 
     CurrentOwnerPlayer = InteractingPlayer;
+    RawWeaponClass = CurrentWeapon->GetClass();
     UpgradedWeaponClass = NextClass;
     MachineState = EPaPState::Upgrading;
 
@@ -172,10 +198,12 @@ void APackAPunchMachine::StartUpgradeProcess(AHama* InteractingPlayer)
     ForceNetUpdate();
 
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, CurrentOwnerPlayer, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, RawWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, UpgradedWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
 
     UpdateVisuals();
+    OnRep_PapMachineState();
 
     GetWorldTimerManager().SetTimer(
         UpgradeTimerHandle,
@@ -204,6 +232,7 @@ void APackAPunchMachine::CompleteUpgradeProcess()
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
 
     UpdateVisuals();
+    OnRep_PapMachineState();
 
     GetWorldTimerManager().SetTimer(
         ExpirationTimerHandle,
@@ -245,20 +274,29 @@ void APackAPunchMachine::ResetMachineState()
 
     MachineState = EPaPState::Idle;
     CurrentOwnerPlayer = nullptr;
+    RawWeaponClass = nullptr;
     UpgradedWeaponClass = nullptr;
 
     FlushNetDormancy();
     ForceNetUpdate();
+
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, CurrentOwnerPlayer, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, RawWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, UpgradedWeaponClass, this);
 
     UpdateVisuals();
+    OnRep_PapMachineState();
 }
+
+// -----------------------------------------------------------------------------
+// Replication Callbacks & Client Visuals
+// -----------------------------------------------------------------------------
 
 void APackAPunchMachine::OnRep_PapMachineState()
 {
     UpdateVisuals();
+    BP_OnPAPStateChanged(MachineState); 
 }
 
 void APackAPunchMachine::OnRep_UpgradedWeaponClass()
@@ -268,9 +306,13 @@ void APackAPunchMachine::OnRep_UpgradedWeaponClass()
 
 void APackAPunchMachine::UpdateVisuals()
 {
-    if (UpgradedWeaponClass)
+    if (IsRunningDedicatedServer()) return;
+
+    TSubclassOf<ABaseWeapon> ActiveWeaponClassToShow = (MachineState == EPaPState::ReadyForPickup) ? UpgradedWeaponClass : RawWeaponClass;
+
+    if (ActiveWeaponClassToShow)
     {
-        if (ABaseWeapon* DefaultWeapon = UpgradedWeaponClass->GetDefaultObject<ABaseWeapon>())
+        if (const ABaseWeapon* DefaultWeapon = ActiveWeaponClassToShow->GetDefaultObject<ABaseWeapon>())
         {
             if (DefaultWeapon->WeaponMesh)
             {

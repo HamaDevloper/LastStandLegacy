@@ -228,7 +228,7 @@ void AHama::OnInteractSphereBeginOverlap(UPrimitiveComponent* OverlappedComponen
     if (OtherActor && OtherActor != this && OtherActor->Implements<UInteractInterface>())
     {
         NearbyInteractablesCount++;
-        if (NearbyInteractablesCount == 1)
+        if (NearbyInteractablesCount >= 1)
         {
             GetWorld()->GetTimerManager().SetTimer(InteractTimerHandle, this, &AHama::CheckForInteractables, 0.1f, true);
         }
@@ -333,7 +333,7 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
 
     if (FocusedInteractable->CanInteract(this))
     {
-        OnInteractUpdateEvent.ExecuteIfBound(FocusedInteractable->GetInteractMessage());
+        OnInteractUpdateEvent.ExecuteIfBound(FocusedInteractable->GetInteractMessage(this));
     }
     else
     {
@@ -1760,7 +1760,10 @@ void AHama::InteractActionPressed()
             }
             else
             {
-                Server_Interact(InteractActor);
+                if (FocusedInteractable->Client_PreInteract(this))
+                {
+                    Server_Interact(InteractActor);
+                }
             }
         }
     }
@@ -1954,13 +1957,18 @@ bool AHama::CanInteract(AHama* InteractingPlayer)
     return HamaComponent && !HamaComponent->IsDowned() && !bIsDead;
 }
 
-FString AHama::GetInteractMessage()
+FString AHama::GetInteractMessage(AHama* InteractingPlayer)
 {
     return FString(TEXT("Hold [F/X] To Revive"));
 }
 
 void AHama::Interact(AHama* InteractingPlayer)
 {
+}
+
+bool AHama::Client_PreInteract(AHama* Player)
+{
+    return HamaComponent && !HamaComponent->IsDowned() && !bIsDead;
 }
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)

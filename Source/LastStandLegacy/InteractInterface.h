@@ -23,6 +23,7 @@ class LASTSTANDLEGACY_API IInteractInterface
 
 public:
    virtual void Interact(AHama* Hama) = 0;
-   virtual FString GetInteractMessage() = 0;
-   virtual bool CanInteract(AHama* InteractingPlayer) { return true; }
+   virtual FString GetInteractMessage(AHama* InteractingPlayer) = 0;
+   virtual bool CanInteract(AHama* InteractingPlayer) = 0;
+   virtual bool Client_PreInteract(AHama* Player) = 0;
 };

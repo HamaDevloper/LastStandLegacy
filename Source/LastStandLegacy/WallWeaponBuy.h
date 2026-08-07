@@ -25,11 +25,9 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UStaticMeshComponent> WeaponMesh;
 
-    // ئەو چەکەی کە دەفرۆشرێت
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Buy")
     TSubclassOf<ABaseWeapon> WeaponClass;
 
-    // ناوی چەکەکە بۆ سەر شاشە
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Buy")
     FString WeaponName = "Weapon";
 
@@ -43,8 +41,15 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall Buy")
     int32 UpgradedAmmoCost = 4500;
 
+    UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
+    TObjectPtr<USoundBase> PurchaseSound;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
+    TObjectPtr<USoundBase> RejectSound;
+
 public:
     virtual void Interact(AHama* HamaChar) override;
-    virtual FString GetInteractMessage() override;
+    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
+    virtual bool Client_PreInteract(AHama* Player) override;
 };

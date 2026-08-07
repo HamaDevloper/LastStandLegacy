@@ -4,6 +4,7 @@
 #include "Hama.h"
 #include "HamaPlayerState.h"
 #include "LastStandLegacyGameState.h"
+#include "Kismet/GameplayStatics.h"
 
 ABasePerk::ABasePerk()
 {
@@ -81,7 +82,7 @@ void ABasePerk::Interact(AHama* HamaChar)
     }
 }
 
-FString ABasePerk::GetInteractMessage()
+FString ABasePerk::GetInteractMessage(AHama* InteractingPlayer)
 {
    
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
@@ -125,6 +126,23 @@ bool ABasePerk::CanInteract(AHama* InteractingPlayer)
         {
             return false;
         }
+    }
+
+    return true;
+}
+
+bool ABasePerk::Client_PreInteract(AHama* Player)
+{
+    if (!IsValid(Player)) return false;
+
+    AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
+    if (!PS || PS->GetPoints() < PerkCost)
+    {
+        if (RejectSound && Player->IsLocallyControlled())
+        {
+            UGameplayStatics::PlaySound2D(this, RejectSound);
+        }
+        return false;
     }
 
     return true;

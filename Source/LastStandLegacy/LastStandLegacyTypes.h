@@ -14,7 +14,8 @@ enum class EPowerUpType : uint8
     Nuke,
     DeathMachine,
     MaxPower,
-    BonusPoints
+    BonusPoints,
+    FireSale
 };
 
 USTRUCT(BlueprintType)

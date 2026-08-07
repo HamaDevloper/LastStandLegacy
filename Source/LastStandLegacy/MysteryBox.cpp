@@ -169,8 +169,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 
     if (BoxState == EMysteryBoxState::Idle)
     {
-        AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-        return PS && PS->GetPoints() >= GetCurrentPrice();
+        return true;
     }
     else if (BoxState == EMysteryBoxState::WeaponOffered)
     {
@@ -178,6 +177,39 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
     }
 
     return false;
+}
+
+bool AMysteryBox::Client_PreInteract(AHama* InteractingPlayer)
+{
+    if (!IsValid(InteractingPlayer)) return false;
+
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
+    {
+        return false;
+    }
+
+    if (BoxState == EMysteryBoxState::Idle)
+    {
+        AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
+        if (!PS || PS->GetPoints() < GetCurrentPrice())
+        {
+            if (RejectSound && InteractingPlayer->IsLocallyControlled())
+            {
+                UGameplayStatics::PlaySound2D(this, RejectSound);
+            }
+
+            return false;
+        }
+    }
+    else if (BoxState == EMysteryBoxState::WeaponOffered)
+    {
+        if (CurrentBuyer != InteractingPlayer)
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void AMysteryBox::Interact(AHama* Player)
@@ -207,7 +239,7 @@ void AMysteryBox::Interact(AHama* Player)
     }
 }
 
-FString AMysteryBox::GetInteractMessage()
+FString AMysteryBox::GetInteractMessage(AHama* InteractingPlayer)
 {
     if (BoxState == EMysteryBoxState::Idle)
     {

@@ -83,6 +83,8 @@ void ABaseWeapon::InitializeWeaponData()
     if (!Row) return;
 
     CurrentWeaponData = *Row;
+    CachedUpgradedClass = Row->UpgradedWeaponClass;
+
     MaxAmmoInClip = CurrentWeaponData.MaxAmmoInClip;
     CurrentAmmo = MaxAmmoInClip;
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;

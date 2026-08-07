@@ -274,6 +274,9 @@ public:
     int32 GetMaxClipAmmo() const { return MaxAmmoInClip; }
     FName GetWeaponRowName() const { return WeaponRowName; }
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+    TSubclassOf<ABaseWeapon> CachedUpgradedClass;
+
     UFUNCTION(BlueprintCallable)
     int32 ForTest() { return CurrentWeaponData.MaxReserveAmmo; }
 

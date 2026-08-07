@@ -530,8 +530,9 @@ private:
     bool bIsCurrentlyReviving = false;
 
     virtual bool CanInteract(AHama* InteractingPlayer) override;
-    virtual FString GetInteractMessage() override;
+    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
     virtual void Interact(AHama* InteractingPlayer) override;
+    virtual bool Client_PreInteract(AHama* Player) override;
 
     UFUNCTION()
     void OnInteractSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);

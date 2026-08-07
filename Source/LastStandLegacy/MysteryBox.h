@@ -45,8 +45,9 @@ public:
 
     // IInteractInterface Implementation
     virtual void Interact(AHama* Player) override;
-    virtual FString GetInteractMessage() override;
+    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
+    virtual bool Client_PreInteract(AHama* Player) override;
 
 protected:
     virtual void BeginPlay() override;
@@ -158,6 +159,9 @@ protected:
     // 🟢 Audio & VFX
     UPROPERTY(EditDefaultsOnly, Category = "Mystery Box|Audio")
     TObjectPtr<USoundBase> SpinSound;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
+    TObjectPtr<USoundBase> RejectSound;
 
     UPROPERTY(EditDefaultsOnly, Category = "Mystery Box|Audio")
     TObjectPtr<USoundBase> TeddyBearSound;

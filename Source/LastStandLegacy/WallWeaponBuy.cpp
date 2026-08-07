@@ -4,6 +4,7 @@
 #include "Hama.h"
 #include "HamaPlayerState.h"
 #include "BaseWeapon.h"
+#include "Kismet/GameplayStatics.h"
 
 AWallWeaponBuy::AWallWeaponBuy()
 {
@@ -32,24 +33,55 @@ AWallWeaponBuy::AWallWeaponBuy()
 
 bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
 {
-    if (!InteractingPlayer || !WeaponClass) return false;
+    if (!IsValid(InteractingPlayer) || !WeaponClass) return false;
 
     if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
     {
         return false;
     }
 
-    // ١. ڕێگریکردن لە کڕینی چەک لە دیوار ئەگەر چەکەکە ئێستا لە Pack-a-Punch بێت
+    return true;
+}
+
+bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
+{
+    if (!IsValid(InteractingPlayer) || !WeaponClass) return false;
+
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
+    {
+        return false;
+    }
+
     if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass))
     {
         return false;
     }
 
+    AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
+    if (!PS) return false;
+
     ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponOrUpgradedInstance(WeaponClass);
+    int32 RequiredCost = WeaponCost;
 
     if (OwnedWeapon)
     {
-        return OwnedWeapon->NeedsAmmo();
+        if (!OwnedWeapon->NeedsAmmo())
+        {
+            return false;
+        }
+
+        const bool bIsWeaponUpgraded = (OwnedWeapon->GetClass() != WeaponClass);
+        RequiredCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
+    }
+
+    if (PS->GetPoints() < RequiredCost)
+    {
+        if (RejectSound && InteractingPlayer->IsLocallyControlled())
+        {
+            UGameplayStatics::PlaySound2D(this, RejectSound);
+        }
+
+        return false;
     }
 
     return true;
@@ -97,9 +129,32 @@ void AWallWeaponBuy::Interact(AHama* HamaChar)
     }
 }
 
-FString AWallWeaponBuy::GetInteractMessage()
+FString AWallWeaponBuy::GetInteractMessage(AHama* InteractingPlayer)
 {
     if (!WeaponClass) return FString();
+
+    if (InteractingPlayer)
+    {
+
+        if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass))
+        {
+            return TEXT("Weapon Upgrading in Pack-a-Punch...");
+        }
+
+        ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponOrUpgradedInstance(WeaponClass);
+        if (OwnedWeapon)
+        {
+            if (!OwnedWeapon->NeedsAmmo())
+            {
+                return TEXT("Ammo Full");
+            }
+
+            const bool bIsWeaponUpgraded = (OwnedWeapon->GetClass() != WeaponClass);
+            const int32 DisplayCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
+
+            return FString::Printf(TEXT("Hold [E] Buy Ammo [%d Points]"), DisplayCost);
+        }
+    }
 
     return FString::Printf(TEXT("Hold [E] Buy Weapon [%d Points]"), WeaponCost);
 }

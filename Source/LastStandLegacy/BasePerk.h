@@ -40,10 +40,14 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Perk|Settings")
     int32 SoloUsesLeftForQuickRevive = 3;
 
+    UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
+    TObjectPtr<USoundBase> RejectSound;
+
 public:
     virtual void Interact(AHama* HamaChar) override;
-    virtual FString GetInteractMessage() override;
+    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
+    virtual bool Client_PreInteract(AHama* Player) override;
 
     FName GetPerkID() const { return PerkID; }
     int32 GetPerkCost() const { return PerkCost; }

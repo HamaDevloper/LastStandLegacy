@@ -30,7 +30,8 @@ public:
     // --- IInteractInterface ---
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual void Interact(AHama* Player) override;
-    virtual FString GetInteractMessage() override;
+    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual bool Client_PreInteract(AHama* Player) override;
 
     // Must be called on the SERVER via Character/Interaction Component RPC
     void ExecuteServerInteraction(AHama* InteractingPlayer);
@@ -57,6 +58,9 @@ protected:
 
     UPROPERTY(ReplicatedUsing = OnRep_UpgradedWeaponClass)
     TSubclassOf<ABaseWeapon> UpgradedWeaponClass;
+    
+    UPROPERTY(Replicated)
+    TSubclassOf<ABaseWeapon> RawWeaponClass;
 
     UPROPERTY(Replicated)
     TObjectPtr<AHama> CurrentOwnerPlayer;
@@ -89,6 +93,9 @@ protected:
     void OnRep_UpgradedWeaponClass();
 
     void UpdateVisuals();
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "PackAPunch | Visuals")
+    void BP_OnPAPStateChanged(EPaPState NewState);
 
 private:
     FTimerHandle UpgradeTimerHandle;

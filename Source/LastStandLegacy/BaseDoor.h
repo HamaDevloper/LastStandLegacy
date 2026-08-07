@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "InteractInterface.h"
 #include "BaseDoor.generated.h"
 
 class UStaticMeshComponent;
@@ -11,7 +12,7 @@ class AHamaPlayerState;
 class USoundBase;
 
 UCLASS()
-class LASTSTANDLEGACY_API ABaseDoor : public AActor
+class LASTSTANDLEGACY_API ABaseDoor : public AActor, public IInteractInterface
 {
     GENERATED_BODY()
 
@@ -20,14 +21,10 @@ public:
 
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    UFUNCTION(BlueprintCallable, Category = "Door")
-    bool CanInteract(AHama* InteractingPlayer);
-
-    UFUNCTION(BlueprintCallable, Category = "Door")
-    void Interact(AHama* Player);
-
-    UFUNCTION(BlueprintCallable, Category = "Door")
-    FString GetInteractMessage() const;
+    virtual void Interact(AHama* HamaChar) override;
+    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual bool CanInteract(AHama* InteractingPlayer) override;
+    virtual bool Client_PreInteract(AHama* Player) override;
 
     UPROPERTY(EditDefaultsOnly, Category = "Door|Config")
     int32 DoorPrice = 750;
@@ -47,6 +44,9 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
     TObjectPtr<USoundBase> DoorOpenSound;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
+    TObjectPtr<USoundBase> RejectSound;
 
 private:
     void OpenDoor(AHama* Player, AHamaPlayerState* PS);

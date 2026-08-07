@@ -41,6 +41,23 @@ bool ABaseDoor::CanInteract(AHama* InteractingPlayer)
     return InteractingPlayer && !bIsDoorOpen;
 }
 
+bool ABaseDoor::Client_PreInteract(AHama* Player)
+{
+    if (!IsValid(Player) || bIsDoorOpen) return false;
+    AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
+    if (!PS || PS->GetPoints() < DoorPrice)
+    {
+        if (RejectSound && Player->IsLocallyControlled())
+        {
+            UGameplayStatics::PlaySound2D(this, RejectSound);
+        }
+
+        return false;
+    }
+
+    return true;
+}
+
 void ABaseDoor::Interact(AHama* Player)
 {
     if (!HasAuthority() || !Player || bIsDoorOpen) return;
@@ -52,9 +69,9 @@ void ABaseDoor::Interact(AHama* Player)
     }
 }
 
-FString ABaseDoor::GetInteractMessage() const
+FString ABaseDoor::GetInteractMessage(AHama* InteractingPlayer)
 {
-    return FString::Printf(TEXT("Press F to Open Door [Cost %d]"),DoorPrice );
+    return FString::Printf(TEXT("Press F to Open Door [Cost %d]"), DoorPrice );
 }
 
 void ABaseDoor::OpenDoor(AHama* Player, AHamaPlayerState* PS)
