@@ -75,12 +75,18 @@ void APackAPunchMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 
 bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!InteractingPlayer) return false;
-    if (InteractingPlayer->GetDeathMachine()) return false;
+    if (!IsValid(InteractingPlayer)) return false;
 
-            
+    if (InteractingPlayer->GetDeathMachine() || InteractingPlayer->IsDowned() || InteractingPlayer->IsDrinkingPerk()) return false;
+
     if (MachineState == EPaPState::Idle)
     {
+        ABaseWeapon* Weapon = InteractingPlayer->GetCurrentWeapon();
+        if (!Weapon || !Weapon->GetUpgradedWeaponClass())
+        {
+            return false;
+        }
+
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
         if (!PS || PS->GetPoints() < UpgradeCost)
         {
@@ -88,7 +94,17 @@ bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
             {
                 UGameplayStatics::PlaySound2D(this, RejectSound);
             }
-
+            return false;
+        }
+    }
+    else if (MachineState == EPaPState::Upgrading)
+    {
+        return false;
+    }
+    else if (MachineState == EPaPState::ReadyForPickup)
+    {
+        if (CurrentOwnerPlayer != InteractingPlayer)
+        {
             return false;
         }
     }
@@ -99,8 +115,7 @@ bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
 bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
-    if (InteractingPlayer->GetDeathMachine()) return false;
-
+    if (InteractingPlayer->GetDeathMachine() || InteractingPlayer->IsDowned() || InteractingPlayer->IsDrinkingPerk()) return false;
     if (MachineState == EPaPState::Idle)
     {
         ABaseWeapon* Weapon = InteractingPlayer->GetCurrentWeapon();
@@ -120,13 +135,14 @@ bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
     return false;
 }
 
-void APackAPunchMachine::Interact(AHama* Player)
+void APackAPunchMachine::Interact(AHama* InteractingPlayer)
 {
-    if (!IsValid(Player)) return;
+    if (!HasAuthority() || !IsValid(InteractingPlayer)) return;
+    if (!CanInteract(InteractingPlayer)) return;
 
     if (MachineState == EPaPState::Idle)
     {
-        AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
+        AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
         if (!PS || PS->GetPoints() < UpgradeCost)
         {
             return;
@@ -135,7 +151,7 @@ void APackAPunchMachine::Interact(AHama* Player)
 
     if (HasAuthority())
     {
-        ExecuteServerInteraction(Player);
+        ExecuteServerInteraction(InteractingPlayer);
     }
 }
 

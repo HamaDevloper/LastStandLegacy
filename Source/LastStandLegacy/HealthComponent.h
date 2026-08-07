@@ -27,8 +27,14 @@ protected:
     UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Health")
     float MaxHealth = 100.f;
 
-    // 🔒 تەنها لەسەر سێرڤەر بەکاردێت بۆ ڕێگری لەوەی دوو یاریزان هاوکات Reviveی بکان (Unreplicated)
+    UPROPERTY(ReplicatedUsing = OnRep_IsBeingRevived)
     bool bIsBeingRevived = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health")
+    int32 SoloReviveTime = 3;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health")
+    int32 DeathTime = 45;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health")
     float HealthGenerateDelay = 3.f;
@@ -38,6 +44,9 @@ protected:
 
     UFUNCTION()
     void OnRep_CurrentHealth(float OldHealth);
+
+    UFUNCTION()
+    void OnRep_IsBeingRevived();
 
 public:
     void ApplyDamage(float Amount, AActor* DamageCauser);
@@ -60,6 +69,9 @@ protected:
 private:
     UPROPERTY()
     TObjectPtr<AHama> OwnerCharacter;
+
+    UPROPERTY()
+    TObjectPtr<AHama> CurrentReviver = nullptr;
 
     UPROPERTY()
     TObjectPtr<UHamaComponent> OwnerComponent;

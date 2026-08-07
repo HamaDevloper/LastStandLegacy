@@ -35,6 +35,7 @@ void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     Params.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, CurrentHealth, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, MaxHealth, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, bIsBeingRevived, Params);
 }
 
 bool UHealthComponent::IsDowned() const
@@ -66,8 +67,7 @@ void UHealthComponent::UpgradeHealth(float Amount)
 
 void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 {
-    // 🔒 پشکنینی IsDowned() لە ڕێگەی HamaComponentـەوە
-    if (!GetOwner()->HasAuthority() || IsDowned()) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority() || IsDowned()) return;
 
     if (UWorld* World = GetWorld())
     {
@@ -107,11 +107,12 @@ void UHealthComponent::RegenerateHealth()
 
 void UHealthComponent::DownPlayer()
 {
-    if (!GetOwner()->HasAuthority() || IsDowned()) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority() || IsDowned()) return;
 
     bIsBeingRevived = false;
+    CurrentReviver = nullptr;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
 
-    // 🚀 گۆڕینی Stance لەناو HamaComponent (ئەمە bIsDowned ڕیپڵیکەیت دەکات)
     if (OwnerComponent)
     {
         OwnerComponent->SetDowned(true);
@@ -121,12 +122,19 @@ void UHealthComponent::DownPlayer()
     {
         World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
         World->GetTimerManager().ClearTimer(DownTimerHandle);
+        World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
 
         MaxHealth = 100.f;
         CurrentHealth = MaxHealth;
 
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
+
+
+        if (OwnerCharacter)
+        {
+            OwnerCharacter->HandleDeath();
+        }
 
         if (auto* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
         {
@@ -136,19 +144,11 @@ void UHealthComponent::DownPlayer()
         ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
         if (GS && GS->bIsSoloMatch && OwnerCharacter && OwnerCharacter->HasQuickRevive())
         {
-            OwnerCharacter->HandleDeath();
-            World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, 5.0f, false);
+            World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
             return;
         }
-        else
-        {
-            if (OwnerCharacter)
-            {
-                OwnerCharacter->HandleDeath();
-            }
-        }
 
-        World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, 45.0f, false);
+        World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, DeathTime, false);
     }
 }
 

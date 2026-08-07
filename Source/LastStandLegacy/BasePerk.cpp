@@ -39,45 +39,76 @@ void ABasePerk::BeginPlay()
     Super::BeginPlay();
 }
 
-void ABasePerk::Interact(AHama* HamaChar)
+bool ABasePerk::CanInteract(AHama* InteractingPlayer)
 {
-    if (!HamaChar || !HasAuthority()) return;
+    if (!IsValid(InteractingPlayer)) return false;
+
+    if (InteractingPlayer->IsDowned() ||
+        InteractingPlayer->bIsDeathMachineActive ||
+        InteractingPlayer->HasPerkID(PerkID) ||
+        InteractingPlayer->IsDrinkingPerk())
+    {
+        return false;
+    }
 
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-    if (!GS) return;
+    if (!GS) return false;
 
-    bool bCanBuy = false;
+    const bool bIsSoloQuickRevive = (PerkID == FName("QuickRevive") && GS->bIsSoloMatch);
 
-    if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
+    if (bIsSoloQuickRevive)
     {
-        if (SoloUsesLeftForQuickRevive <= 0) return;
-        bCanBuy = true;
+        if (SoloUsesLeftForQuickRevive <= 0)
+        {
+            return false;
+        }
     }
     else
     {
-        if (!GS->bIsPowerOn) return;
-        bCanBuy = true;
+        if (!GS->bIsPowerOn)
+        {
+            return false;
+        }
     }
 
-    if (!bCanBuy) return;
-    if (HamaChar->HasPerkID(PerkID)) return;
-    if (HamaChar->DrinkingPerkTimer()) return;
+    return true;
+}
 
-    AHamaPlayerState* PS = HamaChar->GetPlayerState<AHamaPlayerState>();
-    if (PS && PS->GetPoints() >= PerkCost)
+bool ABasePerk::Client_PreInteract(AHama* InteractingPlayer)
+{
+    if (!CanInteract(InteractingPlayer)) return false;
+
+    AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
+    if (!PS || PS->GetPoints() < PerkCost)
     {
-        PS->RemovePoints(PerkCost);
-
-        HamaChar->Server_StartPerkDrink(this);
-
-        if (PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
+        if (RejectSound && InteractingPlayer->IsLocallyControlled())
         {
-            SoloUsesLeftForQuickRevive--;
-            if (SoloUsesLeftForQuickRevive <= 0)
-            {
-                SetActorHiddenInGame(true);
-                SetActorEnableCollision(false);
-            }
+            UGameplayStatics::PlaySound2D(this, RejectSound);
+        }
+        return false;
+    }
+
+    return true;
+}
+
+void ABasePerk::Interact(AHama* InteractingPlayer)
+{
+    if (!HasAuthority() || !IsValid(InteractingPlayer) || !CanInteract(InteractingPlayer)) return;
+
+    AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
+    if (!PS || PS->GetPoints() < PerkCost) return;
+
+    PS->RemovePoints(PerkCost);
+    InteractingPlayer->Server_StartPerkDrink(this);
+
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    if (GS && PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
+    {
+        SoloUsesLeftForQuickRevive--;
+        if (SoloUsesLeftForQuickRevive <= 0)
+        {
+            SetActorHiddenInGame(true);
+            SetActorEnableCollision(false);
         }
     }
 }
@@ -95,7 +126,6 @@ FString ABasePerk::GetInteractMessage(AHama* InteractingPlayer)
             return FString::Printf(TEXT("Press F to buy %s [Cost: %d]"), *PerkID.ToString(), PerkCost);
         }
 
-        // مەرجی کارەبا
         if (!GS->bIsPowerOn)
         {
             return FString(TEXT("You must turn on the power first!"));
@@ -103,47 +133,4 @@ FString ABasePerk::GetInteractMessage(AHama* InteractingPlayer)
     }
 
     return FString::Printf(TEXT("Press F to buy %s [Cost: %d]"), *PerkID.ToString(), PerkCost);
-}
-
-bool ABasePerk::CanInteract(AHama* InteractingPlayer)
-{
-    if (!InteractingPlayer) return false;
-
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
-    {
-        return false;
-    }
-
-    if (InteractingPlayer->HasPerkID(PerkID))
-    {
-        return false;
-    }
-
-    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-    if (GS && PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
-    {
-        if (SoloUsesLeftForQuickRevive <= 0)
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool ABasePerk::Client_PreInteract(AHama* Player)
-{
-    if (!IsValid(Player)) return false;
-
-    AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
-    if (!PS || PS->GetPoints() < PerkCost)
-    {
-        if (RejectSound && Player->IsLocallyControlled())
-        {
-            UGameplayStatics::PlaySound2D(this, RejectSound);
-        }
-        return false;
-    }
-
-    return true;
 }

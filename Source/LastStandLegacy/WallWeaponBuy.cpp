@@ -35,7 +35,7 @@ bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || !WeaponClass) return false;
 
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive || InteractingPlayer->IsDrinkingPerk())
     {
         return false;
     }
@@ -87,44 +87,37 @@ bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
     return true;
 }
 
-void AWallWeaponBuy::Interact(AHama* HamaChar)
+void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
 {
-    if (!HamaChar || !HasAuthority() || !WeaponClass) return;
-    if (HamaChar->IsWeaponCurrentlyUpgrading(WeaponClass)) return;
+    if (!HasAuthority() || !IsValid(InteractingPlayer) || !WeaponClass) return;
+    if (!CanInteract(InteractingPlayer)) return;
+    if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass)) return;
 
-    AHamaPlayerState* PS = HamaChar->GetPlayerState<AHamaPlayerState>();
+    AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS) return;
 
-    ABaseWeapon* TargetWeaponToRefill = HamaChar->GetWeaponOrUpgradedInstance(WeaponClass);
+    ABaseWeapon* TargetWeaponToRefill = InteractingPlayer->GetWeaponOrUpgradedInstance(WeaponClass);
 
     if (TargetWeaponToRefill)
     {
         if (TargetWeaponToRefill->NeedsAmmo())
         {
             const bool bIsWeaponUpgraded = (TargetWeaponToRefill->GetClass() != WeaponClass);
-
             const int32 FinalAmmoCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
 
             if (PS->GetPoints() >= FinalAmmoCost)
             {
                 PS->RemovePoints(FinalAmmoCost);
                 TargetWeaponToRefill->RefillAmmo();
-
-                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Green, TEXT("AMMO BOUGHT!"));
-            }
-            else
-            {
-                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Not enough points for ammo!"));
             }
         }
     }
-       
     else
     {
         if (PS->GetPoints() >= WeaponCost)
         {
             PS->RemovePoints(WeaponCost);
-            HamaChar->GiveWeapon(WeaponClass);
+            InteractingPlayer->GiveWeapon(WeaponClass);
         }
     }
 }

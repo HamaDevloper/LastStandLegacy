@@ -1500,7 +1500,7 @@ void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
 
 void AHama::Server_StartPerkDrink(ABasePerk* TargetPerk)
 {
-    if (!TargetPerk || !HasAuthority()) return;
+    if (!TargetPerk || !HasAuthority() || IsDowned() || bIsDead) return;
     if (GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle)) return;
 
     PendingPerkID = TargetPerk->GetPerkID();
@@ -1515,15 +1515,22 @@ void AHama::Server_StartPerkDrink(ABasePerk* TargetPerk)
 
 void AHama::GivePendingPerk()
 {
-    if (HasAuthority())
+    if (!HasAuthority() || IsDowned() || bIsDead)
+    {
+        PendingPerkID = NAME_None;
+        return;
+    }
+
+    if (!PendingPerkID.IsNone())
     {
         AddPerkByID(PendingPerkID);
+        PendingPerkID = NAME_None;
     }
 }
 
 void AHama::AddPerkByID(FName PerkID)
 {
-    if (PerkID.IsNone()) return;
+    if (PerkID.IsNone() || !HasAuthority()) return;
 
     if (!OwnedPerks.Contains(PerkID))
     {
@@ -1593,24 +1600,37 @@ void AHama::AddPerkByID(FName PerkID)
 
 void AHama::HandleDeath()
 {
+    if (!HasAuthority()) return;
+
+    GetWorldTimerManager().ClearTimer(PerkDrinkTimerHandle);
+    PendingPerkID = NAME_None;
+
     OwnedPerks.Empty();
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
+
     bHasFastHands = false;
     bHasDoubleTap = false;
     bHasDeadshot = false;
     bHasMuleKick = false;
     bHasQuickRevive = false;
 
-    if (HamaComponent) HamaComponent->ResetStamina();
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasFastHands, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDoubleTap, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDeadshot, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasMuleKick, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasQuickRevive, this);
 
-    if (!IsLocallyControlled())
+    if (HamaComponent)
     {
-        Client_OnPlayerDowned();
+        HamaComponent->ResetStamina();
     }
+    
+    bIsDead = true;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
 
     if (CurrentWeapon == ThirdWeapon)
     {
-        if (IsValid(PrimaryWeapon)) CurrentWeapon = PrimaryWeapon;
-        else if (IsValid(SecondaryWeapon)) CurrentWeapon = SecondaryWeapon;
+        CurrentWeapon = IsValid(PrimaryWeapon) ? PrimaryWeapon : SecondaryWeapon;
 
         if (CurrentWeapon)
         {
@@ -1618,22 +1638,19 @@ void AHama::HandleDeath()
             CurrentWeapon->EquipWeapon(this);
         }
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
-        OnRep_CurrentWeapon();
+
+        if (GetNetMode() != NM_DedicatedServer)
+        {
+            OnRep_CurrentWeapon();
+        }
     }
 
     if (IsValid(ThirdWeapon))
     {
         ThirdWeapon->Destroy();
         ThirdWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
     }
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasFastHands, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDoubleTap, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDeadshot, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasMuleKick, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasQuickRevive, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
 
     if (IsLocallyControlled())
     {
@@ -1954,7 +1971,29 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
 
 bool AHama::CanInteract(AHama* InteractingPlayer)
 {
-    return HamaComponent && !HamaComponent->IsDowned() && !bIsDead;
+    if (!IsValid(InteractingPlayer) || InteractingPlayer == this)
+    {
+        return false;
+    }
+
+    if (InteractingPlayer->IsDowned() ||
+        InteractingPlayer->bIsDead ||
+        InteractingPlayer->IsDrinkingPerk())
+    {
+        return false;
+    }
+
+    if (!IsDowned() || bIsDead)
+    {
+        return false;
+    }
+
+    if (HealthComponent && HealthComponent->IsBeingRevived())
+    {
+       return false;
+    }
+
+    return true;
 }
 
 FString AHama::GetInteractMessage(AHama* InteractingPlayer)

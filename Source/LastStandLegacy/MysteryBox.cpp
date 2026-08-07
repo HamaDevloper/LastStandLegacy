@@ -162,7 +162,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
 
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive || InteractingPlayer->IsDrinkingPerk())
     {
         return false;
     }
@@ -181,12 +181,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 
 bool AMysteryBox::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!IsValid(InteractingPlayer)) return false;
-
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
-    {
-        return false;
-    }
+    if (!CanInteract(InteractingPlayer)) return false;
 
     if (BoxState == EMysteryBoxState::Idle)
     {
@@ -201,37 +196,29 @@ bool AMysteryBox::Client_PreInteract(AHama* InteractingPlayer)
             return false;
         }
     }
-    else if (BoxState == EMysteryBoxState::WeaponOffered)
-    {
-        if (CurrentBuyer != InteractingPlayer)
-        {
-            return false;
-        }
-    }
 
     return true;
 }
 
-void AMysteryBox::Interact(AHama* Player)
+void AMysteryBox::Interact(AHama* InteractingPlayer)
 {
-    if (!HasAuthority() || !IsValid(Player) || !CanInteract(Player)) return;
-
-    const int32 Cost = GetCurrentPrice();
+    if (!HasAuthority() || !IsValid(InteractingPlayer) || !CanInteract(InteractingPlayer)) return;
 
     if (BoxState == EMysteryBoxState::Idle)
     {
-        AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
+        const int32 Cost = GetCurrentPrice();
+        AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
         if (PS && PS->GetPoints() >= Cost)
         {
             PS->RemovePoints(Cost);
-            OpenMysteryBox(Player);
+            OpenMysteryBox(InteractingPlayer);
         }
     }
-    else if (BoxState == EMysteryBoxState::WeaponOffered && Player == CurrentBuyer)
+    else if (BoxState == EMysteryBoxState::WeaponOffered)
     {
         if (OfferedWeaponClass)
         {
-            Player->GiveWeapon(OfferedWeaponClass);
+            InteractingPlayer->GiveWeapon(OfferedWeaponClass);
         }
 
         GetWorldTimerManager().ClearTimer(TimerHandle_OfferTimeout);

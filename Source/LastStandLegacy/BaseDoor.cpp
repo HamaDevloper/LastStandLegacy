@@ -38,34 +38,45 @@ void ABaseDoor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
 
 bool ABaseDoor::CanInteract(AHama* InteractingPlayer)
 {
-    return InteractingPlayer && !bIsDoorOpen;
-}
+    if (!IsValid(InteractingPlayer) || bIsDoorOpen) return false;
 
-bool ABaseDoor::Client_PreInteract(AHama* Player)
-{
-    if (!IsValid(Player) || bIsDoorOpen) return false;
-    AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
-    if (!PS || PS->GetPoints() < DoorPrice)
+    if (InteractingPlayer->IsDowned() ||
+        InteractingPlayer->bIsDeathMachineActive ||
+        InteractingPlayer->IsDrinkingPerk())
     {
-        if (RejectSound && Player->IsLocallyControlled())
-        {
-            UGameplayStatics::PlaySound2D(this, RejectSound);
-        }
-
         return false;
     }
 
     return true;
 }
 
-void ABaseDoor::Interact(AHama* Player)
-{
-    if (!HasAuthority() || !Player || bIsDoorOpen) return;
 
-    AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>();
+bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
+{
+    if (!CanInteract(InteractingPlayer)) return false;
+
+    AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
+    if (!PS || PS->GetPoints() < DoorPrice)
+    {
+        if (RejectSound && InteractingPlayer->IsLocallyControlled())
+        {
+            UGameplayStatics::PlaySound2D(this, RejectSound);
+        }
+        return false;
+    }
+
+    return true;
+}
+
+void ABaseDoor::Interact(AHama* InteractingPlayer)
+{
+    if (!HasAuthority() || !CanInteract(InteractingPlayer)) return;
+
+    AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (PS && PS->GetPoints() >= DoorPrice)
     {
-        OpenDoor(Player, PS);
+        PS->RemovePoints(DoorPrice);
+        OpenDoor(InteractingPlayer, PS);
     }
 }
 
@@ -74,7 +85,7 @@ FString ABaseDoor::GetInteractMessage(AHama* InteractingPlayer)
     return FString::Printf(TEXT("Press F to Open Door [Cost %d]"), DoorPrice );
 }
 
-void ABaseDoor::OpenDoor(AHama* Player, AHamaPlayerState* PS)
+void ABaseDoor::OpenDoor(AHama* InteractingPlayer, AHamaPlayerState* PS)
 {
     check(HasAuthority());
     if (!PS || bIsDoorOpen) return;
