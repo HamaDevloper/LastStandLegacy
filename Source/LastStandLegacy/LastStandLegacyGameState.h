@@ -7,6 +7,7 @@
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnRoundChanged, int32);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnPowerUpAnnounced, EPowerUpType);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnPowerStateChangedDelegate, bool);
 
 UCLASS()
 class LASTSTANDLEGACY_API ALastStandLegacyGameState : public AGameState
@@ -18,6 +19,7 @@ public:
 
     FOnRoundChanged OnRoundChangedDelegate;
     FOnPowerUpAnnounced OnPowerUpAnnouncedDelegate;
+    FOnPowerStateChangedDelegate OnPowerStateChangedDelegate;
 
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_AnnouncePowerUp(EPowerUpType PowerUpType);
@@ -27,7 +29,6 @@ protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
-    // ── سیستەمی ڕاوەند ──
     void SetCurrentRound(int32 NewRound);
     int32 GetCurrentRound() const { return CurrentRound; }
 
@@ -39,7 +40,6 @@ protected:
     void OnRep_CurrentRound();
 
 public:
-    // ── ئەبیلیتی و پاوەرەکان ──
     UPROPERTY(ReplicatedUsing = OnRep_GlobalBulletStorm, BlueprintReadOnly, Category = "Abilities")
     bool bIsGlobalBulletStormActive = false;
 
@@ -52,12 +52,14 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_InstaKill, BlueprintReadOnly, Category = "Abilities")
     bool bHasInstaKill = false;
 
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "GameState|Power")
-    bool bIsPowerOn = true;
+    UPROPERTY(ReplicatedUsing = OnRep_PowerOn, BlueprintReadOnly, Category = "GameState|Power")
+    bool bIsPowerOn = false;
 
-    // ئەمە لە GameModeـەوە دەیکەیت بە true ئەگەر تەنها ١ یاریزان لە سێرڤەرەکە بوو
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "GameState|Match")
     bool bIsSoloMatch = false;
+
+    void SetPowerState(bool bState);
+    bool IsPowerOn() const { return bIsPowerOn; }
 
     void StartTeamAdrenaline(float Duration);
     bool IsTeamAdrenalineActive() const { return bIsAdrenalineActive; }
@@ -68,7 +70,6 @@ public:
     void StartDoublePoints(float Duration);
     void StartinstaKill(float Duration);
 
-    // ── لیستی ئامانجەکان (0-CPU Overhead) ──
     UPROPERTY()
     TArray<APawn*> ValidTargets;
 
@@ -80,6 +81,9 @@ protected:
     void EndGlobalBulletStorm();
     void EndInstaKill();
     void EndTeamAdrenaline();
+
+    UFUNCTION()
+    void OnRep_PowerOn();
 
     UFUNCTION()
     void OnRep_GlobalBulletStorm();

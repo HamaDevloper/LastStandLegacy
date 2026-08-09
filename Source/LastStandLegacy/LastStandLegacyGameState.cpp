@@ -38,7 +38,6 @@ void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimePrope
     DOREPLIFETIME_CONDITION(ALastStandLegacyGameState, bIsSoloMatch, COND_InitialOnly);
 }
 
-// ── فەنکشنەکانی ئامانج (0-CPU Usage) ──
 void ALastStandLegacyGameState::RegisterTarget(APawn* NewTarget)
 {
     if (HasAuthority() && NewTarget && !ValidTargets.Contains(NewTarget))
@@ -55,7 +54,6 @@ void ALastStandLegacyGameState::UnregisterTarget(APawn* TargetToRemove)
     }
 }
 
-// ── فەنکشنە نوێیەکانی سیستەمی ڕاوەند ──
 void ALastStandLegacyGameState::SetCurrentRound(int32 NewRound)
 {
     if (!HasAuthority()) return;
@@ -71,7 +69,46 @@ void ALastStandLegacyGameState::OnRep_CurrentRound()
     OnRoundChangedDelegate.Broadcast(CurrentRound);
 }
 
-// ------------------- ADRENALINE (BLITZ) -------------------
+void ALastStandLegacyGameState::SetPowerState(bool bNewPowerState)
+{
+    if (!HasAuthority() || bIsPowerOn == bNewPowerState) return;
+
+    bIsPowerOn = bNewPowerState;
+
+    FlushNetDormancy();
+    ForceNetUpdate();
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsPowerOn, this);
+
+    if (OnPowerStateChangedDelegate.IsBound())
+    {
+        OnPowerStateChangedDelegate.Broadcast(bIsPowerOn);
+    }
+
+    if (!IsRunningDedicatedServer())
+    {
+        OnRep_PowerOn();
+    }
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("SERVER: Power State changed to: %s"), bIsPowerOn ? TEXT("ON") : TEXT("OFF")));
+    }
+}
+
+void ALastStandLegacyGameState::OnRep_PowerOn()
+{
+    if (OnPowerStateChangedDelegate.IsBound())
+    {
+        OnPowerStateChangedDelegate.Broadcast(bIsPowerOn);
+    }
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("CLIENT: Power State Replicated: %s"), bIsPowerOn ? TEXT("ON") : TEXT("OFF")));
+    }
+}
+
 void ALastStandLegacyGameState::StartTeamAdrenaline(float Duration)
 {
     if (HasAuthority())
@@ -96,7 +133,6 @@ void ALastStandLegacyGameState::EndTeamAdrenaline()
     }
 }
 
-// ------------------- BULLET STORM -------------------
 void ALastStandLegacyGameState::StartGlobalBulletStorm(float Duration)
 {
     if (HasAuthority())
@@ -122,7 +158,6 @@ void ALastStandLegacyGameState::EndGlobalBulletStorm()
     }
 }
 
-// ------------------- DOUBLE POINTS -------------------
 void ALastStandLegacyGameState::StartDoublePoints(float Duration)
 {
     if (HasAuthority())
@@ -146,7 +181,6 @@ void ALastStandLegacyGameState::EndDoublePoints()
     }
 }
 
-// ------------------- INSTA KILL -------------------
 void ALastStandLegacyGameState::StartinstaKill(float Duration)
 {
     if (HasAuthority())
@@ -170,7 +204,6 @@ void ALastStandLegacyGameState::EndInstaKill()
     }
 }
 
-// ------------------- ON REP FUNCTIONS -------------------
 void ALastStandLegacyGameState::OnRep_Adrenaline()
 {
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, bIsAdrenalineActive ? FColor::Orange : FColor::Red, bIsAdrenalineActive ? TEXT("CLIENT: Blitz Adrenaline Active!") : TEXT("CLIENT: Blitz Ended!"));

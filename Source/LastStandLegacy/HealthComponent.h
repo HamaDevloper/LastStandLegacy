@@ -7,7 +7,8 @@
 class AHama;
 class UHamaComponent;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDeathDelegate);
+DECLARE_MULTICAST_DELEGATE(FOnDeathDelegate);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnReviveStateChanged, bool);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class LASTSTANDLEGACY_API UHealthComponent : public UActorComponent
@@ -58,8 +59,8 @@ public:
     FORCEINLINE bool IsBeingRevived() const { return bIsBeingRevived; }
     FORCEINLINE void SetBeingRevived(bool bState) { bIsBeingRevived = bState; }
 
-    UPROPERTY(BlueprintAssignable)
     FOnDeathDelegate OnDeath;
+    FOnReviveStateChanged OnReviveStateChanged;
 
 protected:
     void DownPlayer();

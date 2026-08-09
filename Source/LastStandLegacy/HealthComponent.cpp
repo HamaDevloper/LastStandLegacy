@@ -54,6 +54,17 @@ void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
     }
 }
 
+void UHealthComponent::OnRep_IsBeingRevived()
+{
+    // 📢 لۆجیکی کڵاینت کاتێک یاریزانەکە دەست دەکرێت بە ڕزگارکردنی (Reviving)
+    // نموونە: ئاگادارکردنەوەی UI یان لێدانی ئەنیمەیشن/دەنگ
+
+    if (OnReviveStateChanged.IsBound())
+    {
+        OnReviveStateChanged.Broadcast(bIsBeingRevived);
+    }
+}
+
 void UHealthComponent::UpgradeHealth(float Amount)
 {
     if (!GetOwner()->HasAuthority() || Amount <= 0.0f) return;
