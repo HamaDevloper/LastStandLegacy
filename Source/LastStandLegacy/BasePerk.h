@@ -48,6 +48,7 @@ public:
     virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
+    virtual bool ShouldCancelReloadOnInteract() const override { return true; }
 
     FName GetPerkID() const { return PerkID; }
     int32 GetPerkCost() const { return PerkCost; }

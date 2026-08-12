@@ -1,5 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
+﻿
 #include "BasePowerSwitch.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
@@ -10,6 +9,7 @@ ABasePowerSwitch::ABasePowerSwitch()
 {
     PrimaryActorTick.bCanEverTick = false;
     PrimaryActorTick.bStartWithTickEnabled = false;
+    bReplicates = true;
 
     NetDormancy = DORM_DormantAll;
 
@@ -55,7 +55,11 @@ bool ABasePowerSwitch::CanInteract(AHama* InteractingPlayer)
 
 bool ABasePowerSwitch::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!CanInteract(InteractingPlayer)) return false;
+    if (!CanInteract(InteractingPlayer))
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Cannot interact with the power switch at this time."));
+        return false;
+    }
 
     return true;
 }
@@ -68,6 +72,7 @@ void ABasePowerSwitch::Interact(AHama* InteractingPlayer)
     MARK_PROPERTY_DIRTY_FROM_NAME(ABasePowerSwitch, bIsSwitchedOn, this);
 
     FlushNetDormancy();
+    ForceNetUpdate();
 
     if (UWorld* World = GetWorld())
     {

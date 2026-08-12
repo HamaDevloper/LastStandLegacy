@@ -56,19 +56,9 @@ bool ABasePerk::CanInteract(AHama* InteractingPlayer)
 
     const bool bIsSoloQuickRevive = (PerkID == FName("QuickRevive") && GS->bIsSoloMatch);
 
-    if (bIsSoloQuickRevive)
+    if (bIsSoloQuickRevive && SoloUsesLeftForQuickRevive <= 0)
     {
-        if (SoloUsesLeftForQuickRevive <= 0)
-        {
-            return false;
-        }
-    }
-    else
-    {
-        if (!GS->bIsPowerOn)
-        {
-            return false;
-        }
+        return false;
     }
 
     return true;
@@ -77,6 +67,20 @@ bool ABasePerk::CanInteract(AHama* InteractingPlayer)
 bool ABasePerk::Client_PreInteract(AHama* InteractingPlayer)
 {
     if (!CanInteract(InteractingPlayer)) return false;
+
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    if (!GS) return false;
+
+    const bool bIsSoloQuickRevive = (PerkID == FName("QuickRevive") && GS->bIsSoloMatch);
+
+    if (!bIsSoloQuickRevive && !GS->bIsPowerOn)
+    {
+        if (RejectSound && InteractingPlayer->IsLocallyControlled())
+        {
+            UGameplayStatics::PlaySound2D(this, RejectSound);
+        }
+        return false;
+    }
 
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS || PS->GetPoints() < PerkCost)
@@ -95,14 +99,19 @@ void ABasePerk::Interact(AHama* InteractingPlayer)
 {
     if (!HasAuthority() || !IsValid(InteractingPlayer) || !CanInteract(InteractingPlayer)) return;
 
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    if (!GS) return;
+
+    const bool bIsSoloQuickRevive = (PerkID == FName("QuickRevive") && GS->bIsSoloMatch);
+    if (!bIsSoloQuickRevive && !GS->bIsPowerOn) return;
+
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS || PS->GetPoints() < PerkCost) return;
 
     PS->RemovePoints(PerkCost);
     InteractingPlayer->Server_StartPerkDrink(this);
 
-    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-    if (GS && PerkID == FName("QuickRevive") && GS->bIsSoloMatch)
+    if (bIsSoloQuickRevive)
     {
         SoloUsesLeftForQuickRevive--;
         if (SoloUsesLeftForQuickRevive <= 0)
@@ -115,7 +124,6 @@ void ABasePerk::Interact(AHama* InteractingPlayer)
 
 FString ABasePerk::GetInteractMessage(AHama* InteractingPlayer)
 {
-   
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
     if (GS)

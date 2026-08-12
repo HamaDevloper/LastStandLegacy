@@ -1772,11 +1772,25 @@ void AHama::InteractActionPressed()
         {
             if (AHama* DownedPlayer = Cast<AHama>(InteractActor))
             {
+                if (CurrentWeapon && CurrentWeapon->IsReloading())
+                {
+                    CurrentWeapon->CancelReload();
+                }
+
                 bIsCurrentlyReviving = true;
                 Server_BeginRevive(DownedPlayer);
             }
             else
             {
+
+                if (FocusedInteractable->ShouldCancelReloadOnInteract())
+                {
+                    if (CurrentWeapon && CurrentWeapon->IsReloading())
+                    {
+                        CurrentWeapon->CancelReload();
+                    }
+                }
+
                 if (FocusedInteractable->Client_PreInteract(this))
                 {
                     Server_Interact(InteractActor);
@@ -1802,10 +1816,6 @@ void AHama::GamepadXActionPressed(const FInputActionInstance& Instance)
     {
         if (FocusedInteractable && FocusedInteractable->CanInteract(this))
         {
-            if (CurrentWeapon && CurrentWeapon->IsReloading())
-            {
-                CurrentWeapon->CancelReload();
-            }
             bIsxButtonHolded = true;
             InteractActionPressed();
         }

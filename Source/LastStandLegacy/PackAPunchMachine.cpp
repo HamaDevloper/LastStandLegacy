@@ -161,11 +161,11 @@ FString APackAPunchMachine::GetInteractMessage(AHama* InteractingPlayer)
     switch (MachineState)
     {
     case EPaPState::Idle:
-        return FString::Printf(TEXT("Hold [E] Pack-A-Punch Weapon [%d Points]"), UpgradeCost);
+        return FString::Printf(TEXT("Hold [F] Pack-A-Punch Weapon [%d Points]"), UpgradeCost);
     case EPaPState::Upgrading:
-        return TEXT("Pack-A-Punching...");
+        return TEXT("");
     case EPaPState::ReadyForPickup:
-        return TEXT("Hold [E] Take Upgraded Weapon");
+        return TEXT("Hold [F] Take Upgraded Weapon");
     default:
         return TEXT("");
     }

@@ -377,10 +377,10 @@ public:
     bool IsDiving() const { return HamaComponent->IsDiving(); }
 
 protected:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
     float NormalSensitivity = 1.f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input|Sensitivity")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
     float AimingSensitivity = 0.5f;
 
 public:

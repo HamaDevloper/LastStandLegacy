@@ -32,8 +32,8 @@ public:
     virtual void Interact(AHama* Player) override;
     virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
+    virtual bool ShouldCancelReloadOnInteract() const override { return true; }
 
-    // Must be called on the SERVER via Character/Interaction Component RPC
     void ExecuteServerInteraction(AHama* InteractingPlayer);
 
 protected:

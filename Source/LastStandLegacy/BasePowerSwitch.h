@@ -29,7 +29,7 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Power Switch|Audio")
     TObjectPtr<USoundBase> PowerOnSound;
 
-    UPROPERTY(ReplicatedUsing = OnRep_IsSwitchedOn)
+    UPROPERTY(ReplicatedUsing = OnRep_IsSwitchedOn, BlueprintReadOnly)
     bool bIsSwitchedOn = false;
 
 public:

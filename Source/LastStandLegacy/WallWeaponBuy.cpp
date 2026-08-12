@@ -134,20 +134,19 @@ FString AWallWeaponBuy::GetInteractMessage(AHama* InteractingPlayer)
             return TEXT("Weapon Upgrading in Pack-a-Punch...");
         }
 
-        ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponOrUpgradedInstance(WeaponClass);
+        ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponByClass(WeaponClass);
         if (OwnedWeapon)
         {
             if (!OwnedWeapon->NeedsAmmo())
             {
-                return TEXT("Ammo Full");
+                return FString::Printf(TEXT(""));
             }
-
             const bool bIsWeaponUpgraded = (OwnedWeapon->GetClass() != WeaponClass);
             const int32 DisplayCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
 
-            return FString::Printf(TEXT("Hold [E] Buy Ammo [%d Points]"), DisplayCost);
+            return FString::Printf(TEXT("Hold [F] Buy Ammo [%d Points]"), DisplayCost);
         }
     }
 
-    return FString::Printf(TEXT("Hold [E] Buy Weapon [%d Points]"), WeaponCost);
+    return FString::Printf(TEXT("Hold [F] Buy Weapon [%d Points]"), WeaponCost);
 }

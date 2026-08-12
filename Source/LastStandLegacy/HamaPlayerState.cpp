@@ -60,8 +60,9 @@ void AHamaPlayerState::AddPoints(int32 Amount)
 {
     if (HasAuthority() && Amount > 0)
     {
-        Points += Amount;
+        Points = FMath::Clamp(Points += Amount, 0, MaxPointToEarn);
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
+
         Client_OnPointGained(Points);
         OnRep_Points();
     }

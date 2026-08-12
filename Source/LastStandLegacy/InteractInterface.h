@@ -26,4 +26,5 @@ public:
    virtual FString GetInteractMessage(AHama* InteractingPlayer) = 0;
    virtual bool CanInteract(AHama* InteractingPlayer) = 0;
    virtual bool Client_PreInteract(AHama* Player) = 0;
+   virtual bool ShouldCancelReloadOnInteract() const { return false; }
 };
