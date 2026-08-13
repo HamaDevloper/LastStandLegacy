@@ -31,9 +31,9 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
     Params.Condition = COND_None;
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDowned, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSprinting, Params);
-
+   
     Params.Condition = COND_SkipOwner;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSprinting, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsAiming, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSlide, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDiving, Params);

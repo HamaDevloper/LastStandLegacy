@@ -75,7 +75,6 @@ void ABaseDoor::Interact(AHama* InteractingPlayer)
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (PS && PS->GetPoints() >= DoorPrice)
     {
-        PS->RemovePoints(DoorPrice);
         OpenDoor(InteractingPlayer, PS);
     }
 }

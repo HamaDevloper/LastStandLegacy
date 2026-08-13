@@ -85,11 +85,6 @@ void ALastStandLegacyGameState::SetPowerState(bool bNewPowerState)
         OnPowerStateChangedDelegate.Broadcast(bIsPowerOn);
     }
 
-    if (!IsRunningDedicatedServer())
-    {
-        OnRep_PowerOn();
-    }
-
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("SERVER: Power State changed to: %s"), bIsPowerOn ? TEXT("ON") : TEXT("OFF")));
