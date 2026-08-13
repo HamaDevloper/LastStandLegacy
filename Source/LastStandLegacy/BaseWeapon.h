@@ -206,7 +206,7 @@ public:
 
     // پارامیتەری bClipEmpty لابرا و ClientCurrentAmmo دانرا بۆ ڕێگریکردن لە Desync
     UFUNCTION(Server, Reliable)
-    void ServerReload(bool bClientEmpty);
+    void ServerReload();
 
     UFUNCTION(Client, Reliable)
     void Client_ForceReload(int32 NewReserveAmmo, bool bCanReload);

@@ -422,7 +422,6 @@ void ABaseWeapon::Server_ApplyDamageBatched_Implementation(FVector GeneralShotDi
 
         if (DistanceToTarget > MaxAllowedDistance) continue;
 
-        // Security Check 2: ئایا دیوار (Block) لە نێوانیاندایە لە ڕوانگەی سێرڤەرەوە؟
         Params.AddIgnoredActor(HitActor);
         FHitResult ServerWallCheck;
         bool bHitWall = GetWorld()->LineTraceSingleByChannel(ServerWallCheck, TraceStart, TraceEnd, ECC_Visibility, Params);
@@ -518,8 +517,11 @@ void ABaseWeapon::RefillAmmo()
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Start!"));
+
     if (bWasEmpty && bIsEquipped)
     {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Refilled Ammo!"));
         if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
 
         if (OwnerCharacter->IsLocallyControlled())
@@ -535,6 +537,8 @@ void ABaseWeapon::RefillAmmo()
 void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo, bool bCanReload)
 {
     ReserveAmmo = NewReserveAmmo;
+
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, TEXT("Client Force Reload!"));
 
     bool bIsEquipped = (OwnerCharacter && OwnerCharacter->GetCurrentWeapon() == this);
 
@@ -588,12 +592,12 @@ void ABaseWeapon::Reload()
 
     if (!HasAuthority())
     {
-        ServerReload(bIsEmpty);
+        ServerReload();
         GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete, FinalReloadTime, false);
     }
     else
     {
-        ServerReload_Implementation(bIsEmpty);
+        ServerReload_Implementation();
     }
 }
 
@@ -613,14 +617,8 @@ void ABaseWeapon::Local_ReloadComplete()
     if (OwnerCharacter->bIsFireButtonHold) StartFire();
 }
 
-void ABaseWeapon::ServerReload_Implementation(bool bClientEmpty)
+void ABaseWeapon::ServerReload_Implementation()
 {
-    if (bClientEmpty && CurrentAmmo > 0 && CurrentAmmo <= 3)
-    {
-        CurrentAmmo = 0;
-        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
-    }
-
     bIsReloading = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
 
