@@ -130,10 +130,11 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
 
-    Params.Condition = COND_None;
-    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
+    //Params.Condition = COND_None;
+    
    
     Params.Condition = COND_SkipOwner;
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, BurstCounter, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, CurrentAmmo, Params);
 
@@ -168,15 +169,10 @@ void ABaseWeapon::StartFire()
     {
         HandleFireLocal();
 
-        if (!HasAuthority())
-        {
-            Server_StartFire();
-        }
-
         if (CurrentWeaponData.FireMode == EWeaponFireMode::Automatic || CurrentWeaponData.FireMode == EWeaponFireMode::Burst)
         {
             float ActualFireRate = CurrentWeaponData.FireRate;
-            if (OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
+            if (OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.04f);
 
             GetWorldTimerManager().SetTimer(
                 FireTimerHandle, this, &ABaseWeapon::HandleFireLocal,
@@ -195,15 +191,6 @@ void ABaseWeapon::StopFire()
 
     GetWorldTimerManager().ClearTimer(FireTimerHandle);
     ResetRecoil();
-
-    if (!HasAuthority())
-    {
-        Server_StopFire(CurrentAmmo);
-    }
-    else
-    {
-        Server_StopFire_Implementation(CurrentAmmo);
-    }
 }
 
 float ABaseWeapon::CalculateBulletSpread()
@@ -217,7 +204,7 @@ float ABaseWeapon::CalculateBulletSpread()
         UCharacterMovementComponent* MoveComp = OwnerCharacter->GetCharacterMovement();
         if (MoveComp->IsCrouching()) CurrentSpread *= CurrentWeaponData.CrouchSpreadMultiplier;
         else if (MoveComp->IsFalling()) CurrentSpread *= CurrentWeaponData.AirSpreadMultiplier;
-    } 
+    }
 
     if (OwnerCharacter && OwnerCharacter->HasDeadshot()) CurrentSpread *= 0.65f;
 
@@ -243,11 +230,6 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
             ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
             HitLocationName = TEXT("LEG");
         }
-    }
-
-    if (IsInfiniteAmmoActive())
-    {
-        ActualDamage *= 2.0f;
     }
 
     // -------------------------------------------------------------
@@ -318,7 +300,7 @@ void ABaseWeapon::HandleFireLocal()
 
     float CurrentTime = GetWorld()->GetTimeSeconds();
     float ActualFireRate = CurrentWeaponData.FireRate;
-    if (OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
+    if (OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.04f);
     NextAllowedFireTime = CurrentTime + ActualFireRate;
 
     if (HamaComponent && HamaComponent->IsSprinting()) HamaComponent->StopSprinting();
@@ -351,6 +333,8 @@ void ABaseWeapon::HandleFireLocal()
 
     int32 ShotsToFire = (OwnerCharacter->GetDoubleTap()) ? 2 : 1;
 
+    TArray<FHitResult> AllValidHitsToSend;
+
     for (int32 ShotIndex = 0; ShotIndex < ShotsToFire; ++ShotIndex)
     {
         FVector LaunchDirection = BaseDir;
@@ -365,42 +349,41 @@ void ABaseWeapon::HandleFireLocal()
         }
 
         FVector EndLocation = CameraLoc + (LaunchDirection.GetSafeNormal() * CurrentWeaponData.MaxRange);
-        FVector ShotDirection = LaunchDirection.GetSafeNormal();
+        TArray<FHitResult> Hits;
+        GetWorld()->LineTraceMultiByChannel(Hits, CameraLoc, EndLocation, ECC_Bullet, Params);
 
-        if (CurrentWeaponData.MaxZombiePenetration <= 1)
+        if (Hits.Num() > 0)
         {
-            FHitResult LocalHit;
-            if (GetWorld()->LineTraceSingleByChannel(LocalHit, CameraLoc, EndLocation, ECC_Bullet, Params))
-            {
-                PlayLocalHitEffects(LocalHit);
-                if (LocalHit.GetActor()) Server_ApplyDamage(LocalHit.GetActor(), ShotDirection, LocalHit);
-            }
-        }
-        else
-        {
-            TArray<FHitResult> Hits;
-            if (GetWorld()->LineTraceMultiByChannel(Hits, CameraLoc, EndLocation, ECC_Bullet, Params))
-            {
-                int32 PenetratedCount = 0;
-                TSet<AActor*> HitActors;
+            int32 PenetratedCount = 0;
+            TSet<AActor*> HitActors;
 
-                for (const FHitResult& SingleHit : Hits)
+            for (const FHitResult& SingleHit : Hits)
+            {
+                AActor* HitActor = SingleHit.GetActor();
+                if (!HitActor || HitActors.Contains(HitActor)) continue;
+
+                PlayLocalHitEffects(SingleHit);
+
+                AllValidHitsToSend.Add(SingleHit);
+                HitActors.Add(HitActor);
+
+                if (!SingleHit.bBlockingHit)
                 {
-                    if (!SingleHit.GetActor() || HitActors.Contains(SingleHit.GetActor())) continue;
-
-                    PlayLocalHitEffects(SingleHit);
-                    Server_ApplyDamage(SingleHit.GetActor(), ShotDirection, SingleHit);
-
-                    HitActors.Add(SingleHit.GetActor());
                     PenetratedCount++;
+                }
 
-                    if (PenetratedCount >= CurrentWeaponData.MaxZombiePenetration || SingleHit.bBlockingHit) break;
+                if (PenetratedCount >= CurrentWeaponData.MaxZombiePenetration || SingleHit.bBlockingHit)
+                {
+                    break;
                 }
             }
         }
     }
 
-    if (HasAuthority()) Server_FireRoutine();
+    if (AllValidHitsToSend.Num() > 0)
+    {
+        Server_ApplyDamageBatched(BaseDir, AllValidHitsToSend);
+    }
 
     if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
     {
@@ -414,114 +397,49 @@ void ABaseWeapon::PlayLocalHitEffects(const FHitResult& LocalHit)
     // UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), BloodEffect, LocalHit.ImpactPoint);
 }
 
-// ------------------- SERVER ROUTINE -------------------
+// -------------------------------------------------------------
+// BATCHED DAMAGE SYSTEM (Anti-Cheat & Network Optimization)
+// -------------------------------------------------------------
 
-void ABaseWeapon::Server_StartFire_Implementation()
+void ABaseWeapon::Server_ApplyDamageBatched_Implementation(FVector GeneralShotDirection, const TArray<FHitResult>& ClientHits)
 {
-    if (GetWorldTimerManager().IsTimerActive(ServerFireTimerHandle)) return;
-
-    float CurrentTime = GetWorld()->GetTimeSeconds();
-    if (CurrentTime < NextAllowedFireTime - 0.05f) return;
-
-    if (CurrentWeaponData.FireMode == EWeaponFireMode::Burst)
-    {
-        ServerBurstShotsLeft = CurrentWeaponData.BurstShotCount;
-    }
-
-    Server_FireRoutine();
-
-    if (CurrentWeaponData.FireMode == EWeaponFireMode::Automatic || CurrentWeaponData.FireMode == EWeaponFireMode::Burst)
-    {
-        float ActualFireRate = CurrentWeaponData.FireRate;
-        if (OwnerCharacter && OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
-
-        GetWorldTimerManager().SetTimer(
-            ServerFireTimerHandle, this, &ABaseWeapon::Server_FireRoutine,
-            ActualFireRate, true
-        );
-    }
-}
-
-void ABaseWeapon::Server_StopFire_Implementation(int32 ClientPredictedAmmo)
-{
-    GetWorldTimerManager().ClearTimer(ServerFireTimerHandle);
-
-    if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
-    {
-        if (ClientPredictedAmmo < CurrentAmmo && FMath::Abs(CurrentAmmo - ClientPredictedAmmo) <= 3)
-        {
-            CurrentAmmo = ClientPredictedAmmo;
-            MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
-        }
-    }
-}
-
-void ABaseWeapon::Server_FireRoutine()
-{
-    if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || bIsReloading || !OwnerCharacter)
-    {
-        Server_StopFire_Implementation(CurrentAmmo);
-        return;
-    }
-
-    if (CurrentWeaponData.FireMode == EWeaponFireMode::Burst)
-    {
-        if (ServerBurstShotsLeft <= 0)
-        {
-            Server_StopFire_Implementation(CurrentAmmo);
-            return;
-        }
-        ServerBurstShotsLeft--;
-    }
-
-    float CurrentTime = GetWorld()->GetTimeSeconds();
-    float ActualFireRate = CurrentWeaponData.FireRate;
-
-    if (OwnerCharacter && OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.1f);
-    NextAllowedFireTime = CurrentTime + ActualFireRate;
-
-    if (HasAuthority() && !OwnerCharacter->IsLocallyControlled())
-    {
-        if (!IsInfiniteAmmoActive())
-        {
-            CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
-            MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
-        }
-    }
-
-    BurstCounter = (BurstCounter >= 255) ? 1 : BurstCounter + 1;
-    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, BurstCounter, this);
-}
-
-void ABaseWeapon::Server_ApplyDamage_Implementation(AActor* HitActor, FVector ShotDirection, FHitResult HitInfo)
-{
-    if (!HitActor || !OwnerCharacter || !OwnerCharacter->GetController()) return;
+    if (!OwnerCharacter || !OwnerCharacter->GetController()) return;
 
     FVector TraceStart = OwnerCharacter->GetActorLocation();
-    FVector TraceEnd = HitInfo.ImpactPoint;
-
-    float DistanceToTarget = FVector::Dist(TraceStart, TraceEnd);
     float MaxAllowedDistance = CurrentWeaponData.MaxRange + 500.0f;
-
-    if (DistanceToTarget > MaxAllowedDistance) return;
 
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(OwnerCharacter);
     Params.AddIgnoredActor(this);
-    Params.AddIgnoredActor(HitActor);
 
-    FHitResult ServerHit;
-    bool bHitWall = GetWorld()->LineTraceSingleByChannel(ServerHit, TraceStart, TraceEnd, ECC_Visibility, Params);
+    for (const FHitResult& HitInfo : ClientHits)
+    {
+        AActor* HitActor = HitInfo.GetActor();
+        if (!HitActor) continue;
 
-    if (bHitWall) return;
+        FVector TraceEnd = HitInfo.ImpactPoint;
+        float DistanceToTarget = FVector::Dist(TraceStart, TraceEnd);
 
-    float FinalDamage = CalculateDamageBySurface(HitInfo);
-    AController* DamageInstigator = OwnerCharacter->GetController();
+        if (DistanceToTarget > MaxAllowedDistance) continue;
 
-    UGameplayStatics::ApplyPointDamage(
-        HitActor, FinalDamage, ShotDirection,
-        HitInfo, DamageInstigator, this, UDamageType::StaticClass()
-    );
+        // Security Check 2: ئایا دیوار (Block) لە نێوانیاندایە لە ڕوانگەی سێرڤەرەوە؟
+        Params.AddIgnoredActor(HitActor);
+        FHitResult ServerWallCheck;
+        bool bHitWall = GetWorld()->LineTraceSingleByChannel(ServerWallCheck, TraceStart, TraceEnd, ECC_Visibility, Params);
+
+        if (bHitWall)
+        {
+            break;
+        }
+
+        float FinalDamage = CalculateDamageBySurface(HitInfo);
+        AController* DamageInstigator = OwnerCharacter->GetController();
+
+        UGameplayStatics::ApplyPointDamage(
+            HitActor, FinalDamage, GeneralShotDirection,
+            HitInfo, DamageInstigator, this, UDamageType::StaticClass()
+        );
+    }
 }
 
 // -----------------------------------------------------
@@ -697,8 +615,6 @@ void ABaseWeapon::Local_ReloadComplete()
 
 void ABaseWeapon::ServerReload_Implementation(bool bClientEmpty)
 {
-    GetWorldTimerManager().ClearTimer(ServerFireTimerHandle);
-
     if (bClientEmpty && CurrentAmmo > 0 && CurrentAmmo <= 3)
     {
         CurrentAmmo = 0;

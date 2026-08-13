@@ -575,7 +575,7 @@ void AHama::RefillAllWeapons()
 
 ABaseWeapon* AHama::GetNextWeaponWithAmmo() const
 {
-    TArray<ABaseWeapon*> SearchOrder;
+    TArray<TObjectPtr<ABaseWeapon>> SearchOrder;
 
     if (CurrentWeapon == PrimaryWeapon)
     {

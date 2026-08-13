@@ -170,10 +170,8 @@ protected:
 
     FTimerHandle FireTimerHandle;
     FTimerHandle ReloadTimerHandle;
-    FTimerHandle ServerFireTimerHandle;
 
     int32 CurrentBurstShotsLeft = 0;
-    int32 ServerBurstShotsLeft = 0;
 
     float NextAllowedFireTime;
 
@@ -195,15 +193,7 @@ public:
     bool IsInfiniteAmmoActive() const;
 
     UFUNCTION(Server, Reliable)
-    void Server_StartFire();
-
-    UFUNCTION(Server, Reliable)
-    void Server_StopFire(int32 ClientPredictedAmmo);
-
-    void Server_FireRoutine();
-
-    UFUNCTION(Server, Reliable)
-    void Server_ApplyDamage(AActor* HitActor, FVector ShotDirection, FHitResult HitInfo);
+    void Server_ApplyDamageBatched(FVector GeneralShotDirection, const TArray<FHitResult>& ClientHits);
 
     UFUNCTION()
     void OnRep_BurstCounter();
