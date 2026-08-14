@@ -176,6 +176,8 @@ void AHama::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
+    if (!IsLocallyControlled()) return;
+
     if (!OwnerController || !SnapTarget)
     {
         return;

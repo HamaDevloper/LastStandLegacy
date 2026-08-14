@@ -47,7 +47,7 @@ bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || !WeaponClass) return false;
 
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive)
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive || InteractingPlayer->IsDrinkingPerk())
     {
         return false;
     }
@@ -84,6 +84,11 @@ bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
+    if (InteractingPlayer->bIsFireButtonHold && InteractingPlayer->CurrentWeapon)
+    {
+        InteractingPlayer->CurrentWeapon->StopFire();
+    }
+
     return true;
 }
 
@@ -117,6 +122,7 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
         if (PS->GetPoints() >= WeaponCost)
         {
             PS->RemovePoints(WeaponCost);
+
             InteractingPlayer->GiveWeapon(WeaponClass);
         }
     }

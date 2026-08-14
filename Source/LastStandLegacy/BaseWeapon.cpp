@@ -129,9 +129,6 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
-
-    //Params.Condition = COND_None;
-    
    
     Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
@@ -150,7 +147,11 @@ void ABaseWeapon::StartFire()
     if (!OwnerCharacter) return;
     if (GetWorldTimerManager().IsTimerActive(FireTimerHandle)) return;
 
-    if (CurrentAmmo <= 0 && ReserveAmmo <= 0 && !IsInfiniteAmmoActive()) return;
+    if (CurrentAmmo <= 0 && ReserveAmmo <= 0 && !IsInfiniteAmmoActive())
+    {
+        OwnerCharacter->AutoSwapToAvailableWeapon();
+        return;
+    }
 
     if (bIsReloading)
     {
@@ -380,10 +381,17 @@ void ABaseWeapon::HandleFireLocal()
         }
     }
 
-    if (AllValidHitsToSend.Num() > 0)
+    TArray<FCompactHitInfo> CompactHits;
+    for (const FHitResult& Hit : AllValidHitsToSend)
     {
-        Server_ApplyDamageBatched(BaseDir, AllValidHitsToSend);
+        FCompactHitInfo Compact;
+        Compact.HitActor = Hit.GetActor();
+        Compact.ImpactPoint = Hit.ImpactPoint;
+        Compact.ImpactNormal = Hit.ImpactNormal;
+        CompactHits.Add(Compact);
     }
+
+    Server_ProcessShot(BaseDir, CompactHits);
 
     if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
     {
@@ -397,47 +405,90 @@ void ABaseWeapon::PlayLocalHitEffects(const FHitResult& LocalHit)
     // UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), BloodEffect, LocalHit.ImpactPoint);
 }
 
-// -------------------------------------------------------------
-// BATCHED DAMAGE SYSTEM (Anti-Cheat & Network Optimization)
-// -------------------------------------------------------------
+// ================== Server_ProcessShot_Implementation ==================
 
-void ABaseWeapon::Server_ApplyDamageBatched_Implementation(FVector GeneralShotDirection, const TArray<FHitResult>& ClientHits)
+void ABaseWeapon::Server_ProcessShot_Implementation(FVector GeneralShotDirection, const TArray<FCompactHitInfo>& ClientHits)
 {
     if (!OwnerCharacter || !OwnerCharacter->GetController()) return;
 
+    float ActualFireRate = CurrentWeaponData.FireRate;
+    if (OwnerCharacter->GetDoubleTap()) ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.04f);
+
+    float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (CurrentTime < (ServerNextAllowedFireTime - 0.05f)) return;
+    ServerNextAllowedFireTime = CurrentTime + ActualFireRate;
+
+    bool bIsHost = OwnerCharacter->IsLocallyControlled();
+
+    if (!IsInfiniteAmmoActive())
+    {
+        if (!bIsHost)
+        {
+            if (CurrentAmmo <= 0) return; 
+
+            CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
+            BurstCounter = (BurstCounter >= 255) ? 1 : BurstCounter + 1;
+        }
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, BurstCounter, this);
+    }
+
+    if (ClientHits.Num() == 0) return;
+
     FVector TraceStart = OwnerCharacter->GetActorLocation();
     float MaxAllowedDistance = CurrentWeaponData.MaxRange + 500.0f;
+    GeneralShotDirection.Normalize();
 
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(OwnerCharacter);
     Params.AddIgnoredActor(this);
 
-    for (const FHitResult& HitInfo : ClientHits)
+    for (const FCompactHitInfo& CompactHit : ClientHits)
     {
-        AActor* HitActor = HitInfo.GetActor();
+        AActor* HitActor = CompactHit.HitActor;
         if (!HitActor) continue;
 
-        FVector TraceEnd = HitInfo.ImpactPoint;
+        FVector TraceEnd = CompactHit.ImpactPoint;
+        FVector DirectionToTarget = (TraceEnd - TraceStart).GetSafeNormal();
         float DistanceToTarget = FVector::Dist(TraceStart, TraceEnd);
 
         if (DistanceToTarget > MaxAllowedDistance) continue;
 
-        // Security Check 2: ئایا دیوار (Block) لە نێوانیاندایە لە ڕوانگەی سێرڤەرەوە؟
+        float DotProduct = FVector::DotProduct(GeneralShotDirection, DirectionToTarget);
+        if (DotProduct < 0.85f) continue;
+
         Params.AddIgnoredActor(HitActor);
         FHitResult ServerWallCheck;
         bool bHitWall = GetWorld()->LineTraceSingleByChannel(ServerWallCheck, TraceStart, TraceEnd, ECC_Visibility, Params);
+        if (bHitWall) break;
 
-        if (bHitWall)
+        FCollisionQueryParams ActorSurfaceParams;
+        ActorSurfaceParams.bReturnPhysicalMaterial = true;
+        ActorSurfaceParams.bTraceComplex = false;
+
+        FVector TraceEndExtended = TraceStart + (DirectionToTarget * (DistanceToTarget + 15.f));
+
+        FHitResult ActorSurfaceHit;
+        bool bConfirmedOnActor = HitActor->ActorLineTraceSingle(
+            ActorSurfaceHit, TraceStart, TraceEndExtended, ECC_Bullet, ActorSurfaceParams);
+
+        if (!bConfirmedOnActor)
         {
-            break;
+            continue;
         }
 
-        float FinalDamage = CalculateDamageBySurface(HitInfo);
+        float FinalDamage = CalculateDamageBySurface(ActorSurfaceHit);
         AController* DamageInstigator = OwnerCharacter->GetController();
 
         UGameplayStatics::ApplyPointDamage(
-            HitActor, FinalDamage, GeneralShotDirection,
-            HitInfo, DamageInstigator, this, UDamageType::StaticClass()
+            HitActor,
+            FinalDamage,
+            GeneralShotDirection,
+            ActorSurfaceHit,
+            DamageInstigator,
+            this,
+            UDamageType::StaticClass()
         );
     }
 }
@@ -511,23 +562,20 @@ void ABaseWeapon::RefillAmmo()
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
 
-    bool bIsEquipped = (OwnerCharacter && OwnerCharacter->GetCurrentWeapon() == this);
-
-    if (bIsEquipped && OwnerCharacter->IsLocallyControlled())
+    if (OwnerCharacter->IsLocallyControlled())
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 
-    if (bWasEmpty && bIsEquipped)
+    if (bWasEmpty)
     {
-        if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
-
         if (OwnerCharacter->IsLocallyControlled())
         {
+            if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("LocalReloadStarded"));
             Reload();
         }
     }
-
 
     Client_ForceReload(ReserveAmmo, bWasEmpty);
 }
@@ -536,14 +584,14 @@ void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo, bool b
 {
     ReserveAmmo = NewReserveAmmo;
 
-    bool bIsEquipped = (OwnerCharacter && OwnerCharacter->GetCurrentWeapon() == this);
-
-    if (bIsEquipped && OwnerCharacter->IsLocallyControlled())
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InsideClient"));
+    if (OwnerCharacter->IsLocallyControlled())
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 
         if (bCanReload)
         {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("ClientReloadStarted"));
             if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
             Reload();
         }   
@@ -588,12 +636,12 @@ void ABaseWeapon::Reload()
 
     if (!HasAuthority())
     {
-        ServerReload(bIsEmpty);
+        ServerReload();
         GetWorldTimerManager().SetTimer(ReloadTimerHandle, this, &ABaseWeapon::Local_ReloadComplete, FinalReloadTime, false);
     }
     else
     {
-        ServerReload_Implementation(bIsEmpty);
+        ServerReload_Implementation();
     }
 }
 
@@ -613,14 +661,8 @@ void ABaseWeapon::Local_ReloadComplete()
     if (OwnerCharacter->bIsFireButtonHold) StartFire();
 }
 
-void ABaseWeapon::ServerReload_Implementation(bool bClientEmpty)
+void ABaseWeapon::ServerReload_Implementation()
 {
-    if (bClientEmpty && CurrentAmmo > 0 && CurrentAmmo <= 3)
-    {
-        CurrentAmmo = 0;
-        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
-    }
-
     bIsReloading = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
 

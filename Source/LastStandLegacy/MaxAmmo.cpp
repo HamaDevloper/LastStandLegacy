@@ -7,6 +7,8 @@ AMaxAmmo::AMaxAmmo()
 
 void AMaxAmmo::ActivatePowerUp(AHama* Player)
 {
+    if (!HasAuthority()) return;
+
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
     {
         if (APlayerController* PC = It->Get())

@@ -29,6 +29,18 @@ enum class EWeaponFireMode : uint8
     Automatic UMETA(DisplayName = "Full Automatic")
 };
 
+USTRUCT()
+struct FCompactHitInfo
+{
+    GENERATED_BODY()
+
+    UPROPERTY() AActor* HitActor = nullptr;
+    UPROPERTY() FVector_NetQuantize ImpactPoint;
+    UPROPERTY() FVector_NetQuantizeNormal ImpactNormal;
+
+    UPROPERTY() uint8 SurfaceType = 0;
+};
+
 USTRUCT(BlueprintType)
 struct FWeaponData : public FTableRowBase
 {
@@ -174,6 +186,7 @@ protected:
     int32 CurrentBurstShotsLeft = 0;
 
     float NextAllowedFireTime;
+    float ServerNextAllowedFireTime;
 
 public:
     UPROPERTY(ReplicatedUsing = OnRep_Reload, BlueprintReadOnly, Category = "Weapon|LiveStats")
@@ -193,7 +206,7 @@ public:
     bool IsInfiniteAmmoActive() const;
 
     UFUNCTION(Server, Reliable)
-    void Server_ApplyDamageBatched(FVector GeneralShotDirection, const TArray<FHitResult>& ClientHits);
+    void Server_ProcessShot(FVector GeneralShotDirection, const TArray<FCompactHitInfo>& ClientHits);
 
     UFUNCTION()
     void OnRep_BurstCounter();
@@ -204,9 +217,8 @@ public:
     // گۆڕدرا بۆ float چونکە پێویستە ژمارەیەک بگەڕێنێتەوە، و دەبێت const بێت
     float GetCalculatedReloadTime() const;
 
-    // پارامیتەری bClipEmpty لابرا و ClientCurrentAmmo دانرا بۆ ڕێگریکردن لە Desync
     UFUNCTION(Server, Reliable)
-    void ServerReload(bool bClientEmpty);
+    void ServerReload();
 
     UFUNCTION(Client, Reliable)
     void Client_ForceReload(int32 NewReserveAmmo, bool bCanReload);
