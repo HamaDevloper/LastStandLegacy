@@ -29,18 +29,6 @@ enum class EWeaponFireMode : uint8
     Automatic UMETA(DisplayName = "Full Automatic")
 };
 
-USTRUCT()
-struct FCompactHitInfo
-{
-    GENERATED_BODY()
-
-    UPROPERTY() AActor* HitActor = nullptr;
-    UPROPERTY() FVector_NetQuantize ImpactPoint;
-    UPROPERTY() FVector_NetQuantizeNormal ImpactNormal;
-
-    UPROPERTY() uint8 SurfaceType = 0;
-};
-
 USTRUCT(BlueprintType)
 struct FWeaponData : public FTableRowBase
 {
@@ -204,9 +192,11 @@ public:
     void HandleFireLocal();
     float CalculateBulletSpread();
     bool IsInfiniteAmmoActive() const;
+    float GetEffectiveFireRate() const;
 
     UFUNCTION(Server, Reliable)
-    void Server_ProcessShot(FVector GeneralShotDirection, const TArray<FCompactHitInfo>& ClientHits);
+    void Server_ProcessShot(FVector_NetQuantize MuzzleLocation, const TArray<FVector_NetQuantize>& ShotDirections);
+    void ProcessShotLogic(const FVector& TraceStart, const FVector& ShootDir);
 
     UFUNCTION()
     void OnRep_BurstCounter();
