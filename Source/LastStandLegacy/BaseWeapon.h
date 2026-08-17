@@ -195,7 +195,7 @@ public:
     float GetEffectiveFireRate() const;
 
     UFUNCTION(Server, Reliable)
-    void Server_ProcessShot(FVector_NetQuantize MuzzleLocation, const TArray<FVector_NetQuantize>& ShotDirections);
+    void Server_ProcessShot(FVector_NetQuantize MuzzleLocation, const TArray<FVector_NetQuantizeNormal>& ShotDirections);
     void ProcessShotLogic(const FVector& TraceStart, const FVector& ShootDir);
 
     UFUNCTION()
