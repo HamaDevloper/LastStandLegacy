@@ -381,7 +381,8 @@ void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDat
     if (TraceDatum.OutHits.IsValidIndex(0))
     {
         AActor* HitActor = TraceDatum.OutHits[0].GetActor();
-        if (IsValid(HitActor))
+
+        if (IsValid(HitActor) && HitActor->Implements<UCrosshairTargetableInterface>())
         {
             bHit = true;
         }

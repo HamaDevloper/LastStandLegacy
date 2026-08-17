@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "CrosshairTargetableInterface.h"
 #include "Zombie.generated.h"
 
 class AAIController;
@@ -12,7 +13,7 @@ class UZombieDirectorSubsystem;
 DECLARE_DELEGATE_TwoParams(FOnZombieDeathSignature, AZombie*, AController*);
 
 UCLASS()
-class LASTSTANDLEGACY_API AZombie : public ACharacter
+class LASTSTANDLEGACY_API AZombie : public ACharacter, public ICrosshairTargetableInterface
 {
     GENERATED_BODY()
 
