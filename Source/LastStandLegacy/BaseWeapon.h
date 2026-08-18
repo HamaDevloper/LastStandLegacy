@@ -17,6 +17,7 @@ class UAnimSequence;
 class UForceFeedbackEffect;
 class UCurveFloat;
 class ALastStandLegacyGameState;
+class URecoilComponent;
 
 // دروستکردنی Delegate بۆ گۆڕانکارییەکانی فیشەک (بۆ بەکارهێنان لە UI)
 DECLARE_DELEGATE_TwoParams(FOnAmmoChangedSignature, int32, int32);
@@ -70,6 +71,9 @@ struct FWeaponData : public FTableRowBase
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
     float AimRecoilMultiplier = 0.55f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
+    float RecoilRecoverySpeed = 15.0f;
 
     // --- Spread & Accuracy ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
@@ -135,7 +139,6 @@ public:
 
 protected:
     virtual void BeginPlay() override;
-    virtual void Tick(float DeltaTime) override;
     virtual void OnRep_Owner() override;
     void UpdateCachedReferences();
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -231,8 +234,12 @@ protected:
     void PlayLocalHitEffects(const FHitResult& LocalHit);
 
     void ApplyRecoilAndCameraShake();
-    void ResetRecoil();
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Recoil")
+    TObjectPtr<URecoilComponent> RecoilComponent;
+
     int32 ShotsFiredInBurst = 0;
+
+    URecoilComponent* CacheRecoil();
 
     FRotator TargetRecoilOffset = FRotator::ZeroRotator;
     FRotator CurrentRecoilOffset = FRotator::ZeroRotator;

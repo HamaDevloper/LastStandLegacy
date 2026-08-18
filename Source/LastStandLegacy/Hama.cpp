@@ -65,6 +65,8 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     InteractSphere->SetCollisionProfileName(TEXT("Trigger"));
     InteractSphere->SetGenerateOverlapEvents(true);
 
+    RecoilComponent = CreateDefaultSubobject<URecoilComponent>(TEXT("RecoilComponent"));
+
     PerkBottleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PerkBottleMesh"));
     PerkBottleMesh->SetupAttachment(GetMesh(), TEXT("PerkBottleSocket"));
     PerkBottleMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -636,6 +638,14 @@ void AHama::RemoveCurrentWeapon()
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        if (URecoilComponent* RecoilComp = PC->FindComponentByClass<URecoilComponent>())
+        {
+            RecoilComp->ResetRecoil();
+        }
+    }
+
     WeaponToDestroy->Destroy();
 
     if (CurrentWeapon)
@@ -819,6 +829,14 @@ void AHama::CompleteWeaponSwap()
 
     CurrentWeapon = PendingWeaponForSwap;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        if (URecoilComponent* RecoilComp = PC->FindComponentByClass<URecoilComponent>())
+        {
+            RecoilComp->ResetRecoil();
+        }
+    }
 
     CurrentWeapon->SetActorHiddenInGame(false);
     CurrentWeapon->SetActorEnableCollision(true);
@@ -1488,15 +1506,23 @@ void AHama::AbilityActionPressed()
 void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
 {
     if (!GetMesh()) return;
+
     if (const FRoleVisualData* VisualData = RoleVisuals.Find(NewRole))
     {
-        if (VisualData->RoleMesh)
+        if (!VisualData->RoleMesh.IsNull())
         {
-            GetMesh()->SetSkeletalMesh(VisualData->RoleMesh);
+            if (USkeletalMesh* LoadedMesh = VisualData->RoleMesh.LoadSynchronous())
+            {
+                GetMesh()->SetSkeletalMesh(LoadedMesh);
+            }
         }
-        if (VisualData->RoleAnimBP)
+
+        if (!VisualData->RoleAnimBP.IsNull())
         {
-            GetMesh()->SetAnimInstanceClass(VisualData->RoleAnimBP);
+            if (UClass* LoadedAnimClass = VisualData->RoleAnimBP.LoadSynchronous())
+            {
+                GetMesh()->SetAnimInstanceClass(LoadedAnimClass);
+            }
         }
     }
 }

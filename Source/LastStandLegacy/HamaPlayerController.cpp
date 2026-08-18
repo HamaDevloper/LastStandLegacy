@@ -6,6 +6,11 @@
 #include "LastStandLegacyGameState.h"
 #include "EnhancedInputSubsystems.h"
 
+AHamaPlayerController::AHamaPlayerController()
+{
+    RecoilComponent = CreateDefaultSubobject<URecoilComponent>(TEXT("RecoilComponent"));
+}
+
 void AHamaPlayerController::BeginPlay()
 {
     Super::BeginPlay();

@@ -14,11 +14,12 @@
 #include "Engine/StreamableManager.h"
 #include "Curves/CurveVector.h"
 #include "LastStandLegacyGameState.h"
+#include "RecoilComponent.h"
 #include "DrawDebugHelpers.h"
 
 ABaseWeapon::ABaseWeapon()
 {
-    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bCanEverTick = false;
     PrimaryActorTick.bStartWithTickEnabled = false;
 
     bReplicates = true;
@@ -39,27 +40,6 @@ void ABaseWeapon::BeginPlay()
     UpdateCachedReferences();
 }
 
-void ABaseWeapon::Tick(float DeltaTime)
-{
-    Super::Tick(DeltaTime);
-
-    if (!OwnerController) return;
-
-    FRotator PreviousRecoil = CurrentRecoilOffset;
-    CurrentRecoilOffset = FMath::RInterpTo(CurrentRecoilOffset, TargetRecoilOffset, DeltaTime, 15.0f);
-
-    float DeltaPitch = CurrentRecoilOffset.Pitch - PreviousRecoil.Pitch;
-    float DeltaYaw = CurrentRecoilOffset.Yaw - PreviousRecoil.Yaw;
-
-    OwnerController->AddPitchInput(-DeltaPitch);
-    OwnerController->AddYawInput(DeltaYaw);
-
-    if (CurrentRecoilOffset.Equals(TargetRecoilOffset, 0.01f))
-    {
-        SetActorTickEnabled(false);
-    }
-}
-
 void ABaseWeapon::OnRep_Owner()
 {
     Super::OnRep_Owner();
@@ -73,6 +53,10 @@ void ABaseWeapon::UpdateCachedReferences()
 
     HamaComponent = OwnerCharacter->FindComponentByClass<UHamaComponent>();
     OwnerController = Cast<APlayerController>(OwnerCharacter->GetController());
+    if (OwnerController)
+    {
+        CacheRecoil();
+    }
 }
 
 void ABaseWeapon::InitializeWeaponData()
@@ -195,9 +179,9 @@ void ABaseWeapon::StopFire()
     {
         CurrentBurstShotsLeft = 0;
     }
+    ShotsFiredInBurst = 0;
 
     GetWorldTimerManager().ClearTimer(FireTimerHandle);
-    ResetRecoil();
 }
 
 float ABaseWeapon::CalculateBulletSpread()
@@ -323,20 +307,7 @@ void ABaseWeapon::HandleFireLocal()
     FRotator CameraRot;
     OwnerController->GetPlayerViewPoint(CameraLoc, CameraRot);
 
-    FVector CameraTraceEnd = CameraLoc + (CameraRot.Vector() * CurrentWeaponData.MaxRange);
-
-    FCollisionQueryParams CameraParams(SCENE_QUERY_STAT(WeaponCameraTrace), false, OwnerCharacter);
-    CameraParams.AddIgnoredActor(this); // زۆر گرنگە: بۆ ئەوەی ترەیسەکە بەر خودی چەکەکە نەکەوێت و لاری نەکاتەوە!
-    CameraParams.AddIgnoredActor(OwnerCharacter);
-
-    FHitResult ScreenHit;
-    bool bHitScreen = GetWorld()->LineTraceSingleByChannel(ScreenHit, CameraLoc, CameraTraceEnd, ECC_Visibility, CameraParams);
-
-    // خاڵی ئامانج
-    FVector TargetLocation = bHitScreen ? ScreenHit.ImpactPoint : CameraTraceEnd;
-
-    FName MuzzleSocket = CurrentWeaponData.MuzzleLocationName;
-    FVector MuzzleLoc = (WeaponMesh && WeaponMesh->DoesSocketExist(MuzzleSocket)) ? WeaponMesh->GetSocketLocation(MuzzleSocket) : CameraLoc;
+    FVector CameraForwardDir = CameraRot.Vector();
 
     const bool bIsAiming = (HamaComponent && HamaComponent->IsAiming());
     const float SpreadDegrees = CalculateBulletSpread();
@@ -353,29 +324,23 @@ void ABaseWeapon::HandleFireLocal()
             CurrentSpreadRad = MinDoubleTapDivergenceRad;
         }
 
-        // دروستکردنی ئاڕاستەی بنەڕەتی ڕێکە ڕێک
-        FVector BaseDirection = (TargetLocation - MuzzleLoc).GetSafeNormal();
-
-        // ئەگەر ئامانجگرتن تەواو بوو (سفر Spread)، ڕێک BaseDirection بەکاربهێنە بێ ئەوەی بیخەیتە ناو VRandCone
-        FVector ShootDir = BaseDirection;
+        // لێرەدا BaseDirection ڕاستەوخۆ لە کامێراوە وەردەگیرێت
+        FVector ShootDir = CameraForwardDir;
         if (CurrentSpreadRad > 0.f)
         {
-            ShootDir = FMath::VRandCone(BaseDirection, CurrentSpreadRad);
+            ShootDir = FMath::VRandCone(CameraForwardDir, CurrentSpreadRad);
         }
 
         ShotDirections.Add(ShootDir);
 
-        // -------------------------------------------------------------
-        // DEBUG LINES: کێشانی هێڵ لە Muzzleـەوە بە ئاڕاستەی شوێنی لێدانەکە
-        // -------------------------------------------------------------
 #if ENABLE_DRAW_DEBUG
-        FVector DebugEnd = MuzzleLoc + (ShootDir * CurrentWeaponData.MaxRange);
-        DrawDebugLine(GetWorld(), MuzzleLoc, DebugEnd, (i == 0) ? FColor::Red : FColor::Orange, false, 2.0f, 0, 1.0f);
+        FVector DebugEnd = CameraLoc + (ShootDir * CurrentWeaponData.MaxRange);
+        DrawDebugLine(GetWorld(), CameraLoc, DebugEnd, (i == 0) ? FColor::Red : FColor::Orange, false, 2.0f, 0, 1.0f);
 #endif
     }
 
-    // ناردنی داتا بۆ سێرڤەر تەنها بە یەک RPC
-    Server_ProcessShot(MuzzleLoc, ShotDirections);
+    Server_ProcessShot(CameraLoc, ShotDirections);
+    // ----------------------------------------
 
     if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
     {
@@ -383,6 +348,7 @@ void ABaseWeapon::HandleFireLocal()
         if (CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) Reload();
     }
 }
+
 
 void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLocation, const TArray<FVector_NetQuantizeNormal>& ShotDirections)
 {
@@ -394,9 +360,8 @@ void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLo
     // -------------------------------------------------------------
     // ANTI-CHEAT CHECK (Rule #4)
     // -------------------------------------------------------------
-    // 1. ڕێگری لە هاکەر کە هەوڵبدات گوللە لە پشت دیوارەوە بتەقێنێت
     float DistSquared = FVector::DistSquared(OwnerCharacter->GetActorLocation(), MuzzleLocation);
-    if (DistSquared > 30000.f) // ئەگەر Muzzle زیاتر لە ~170 یەکە دوور بوو لە یاریزانەکە
+    if (DistSquared > 30000.f)
     {
         UE_LOG(LogTemp, Warning, TEXT("Anti-Cheat: Player %s tried to spoof Muzzle Location!"), *OwnerCharacter->GetName());
         return;
@@ -410,7 +375,6 @@ void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLo
 
     ServerNextAllowedFireTime = CurrentTime + GetEffectiveFireRate();
 
-    // جێبەجێکردنی Trace بۆ هەر ئاڕاستەیەک کە نێردراوە
     for (const FVector_NetQuantizeNormal& Dir : ShotDirections)
     {
         ProcessShotLogic(MuzzleLocation, Dir);
@@ -423,21 +387,14 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
 
     FVector TraceEnd = TraceStart + (ShootDir * CurrentWeaponData.MaxRange);
 
-    // ⚡ FIX: bTraceComplex لە true گۆڕدرا بۆ false.
-    // سیستەمی Headshot/Legshot پشت بە Phys Material Override ـی Physics Asset دەبەستێت
-    // (Simple Collision)، نەک بە Material ـی سەر Render Mesh (Complex Collision).
-    // بە true بوونی، HitResult.PhysMaterial هەرگیز Override ـەکانی سەر/قاچ ناگرێتەوە،
-    // بۆیە CalculateDamageBySurface هەمیشە دەکەوێتە بارودۆخی Default (= Body damage).
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(WeaponServerTrace), false, OwnerCharacter);
+    FCollisionQueryParams Params;
     Params.AddIgnoredActor(this);
+    Params.AddIgnoredActor(OwnerCharacter);
     Params.bReturnPhysicalMaterial = true;
+    // --------------------------------------------------
 
     AController* InstigatorController = OwnerCharacter->GetController();
     TSubclassOf<UDamageType> DamageTypeClass = UDamageType::StaticClass();
-
-#if ENABLE_DRAW_DEBUG
-    DrawDebugLine(GetWorld(), TraceStart, TraceEnd, FColor::Blue, false, 3.0f, 0, 1.5f);
-#endif
 
     if (CurrentWeaponData.MaxZombiePenetration <= 1)
     {
@@ -446,10 +403,6 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
 
         if (bHit && HitResult.GetActor())
         {
-#if ENABLE_DRAW_DEBUG
-            DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 6.0f, 12, FColor::Cyan, false, 3.0f);
-#endif
-
             float FinalDamage = CalculateDamageBySurface(HitResult);
 
             UGameplayStatics::ApplyPointDamage(
@@ -470,19 +423,19 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
 
         if (bHit)
         {
+            TArray<AActor*> AlreadyHitActors; // بۆ ئەوەی یەک گوللە دوو جار لە یەک دوژمن نەدات
             int32 PenCount = 0;
+
             for (const FHitResult& Hit : HitResults)
             {
-                if (!Hit.GetActor()) continue;
+                AActor* HitActor = Hit.GetActor();
+                if (!HitActor || AlreadyHitActors.Contains(HitActor)) continue;
 
-#if ENABLE_DRAW_DEBUG
-                DrawDebugSphere(GetWorld(), Hit.ImpactPoint, 6.0f, 12, FColor::Cyan, false, 3.0f);
-#endif
-
+                AlreadyHitActors.Add(HitActor);
                 float FinalDamage = CalculateDamageBySurface(Hit);
 
                 UGameplayStatics::ApplyPointDamage(
-                    Hit.GetActor(),
+                    HitActor,
                     FinalDamage,
                     ShootDir,
                     Hit,
@@ -492,10 +445,7 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
                 );
 
                 PenCount++;
-                if (PenCount >= CurrentWeaponData.MaxZombiePenetration)
-                {
-                    break;
-                }
+                if (PenCount >= CurrentWeaponData.MaxZombiePenetration) break;
             }
         }
     }
@@ -520,26 +470,44 @@ void ABaseWeapon::PlayWeaponEffects()
 
 void ABaseWeapon::ApplyRecoilAndCameraShake()
 {
-    if (!OwnerController || !OwnerCharacter) return;
+    if (!OwnerController || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
-    if (CurrentWeaponData.FireCameraShake) OwnerController->ClientStartCameraShake(CurrentWeaponData.FireCameraShake);
-
-    if (CurrentWeaponData.RecoilPitchCurve)
+    if (CurrentWeaponData.FireCameraShake)
     {
-        float CurvePitchValue = CurrentWeaponData.RecoilPitchCurve->GetFloatValue(ShotsFiredInBurst);
-        float RandomYaw = FMath::RandRange(-CurrentWeaponData.RecoilRandomness, CurrentWeaponData.RecoilRandomness);
+        OwnerController->ClientStartCameraShake(CurrentWeaponData.FireCameraShake);
+    }
+
+    if (!RecoilComponent)
+    {
+        CacheRecoil();
+    }
+
+    if (RecoilComponent)
+    {
         float Multiplier = (HamaComponent && HamaComponent->IsAiming()) ? CurrentWeaponData.AimRecoilMultiplier : 1.0f;
 
-        TargetRecoilOffset = FRotator(CurvePitchValue * Multiplier, RandomYaw * Multiplier, 0.f);
+        RecoilComponent->AddRecoil(
+            CurrentWeaponData.RecoilPitchCurve,
+            ShotsFiredInBurst,
+            Multiplier,
+            CurrentWeaponData.RecoilRandomness,
+            CurrentWeaponData.RecoilRecoverySpeed
+        );
+
         ShotsFiredInBurst++;
     }
 }
 
-void ABaseWeapon::ResetRecoil()
+URecoilComponent* ABaseWeapon::CacheRecoil()
 {
-    ShotsFiredInBurst = 0;
-    TargetRecoilOffset = FRotator::ZeroRotator;
-    CurrentRecoilOffset = FRotator::ZeroRotator;
+    if (RecoilComponent) return RecoilComponent;
+
+    if (OwnerController)
+    {
+        RecoilComponent = OwnerController->FindComponentByClass<URecoilComponent>();
+    }
+
+    return RecoilComponent;
 }
 
 ALastStandLegacyGameState* ABaseWeapon::GetGameStateCache() const

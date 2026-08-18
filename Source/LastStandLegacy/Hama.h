@@ -27,10 +27,10 @@ struct FRoleVisualData
     GENERATED_BODY()
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Role Visuals")
-    USkeletalMesh* RoleMesh = nullptr;
+    TSoftObjectPtr<USkeletalMesh> RoleMesh;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Role Visuals")
-    TSubclassOf<UAnimInstance> RoleAnimBP;
+    TSoftClassPtr<UAnimInstance> RoleAnimBP;
 };
 
 // -----------------------------------------------------------------------------
@@ -46,6 +46,7 @@ class AZombie;
 class ABasePerk;
 class USphereComponent;
 class UStaticMeshComponent;
+class URecoilComponent;
 
 struct FInputActionValue;
 struct FInputActionInstance;
