@@ -71,7 +71,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     PerkBottleMesh->SetVisibility(false);
 }
 
-const float AHama::CrossHairTimer = 0.1f;
+const float AHama::CrossHairTimer = 0.05f;
 
 // -----------------------------------------------------------------------------
 // Gameplay Lifecycle
@@ -382,9 +382,12 @@ void AHama::OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDat
     {
         AActor* HitActor = TraceDatum.OutHits[0].GetActor();
 
-        if (IsValid(HitActor) && HitActor->Implements<UCrosshairTargetableInterface>())
+        if (IsValid(HitActor))
         {
-            bHit = true;
+            if (IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor))
+            {
+                bHit = Damageable->CanReceiveWeaponDamage();
+            }
         }
     }
 
@@ -1222,7 +1225,7 @@ void AHama::ResetValuesAfterSprint()
 
 void AHama::ReloadActionPressed()
 {
-    if (!CurrentWeapon || CurrentWeapon->ReserveAmmo <= 0) return;
+    if (!CurrentWeapon || !CurrentWeapon->ShouldReload()) return;
     if (GetDeathMachine()) return;
     if (IsDrinkingPerk()) return;
     if (HamaComponent && HamaComponent->IsSprinting())
@@ -1282,7 +1285,8 @@ void AHama::CrouchActionPressed(const FInputActionInstance& Instance)
     bIsCrouchButtonHold = true;
 
     if (GetCharacterMovement()->IsFalling()) return;
-    if (!HamaComponent || HamaComponent->IsDowned() || HamaComponent->IsSlide() || HamaComponent->IsDiving())
+
+    if (!HamaComponent || HamaComponent->IsSlide() || HamaComponent->IsDowned() || HamaComponent->IsDiving())
     {
         return;
     }

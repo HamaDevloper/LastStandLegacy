@@ -283,4 +283,5 @@ public:
     int32 ForTest() { return CurrentWeaponData.MaxReserveAmmo; }
 
     bool NeedsAmmo() const;
+    bool ShouldReload() const { return CurrentAmmo < CurrentWeaponData.MaxAmmoInClip && ReserveAmmo > 0; }
 };

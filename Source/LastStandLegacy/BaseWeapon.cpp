@@ -130,7 +130,7 @@ float ABaseWeapon::GetEffectiveFireRate() const
     float ActualFireRate = CurrentWeaponData.FireRate;
     if (OwnerCharacter && OwnerCharacter->GetDoubleTap())
     {
-        ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.04f);
+        ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.0f);
     }
     return ActualFireRate;
 }
@@ -205,46 +205,54 @@ float ABaseWeapon::CalculateBulletSpread()
 float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
 {
     float ActualDamage = Damage;
-    FString HitLocationName = TEXT("Body");
-
-    FString PhysMatName = Hit.PhysMaterial.IsValid() ? Hit.PhysMaterial->GetName() : TEXT("NONE/INVALID");
-    int32 SurfaceTypeValue = -1;
+    FString SurfaceStr = TEXT("BODY / DEFAULT");
+    FColor PrintColor = FColor::White;
 
     if (Hit.PhysMaterial.IsValid())
     {
-        EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
-        SurfaceTypeValue = (int32)SurfaceType;
+        UPhysicalMaterial* PhysMat = Hit.PhysMaterial.Get();
+        EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(PhysMat);
 
-        if (SurfaceType == EPhysicalSurface::SurfaceType1)
+        if (SurfaceType == EPhysicalSurface::SurfaceType1) // Headshot
         {
             ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
-            HitLocationName = TEXT("HEAD");
+            SurfaceStr = TEXT("HEADSHOT 🔥");
+            PrintColor = FColor::Green;
         }
-        else if (SurfaceType == EPhysicalSurface::SurfaceType2)
+        else if (SurfaceType == EPhysicalSurface::SurfaceType2) // Leg
         {
             ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
-            HitLocationName = TEXT("LEG");
+            SurfaceStr = TEXT("LEGSHOT 🦵");
+            PrintColor = FColor::Yellow;
         }
+
+#if WITH_EDITOR
+        if (GEngine)
+        {
+            FString Msg = FString::Printf(TEXT("[%s] Hit Bone: %s | PhysMat: %s | Type: %s | Damage: %.1f"),
+                HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+                *Hit.BoneName.ToString(),
+                *PhysMat->GetName(),
+                *SurfaceStr,
+                ActualDamage);
+
+            GEngine->AddOnScreenDebugMessage(-1, 3.0f, PrintColor, Msg);
+        }
+#endif
     }
-
-    if (GEngine)
+    else
     {
-        GEngine->AddOnScreenDebugMessage(3001, 6.f, FColor::Magenta,
-            FString::Printf(TEXT("[SURFACE-DEBUG] Bone=%s | PhysMat=%s | SurfaceType=%d"),
-                *Hit.BoneName.ToString(), *PhysMatName, SurfaceTypeValue));
-    }
+#if WITH_EDITOR
+        if (GEngine)
+        {
+            FString Msg = FString::Printf(TEXT("[%s] ❌ NO PHYS MATERIAL! Bone: %s | Base Damage: %.1f"),
+                HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+                *Hit.BoneName.ToString(),
+                ActualDamage);
 
-    FString DebugMsg = FString::Printf(TEXT("[%s] Shot Hit: %s | Final Damage: %.1f"),
-        HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-        *HitLocationName,
-        ActualDamage);
-
-    FColor MsgColor = (HitLocationName == TEXT("HEAD")) ? FColor::Green :
-        (HitLocationName == TEXT("LEG") ? FColor::Yellow : FColor::White);
-
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(1, 3.0f, MsgColor, DebugMsg);
+            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, Msg);
+        }
+#endif
     }
 
     return ActualDamage;
@@ -347,6 +355,21 @@ void ABaseWeapon::HandleFireLocal()
         }
 
         ShotDirections.Add(ShootDir);
+
+#if ENABLE_DRAW_DEBUG
+        // ⚡ Client Debug Line: ڕەنگی سوور بۆ تەقەی یەکەم، نارنجی بۆ Double Tap
+        FVector DebugEnd = CameraLoc + (ShootDir * CurrentWeaponData.MaxRange);
+        DrawDebugLine(
+            GetWorld(),
+            CameraLoc,
+            DebugEnd,
+            (i == 0) ? FColor::Red : FColor::Orange,
+            false,
+            2.0f,
+            0,
+            1.f
+        );
+#endif
     }
 
     Server_ProcessShot(CameraLoc, ShotDirections);
@@ -432,48 +455,54 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
     Params.bReturnPhysicalMaterial = true;
     Params.bTraceComplex = false;
 
-    AController* InstigatorController = OwnerCharacter->GetController();
-    TSubclassOf<UDamageType> DamageTypeClass = UDamageType::StaticClass();
-
     TArray<FHitResult> HitResults;
     bool bHit = GetWorld()->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECollisionChannel::ECC_Bullet, Params);
 
     if (!bHit) return;
 
-    TArray<AActor*> AlreadyHitActors;
-    int32 PenCount = 0;
-    const int32 MaxPen = FMath::Max(1, CurrentWeaponData.MaxZombiePenetration);
-
+    // 1. گروپکردنی Hitەکان بەپێی ئەکتەر (Actor)
+    TMap<AActor*, TArray<FHitResult>> ActorHitMap;
     for (const FHitResult& Hit : HitResults)
     {
         AActor* HitActor = Hit.GetActor();
         if (!HitActor) continue;
 
         IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor);
+        if (!Damageable || !Damageable->CanReceiveWeaponDamage()) continue;
 
-        if (!Damageable)
+        ActorHitMap.FindOrAdd(HitActor).Add(Hit);
+    }
+
+    int32 PenCount = 0;
+    const int32 MaxPen = FMath::Max(1, CurrentWeaponData.MaxZombiePenetration);
+
+    for (auto& Pair : ActorHitMap)
+    {
+        AActor* TargetActor = Pair.Key;
+        const TArray<FHitResult>& TargetHits = Pair.Value;
+
+        const FHitResult* BestHit = &TargetHits[0];
+        float BestDamage = 0.f;
+
+        for (const FHitResult& Hit : TargetHits)
         {
-            break;
+            float CalculatedDmg = CalculateDamageBySurface(Hit);
+            if (CalculatedDmg > BestDamage)
+            {
+                BestDamage = CalculatedDmg;
+                BestHit = &Hit;
+            }
         }
 
-        if (!Damageable->CanReceiveWeaponDamage())
-        {
-            continue;
-        }
-
-        if (AlreadyHitActors.Contains(HitActor)) continue;
-        AlreadyHitActors.Add(HitActor);
-
-        float FinalDamage = CalculateDamageBySurface(Hit);
 
         UGameplayStatics::ApplyPointDamage(
-            HitActor,
-            FinalDamage,
+            TargetActor,
+            BestDamage,
             ShootDir,
-            Hit,
-            InstigatorController,
+            *BestHit,
+            OwnerCharacter->GetController(),
             this,
-            DamageTypeClass
+            UDamageType::StaticClass()
         );
 
         PenCount++;
