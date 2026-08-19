@@ -15,6 +15,7 @@
 #include "Curves/CurveVector.h"
 #include "LastStandLegacyGameState.h"
 #include "RecoilComponent.h"
+#include "DamageableInterface.h"
 #include "DrawDebugHelpers.h"
 
 ABaseWeapon::ABaseWeapon()
@@ -206,9 +207,13 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
     float ActualDamage = Damage;
     FString HitLocationName = TEXT("Body");
 
+    FString PhysMatName = Hit.PhysMaterial.IsValid() ? Hit.PhysMaterial->GetName() : TEXT("NONE/INVALID");
+    int32 SurfaceTypeValue = -1;
+
     if (Hit.PhysMaterial.IsValid())
     {
         EPhysicalSurface SurfaceType = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
+        SurfaceTypeValue = (int32)SurfaceType;
 
         if (SurfaceType == EPhysicalSurface::SurfaceType1)
         {
@@ -222,9 +227,13 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
         }
     }
 
-    // -------------------------------------------------------------
-    // DEBUG OUTPUT (Print String)
-    // -------------------------------------------------------------
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(3001, 6.f, FColor::Magenta,
+            FString::Printf(TEXT("[SURFACE-DEBUG] Bone=%s | PhysMat=%s | SurfaceType=%d"),
+                *Hit.BoneName.ToString(), *PhysMatName, SurfaceTypeValue));
+    }
+
     FString DebugMsg = FString::Printf(TEXT("[%s] Shot Hit: %s | Final Damage: %.1f"),
         HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
         *HitLocationName,
@@ -289,7 +298,7 @@ void ABaseWeapon::HandleFireLocal()
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(2001, 6.f, FColor::Cyan,
-            FString::Printf(TEXT("[CLIENT] CurrentAmmo=%d | ReserveAmmo=%d"), CurrentAmmo, ReserveAmmo)); // ⚡ TEST: کلیلی جیاواز 2001
+            FString::Printf(TEXT("[CLIENT] CurrentAmmo=%d | ReserveAmmo=%d"), CurrentAmmo, ReserveAmmo));
     }
 
     if (ShootForceFeedback)
@@ -314,7 +323,7 @@ void ABaseWeapon::HandleFireLocal()
     FRotator CameraRot;
     OwnerController->GetPlayerViewPoint(CameraLoc, CameraRot);
 
-    FVector CameraForwardDir = CameraRot.Vector();
+    const FVector AimDir = CameraRot.Vector();
 
     const bool bIsAiming = (HamaComponent && HamaComponent->IsAiming());
     const float SpreadDegrees = CalculateBulletSpread();
@@ -331,22 +340,16 @@ void ABaseWeapon::HandleFireLocal()
             CurrentSpreadRad = MinDoubleTapDivergenceRad;
         }
 
-        FVector ShootDir = CameraForwardDir;
+        FVector ShootDir = AimDir;
         if (CurrentSpreadRad > 0.f)
         {
-            ShootDir = FMath::VRandCone(CameraForwardDir, CurrentSpreadRad);
+            ShootDir = FMath::VRandCone(AimDir, CurrentSpreadRad);
         }
 
         ShotDirections.Add(ShootDir);
-
-#if ENABLE_DRAW_DEBUG
-        FVector DebugEnd = CameraLoc + (ShootDir * CurrentWeaponData.MaxRange);
-        DrawDebugLine(GetWorld(), CameraLoc, DebugEnd, (i == 0) ? FColor::Red : FColor::Orange, false, 2.0f, 0, 1.0f);
-#endif
     }
 
     Server_ProcessShot(CameraLoc, ShotDirections);
-    // ----------------------------------------
 
     if ((CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) || CurrentWeaponData.FireMode == EWeaponFireMode::Single)
     {
@@ -362,7 +365,7 @@ void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLo
 
     float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    const float BaseToleranceSq = 10000000.f;
+    const float BaseToleranceSq = 100000.f;
     const float VelocityToleranceSq = OwnerCharacter->GetVelocity().SizeSquared() * 0.0225f; // لە جیاتی Size ڕاستەوخۆ SizeSquared بەکارهاتووە
     float MaxAllowedDistSq = BaseToleranceSq + VelocityToleranceSq;
     float DistSquared = FVector::DistSquared(OwnerCharacter->GetActorLocation(), MuzzleLocation);
@@ -421,69 +424,60 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
 {
     if (!HasAuthority() || !OwnerCharacter) return;
 
-    FVector TraceEnd = TraceStart + (ShootDir * CurrentWeaponData.MaxRange);
+    const FVector TraceEnd = TraceStart + (ShootDir * CurrentWeaponData.MaxRange);
 
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(this);
     Params.AddIgnoredActor(OwnerCharacter);
     Params.bReturnPhysicalMaterial = true;
-    // --------------------------------------------------
+    Params.bTraceComplex = false;
 
     AController* InstigatorController = OwnerCharacter->GetController();
     TSubclassOf<UDamageType> DamageTypeClass = UDamageType::StaticClass();
 
-    if (CurrentWeaponData.MaxZombiePenetration <= 1)
+    TArray<FHitResult> HitResults;
+    bool bHit = GetWorld()->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECollisionChannel::ECC_Bullet, Params);
+
+    if (!bHit) return;
+
+    TArray<AActor*> AlreadyHitActors;
+    int32 PenCount = 0;
+    const int32 MaxPen = FMath::Max(1, CurrentWeaponData.MaxZombiePenetration);
+
+    for (const FHitResult& Hit : HitResults)
     {
-        FHitResult HitResult;
-        bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_Bullet, Params);
+        AActor* HitActor = Hit.GetActor();
+        if (!HitActor) continue;
 
-        if (bHit && HitResult.GetActor())
+        IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor);
+
+        if (!Damageable)
         {
-            float FinalDamage = CalculateDamageBySurface(HitResult);
-
-            UGameplayStatics::ApplyPointDamage(
-                HitResult.GetActor(),
-                FinalDamage,
-                ShootDir,
-                HitResult,
-                InstigatorController,
-                this,
-                DamageTypeClass
-            );
+            break;
         }
-    }
-    else
-    {
-        TArray<FHitResult> HitResults;
-        bool bHit = GetWorld()->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECollisionChannel::ECC_Bullet, Params);
 
-        if (bHit)
+        if (!Damageable->CanReceiveWeaponDamage())
         {
-            TArray<AActor*> AlreadyHitActors;
-            int32 PenCount = 0;
-
-            for (const FHitResult& Hit : HitResults)
-            {
-                AActor* HitActor = Hit.GetActor();
-                if (!HitActor || AlreadyHitActors.Contains(HitActor)) continue;
-
-                AlreadyHitActors.Add(HitActor);
-                float FinalDamage = CalculateDamageBySurface(Hit);
-
-                UGameplayStatics::ApplyPointDamage(
-                    HitActor,
-                    FinalDamage,
-                    ShootDir,
-                    Hit,
-                    InstigatorController,
-                    this,
-                    DamageTypeClass
-                );
-
-                PenCount++;
-                if (PenCount >= CurrentWeaponData.MaxZombiePenetration) break;
-            }
+            continue;
         }
+
+        if (AlreadyHitActors.Contains(HitActor)) continue;
+        AlreadyHitActors.Add(HitActor);
+
+        float FinalDamage = CalculateDamageBySurface(Hit);
+
+        UGameplayStatics::ApplyPointDamage(
+            HitActor,
+            FinalDamage,
+            ShootDir,
+            Hit,
+            InstigatorController,
+            this,
+            DamageTypeClass
+        );
+
+        PenCount++;
+        if (PenCount >= MaxPen) break;
     }
 }
 
