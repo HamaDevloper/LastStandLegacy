@@ -45,6 +45,9 @@ protected:
     void OnRep_AssignedRole();
 
 public:
+    UFUNCTION(BlueprintCallable, Category = "Economy")
+    void SetPoints(int32 NewPoints);
+
     UFUNCTION(BlueprintCallable, Category = "Player State")
     void AddPoints(int32 Amount);
 

@@ -47,6 +47,9 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
     {
         if (AHamaPlayerState* PS = NewPlayer->GetPlayerState<AHamaPlayerState>())
         {
+            int32 CalculatedStartingPoints = BaseStartingPoints + ((CurrentRound - 1) * PointsPerRoundScaling);
+            PS->SetPoints(CalculatedStartingPoints);
+
             if (PS->GetAssignedRole() == EHamaAbilityType::None && !ActiveAbilities.IsEmpty())
             {
                 EHamaAbilityType AssignedAbility = ActiveAbilities.Pop();
@@ -88,16 +91,16 @@ void ALastStandLegacyGameMode::BeginPlay()
 
     if (SpawnPoints.IsEmpty())
     {
-        UE_LOG(LogTemp, Warning, TEXT("No SpawnPoint found! Add 'ZombieSpawn' tag."));
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("No SpawnPoint found! Add 'ZombieSpawn'"));
     }
 
-   
     SpawnRandomPerks();
 
-    CurrentRound = 1;
     DeadZombiesCount = 0;
     ActiveZombiesCount = 0;
     ZombiesSpawnedThisRound = 0;
+
+    ZombiesToKill = BaseZombiesCount + ((CurrentRound - 1) * ZombiesPerRoundIncrement);
 
     if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
@@ -142,7 +145,7 @@ void ALastStandLegacyGameMode::SpawnRandomPerks()
 
     if (FoundPerkPoints.IsEmpty())
     {
-        UE_LOG(LogTemp, Warning, TEXT("No PerkSpawnPoints found in the map!"));
+       GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("No PerkSpawnPoints found in the map!"));
         return;
     }
 
@@ -215,7 +218,26 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
 
     if (DeadZombiesCount >= ZombiesToKill)
     {
-        StartNextRound();
+        CurrentRound++;
+
+        if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+        {
+            GS->SetCurrentRound(CurrentRound);
+        }
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow,
+                FString::Printf(TEXT("Round Completed! Next round starting in %d seconds..."), StartNexRoundDelay));
+        }
+
+        GetWorldTimerManager().SetTimer(
+            RoundTransitionTimerHandle,
+            this,
+            &ALastStandLegacyGameMode::StartNextRound,
+            StartNexRoundDelay,
+            false
+        );
     }
 }
 
@@ -227,19 +249,14 @@ float ALastStandLegacyGameMode::GetCalculateSpawnInterval() const
 
 void ALastStandLegacyGameMode::StartNextRound()
 {
-    CurrentRound++;
-
     DeadZombiesCount = 0;
     ZombiesSpawnedThisRound = 0;
     ActiveZombiesCount = 0;
     CurrentPowerSpawn = 0;
 
-    ZombiesToKill += 5;
-
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
-    {
-        GS->SetCurrentRound(CurrentRound);
-    }
+    // --- لێرەدا دەبێت بە هەمان شێوەی BeginPlay حیسابی ZombiesToKill بکرێت ---
+    ZombiesToKill = BaseZombiesCount + ((CurrentRound - 1) * ZombiesPerRoundIncrement);
+    // --------------------------------------------------------------------------
 
     if (GEngine)
     {

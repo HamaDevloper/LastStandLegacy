@@ -33,7 +33,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 
     bReplicates = true;
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(100.f);
+    SetNetUpdateFrequency(80.f);
     SetMinNetUpdateFrequency(33.f);
 
     if (GetCharacterMovement())
@@ -64,8 +64,6 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     InteractSphere->SetSphereRadius(250.f);
     InteractSphere->SetCollisionProfileName(TEXT("Trigger"));
     InteractSphere->SetGenerateOverlapEvents(true);
-
-    RecoilComponent = CreateDefaultSubobject<URecoilComponent>(TEXT("RecoilComponent"));
 
     PerkBottleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PerkBottleMesh"));
     PerkBottleMesh->SetupAttachment(GetMesh(), TEXT("PerkBottleSocket"));
@@ -1029,7 +1027,6 @@ bool AHama::IsWeaponCurrentlyUpgrading(TSubclassOf<ABaseWeapon> WeaponClassToChe
 
     return false;
 }
-
 
 // -----------------------------------------------------------------------------
 // Input Binding

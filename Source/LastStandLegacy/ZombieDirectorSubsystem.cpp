@@ -61,8 +61,8 @@ void UZombieDirectorSubsystem::RegisterPlayer(APawn* Player)
 {
     if (Player && !ActivePlayers.Contains(Player))
     {
-        ActivePlayers.Add(Player);
-        SetPlayerTargetable(Player, true);
+        //ActivePlayers.Add(Player);
+        //SetPlayerTargetable(Player, true);
     }
 }
 

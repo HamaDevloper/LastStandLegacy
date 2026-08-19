@@ -62,7 +62,22 @@ public:
     int32 ZombiesSpawnedThisRound = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
-    int32 ZombiesSpawnLimit = 24;
+    int32 ZombiesSpawnLimit = 30;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
+    int32 StartNexRoundDelay = 5;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombies|Zombie Settings")
+    int32 BaseZombiesCount = 10;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombies|Zombie Settings")
+    int32 ZombiesPerRoundIncrement = 5;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Economy|Scaling")
+    int32 BaseStartingPoints = 500;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Economy|Scaling")
+    int32 PointsPerRoundScaling = 250;
 
     // [PowerUp & Perk Settings]
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|PowerUp")
@@ -111,4 +126,7 @@ protected:
     float MinSpawnInterval = 0.3f;
 
     float GetCalculateSpawnInterval() const;
+
+private:
+    FTimerHandle RoundTransitionTimerHandle;
 };

@@ -9,7 +9,6 @@ AHamaPlayerState::AHamaPlayerState()
     SetNetUpdateFrequency(10.f);
     SetMinNetUpdateFrequency(2.f);
 
-    Points = 500;
     Kills = 0;
 }
 
@@ -53,6 +52,18 @@ void AHamaPlayerState::OnRep_AssignedRole()
         {
             AbilityComp->SetAssignedAbility(AssignedRole);
         }
+    }
+}
+
+void AHamaPlayerState::SetPoints(int32 NewPoints)
+{
+    if (HasAuthority())
+    {
+        Points = FMath::Clamp(NewPoints, 0, MaxPointToEarn);
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
+
+        Client_OnPointGained(Points);
+        OnRep_Points();
     }
 }
 

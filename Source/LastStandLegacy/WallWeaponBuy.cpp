@@ -98,6 +98,8 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
     if (!CanInteract(InteractingPlayer)) return;
     if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass)) return;
 
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Interacting with Wall Weapon Buy: %s"), *WeaponName));
+
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS) return;
 
@@ -105,16 +107,30 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
 
     if (TargetWeaponToRefill)
     {
+        GEngine->AddOnScreenDebugMessage(-1, 100.f, FColor::Green, FString::Printf(TEXT("Player already owns weapon: %s"), *TargetWeaponToRefill->GetName()));
+        GEngine->AddOnScreenDebugMessage(-1, 118.f, FColor::Red,
+            FString::Printf(TEXT("[SERVER] Weapon=%s | ReserveAmmo=%d | MaxReserveAmmo=%d | NeedsAmmo=%s"),
+                *TargetWeaponToRefill->GetName(),
+                TargetWeaponToRefill->ReserveAmmo,
+                TargetWeaponToRefill->ForTest(),
+                TargetWeaponToRefill->NeedsAmmo() ? TEXT("true") : TEXT("false")));
+
         if (TargetWeaponToRefill->NeedsAmmo())
         {
             const bool bIsWeaponUpgraded = (TargetWeaponToRefill->GetClass() != WeaponClass);
             const int32 FinalAmmoCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
 
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Refilling Ammo for Weapon: %s, Cost: %d"), *TargetWeaponToRefill->GetName(), FinalAmmoCost));
             if (PS->GetPoints() >= FinalAmmoCost)
             {
+                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Player has enough points to refill ammo. Deducting %d points."), FinalAmmoCost));
                 PS->RemovePoints(FinalAmmoCost);
                 TargetWeaponToRefill->RefillAmmo();
             }
+        }
+        else
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Weapon: %s does not need ammo refill."), *TargetWeaponToRefill->GetName()));
         }
     }
     else
@@ -126,6 +142,9 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
             InteractingPlayer->GiveWeapon(WeaponClass);
         }
     }
+
+    GEngine
+        ->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Interaction with Wall Weapon Buy completed.")));
 }
 
 FString AWallWeaponBuy::GetInteractMessage(AHama* InteractingPlayer)

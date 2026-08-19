@@ -67,7 +67,6 @@ void ABaseWeapon::InitializeWeaponData()
     if (!Row) return;
 
     CurrentWeaponData = *Row;
-    CachedUpgradedClass = Row->UpgradedWeaponClass;
 
     MaxAmmoInClip = CurrentWeaponData.MaxAmmoInClip;
     CurrentAmmo = MaxAmmoInClip;
@@ -285,6 +284,14 @@ void ABaseWeapon::HandleFireLocal()
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
     }
 
+    BurstCounter = (BurstCounter > 255) ? 1 : (BurstCounter + 1);
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(2001, 6.f, FColor::Cyan,
+            FString::Printf(TEXT("[CLIENT] CurrentAmmo=%d | ReserveAmmo=%d"), CurrentAmmo, ReserveAmmo)); // ⚡ TEST: کلیلی جیاواز 2001
+    }
+
     if (ShootForceFeedback)
     {
         FForceFeedbackParameters FeedbackParams;
@@ -312,7 +319,7 @@ void ABaseWeapon::HandleFireLocal()
     const bool bIsAiming = (HamaComponent && HamaComponent->IsAiming());
     const float SpreadDegrees = CalculateBulletSpread();
     const float SpreadRadians = FMath::DegreesToRadians(SpreadDegrees);
-    const float MinDoubleTapDivergenceRad = bIsAiming ? 0.f : FMath::DegreesToRadians(0.75f);
+    const float MinDoubleTapDivergenceRad = bIsAiming ? 0.f : FMath::DegreesToRadians(0.60f);
 
     TArray<FVector_NetQuantizeNormal> ShotDirections;
 
@@ -324,7 +331,6 @@ void ABaseWeapon::HandleFireLocal()
             CurrentSpreadRad = MinDoubleTapDivergenceRad;
         }
 
-        // لێرەدا BaseDirection ڕاستەوخۆ لە کامێراوە وەردەگیرێت
         FVector ShootDir = CameraForwardDir;
         if (CurrentSpreadRad > 0.f)
         {
@@ -355,22 +361,52 @@ void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLo
     if (!OwnerCharacter) return;
 
     float CurrentTime = GetWorld()->GetTimeSeconds();
-    if (CurrentTime < (ServerNextAllowedFireTime - 0.05f)) return;
 
-    // -------------------------------------------------------------
-    // ANTI-CHEAT CHECK (Rule #4)
-    // -------------------------------------------------------------
+    const float BaseToleranceSq = 10000000.f;
+    const float VelocityToleranceSq = OwnerCharacter->GetVelocity().SizeSquared() * 0.0225f; // لە جیاتی Size ڕاستەوخۆ SizeSquared بەکارهاتووە
+    float MaxAllowedDistSq = BaseToleranceSq + VelocityToleranceSq;
     float DistSquared = FVector::DistSquared(OwnerCharacter->GetActorLocation(), MuzzleLocation);
-    if (DistSquared > 30000.f)
+    int32 MaxAllowedShots = OwnerCharacter->GetDoubleTap() ? 2 : 1;
+
+    bool bFireRateViolation = CurrentTime < (ServerNextAllowedFireTime - 0.15f);
+    bool bMuzzleSpoofing = DistSquared > MaxAllowedDistSq;
+    bool bTooManyShots = ShotDirections.Num() > MaxAllowedShots;
+
+
+    if (bFireRateViolation || bMuzzleSpoofing || bTooManyShots)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Anti-Cheat: Player %s tried to spoof Muzzle Location!"), *OwnerCharacter->GetName());
+        FString RejectReason = TEXT("");
+        if (bFireRateViolation) RejectReason += TEXT("FireRate ");
+        if (bMuzzleSpoofing) RejectReason += TEXT("MuzzleSpoofing ");
+        if (bTooManyShots) RejectReason += TEXT("TooManyShots ");
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
+                FString::Printf(TEXT("[SERVER] Shot Rejected! Reason: %s| Syncing Ammo..."), *RejectReason));
+        }
+
+        Client_ForceSyncAmmo(CurrentAmmo);
         return;
     }
 
-    int32 MaxAllowedShots = OwnerCharacter->GetDoubleTap() ? 2 : 1;
-    if (ShotDirections.Num() > MaxAllowedShots)
+    if (!OwnerCharacter->IsLocallyControlled())
     {
-        return; 
+        if (!IsInfiniteAmmoActive())
+        {
+            if (CurrentAmmo <= 0) return;
+
+            CurrentAmmo = FMath::Max(0, CurrentAmmo - 1);
+            MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+
+            BurstCounter = (BurstCounter > 255) ? 1 : (BurstCounter + 1);
+        }
+    }
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(2002, 6.f, FColor::Orange,
+            FString::Printf(TEXT("[SERVER-RECEIVED] CurrentAmmo=%d | ReserveAmmo=%d"), CurrentAmmo, ReserveAmmo));
     }
 
     ServerNextAllowedFireTime = CurrentTime + GetEffectiveFireRate();
@@ -423,7 +459,7 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
 
         if (bHit)
         {
-            TArray<AActor*> AlreadyHitActors; // بۆ ئەوەی یەک گوللە دوو جار لە یەک دوژمن نەدات
+            TArray<AActor*> AlreadyHitActors;
             int32 PenCount = 0;
 
             for (const FHitResult& Hit : HitResults)
@@ -449,6 +485,12 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
             }
         }
     }
+}
+
+void ABaseWeapon::Client_ForceSyncAmmo_Implementation(int32 ServerAmmo)
+{
+    CurrentAmmo = ServerAmmo;
+    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 }
 
 void ABaseWeapon::PlayLocalHitEffects(const FHitResult& LocalHit)
@@ -529,7 +571,7 @@ bool ABaseWeapon::HasAmmo() const
 
 bool ABaseWeapon::NeedsAmmo() const
 {
-    return (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
+    return  (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
 }
 
 // ------------------- RELOAD REFACTOR -------------------

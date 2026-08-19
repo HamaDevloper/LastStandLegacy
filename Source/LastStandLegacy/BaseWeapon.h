@@ -201,6 +201,9 @@ public:
     void Server_ProcessShot(FVector_NetQuantize MuzzleLocation, const TArray<FVector_NetQuantizeNormal>& ShotDirections);
     void ProcessShotLogic(const FVector& TraceStart, const FVector& ShootDir);
 
+    UFUNCTION(Client, Reliable)
+    void Client_ForceSyncAmmo(int32 ServerAmmo);
+
     UFUNCTION()
     void OnRep_BurstCounter();
 
