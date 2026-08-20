@@ -113,7 +113,7 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
-   
+
     Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, BurstCounter, Params);
@@ -208,6 +208,7 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
     FString SurfaceStr = TEXT("BODY / DEFAULT");
     FColor PrintColor = FColor::White;
 
+    // ⚡ DEBUG: گۆڕانکاری - WITH_EDITOR لابرا، ئێستا لە هەموو build-ێکدا (Standalone/Packaged Dev) پیشان دەدرێت نەک تەنها لە Editor
     if (Hit.PhysMaterial.IsValid())
     {
         UPhysicalMaterial* PhysMat = Hit.PhysMaterial.Get();
@@ -216,33 +217,31 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
         if (SurfaceType == EPhysicalSurface::SurfaceType1) // Headshot
         {
             ActualDamage *= CurrentWeaponData.HeadshotMultiplier;
-            SurfaceStr = TEXT("HEADSHOT 🔥");
+            SurfaceStr = TEXT("HEADSHOT");
             PrintColor = FColor::Green;
         }
         else if (SurfaceType == EPhysicalSurface::SurfaceType2) // Leg
         {
             ActualDamage *= CurrentWeaponData.LegDamageMultiplier;
-            SurfaceStr = TEXT("LEGSHOT 🦵");
+            SurfaceStr = TEXT("LEGSHOT");
             PrintColor = FColor::Yellow;
         }
 
-#if WITH_EDITOR
         if (GEngine)
         {
-            FString Msg = FString::Printf(TEXT("[%s] Hit Bone: %s | PhysMat: %s | Type: %s | Damage: %.1f"),
+            FString Msg = FString::Printf(TEXT("[%s] Hit Bone: %s | PhysMat: %s | SurfaceType: %d | Type: %s | Damage: %.1f"),
                 HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
                 *Hit.BoneName.ToString(),
                 *PhysMat->GetName(),
+                (int32)SurfaceType,
                 *SurfaceStr,
                 ActualDamage);
 
-            GEngine->AddOnScreenDebugMessage(-1, 3.0f, PrintColor, Msg);
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, PrintColor, Msg);
         }
-#endif
     }
     else
     {
-#if WITH_EDITOR
         if (GEngine)
         {
             FString Msg = FString::Printf(TEXT("[%s] ❌ NO PHYS MATERIAL! Bone: %s | Base Damage: %.1f"),
@@ -250,9 +249,8 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
                 *Hit.BoneName.ToString(),
                 ActualDamage);
 
-            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, Msg);
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, Msg);
         }
-#endif
     }
 
     return ActualDamage;
@@ -336,7 +334,7 @@ void ABaseWeapon::HandleFireLocal()
     const bool bIsAiming = (HamaComponent && HamaComponent->IsAiming());
     const float SpreadDegrees = CalculateBulletSpread();
     const float SpreadRadians = FMath::DegreesToRadians(SpreadDegrees);
-    const float MinDoubleTapDivergenceRad = bIsAiming ? 0.f : FMath::DegreesToRadians(0.60f);
+    const float MinDoubleTapDivergenceRad = bIsAiming ? 0.f : FMath::DegreesToRadians(0.75f);
 
     TArray<FVector_NetQuantizeNormal> ShotDirections;
 
@@ -389,7 +387,7 @@ void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLo
     float CurrentTime = GetWorld()->GetTimeSeconds();
 
     const float BaseToleranceSq = 100000.f;
-    const float VelocityToleranceSq = OwnerCharacter->GetVelocity().SizeSquared() * 0.0225f; // لە جیاتی Size ڕاستەوخۆ SizeSquared بەکارهاتووە
+    const float VelocityToleranceSq = OwnerCharacter->GetVelocity().SizeSquared() * 0.0225f;
     float MaxAllowedDistSq = BaseToleranceSq + VelocityToleranceSq;
     float DistSquared = FVector::DistSquared(OwnerCharacter->GetActorLocation(), MuzzleLocation);
     int32 MaxAllowedShots = OwnerCharacter->GetDoubleTap() ? 2 : 1;
@@ -455,54 +453,66 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
     Params.bReturnPhysicalMaterial = true;
     Params.bTraceComplex = false;
 
+    AController* InstigatorController = OwnerCharacter->GetController();
+    TSubclassOf<UDamageType> DamageTypeClass = UDamageType::StaticClass();
+
     TArray<FHitResult> HitResults;
     bool bHit = GetWorld()->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECollisionChannel::ECC_Bullet, Params);
 
-    if (!bHit) return;
+    if (HitResults.Num() == 0)
+    {
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue,
+                FString::Printf(TEXT("[SERVER] No hits detected")));
+        }
+        return;
+    }
 
-    // 1. گروپکردنی Hitەکان بەپێی ئەکتەر (Actor)
-    TMap<AActor*, TArray<FHitResult>> ActorHitMap;
+    TArray<AActor*> AlreadyHitActors;
+    int32 PenCount = 0;
+    const int32 MaxPen = FMath::Max(1, CurrentWeaponData.MaxZombiePenetration);
+
     for (const FHitResult& Hit : HitResults)
     {
         AActor* HitActor = Hit.GetActor();
         if (!HitActor) continue;
 
         IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor);
-        if (!Damageable || !Damageable->CanReceiveWeaponDamage()) continue;
 
-        ActorHitMap.FindOrAdd(HitActor).Add(Hit);
-    }
-
-    int32 PenCount = 0;
-    const int32 MaxPen = FMath::Max(1, CurrentWeaponData.MaxZombiePenetration);
-
-    for (auto& Pair : ActorHitMap)
-    {
-        AActor* TargetActor = Pair.Key;
-        const TArray<FHitResult>& TargetHits = Pair.Value;
-
-        const FHitResult* BestHit = &TargetHits[0];
-        float BestDamage = 0.f;
-
-        for (const FHitResult& Hit : TargetHits)
+        if (!Damageable)
         {
-            float CalculatedDmg = CalculateDamageBySurface(Hit);
-            if (CalculatedDmg > BestDamage)
+            if (GEngine)
             {
-                BestDamage = CalculatedDmg;
-                BestHit = &Hit;
+                GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Red,
+                    FString::Printf(TEXT("[BREAK] Non-Damageable blocked the trace! Actor=%s"), *HitActor->GetName()));
             }
+            break;
         }
 
+        if (!Damageable->CanReceiveWeaponDamage())
+        {
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Orange,
+                    FString::Printf(TEXT("[SKIP] CanReceiveWeaponDamage()=false for Actor=%s"), *HitActor->GetName()));
+            }
+            continue;
+        }
+
+        if (AlreadyHitActors.Contains(HitActor)) continue;
+        AlreadyHitActors.Add(HitActor);
+
+        float FinalDamage = CalculateDamageBySurface(Hit);
 
         UGameplayStatics::ApplyPointDamage(
-            TargetActor,
-            BestDamage,
+            HitActor,
+            FinalDamage,
             ShootDir,
-            *BestHit,
-            OwnerCharacter->GetController(),
+            Hit,
+            InstigatorController,
             this,
-            UDamageType::StaticClass()
+            DamageTypeClass
         );
 
         PenCount++;
@@ -640,7 +650,7 @@ void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo, bool b
             GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("ClientReloadStarted"));
             if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
             Reload();
-        }   
+        }
     }
 }
 
@@ -677,8 +687,6 @@ void ABaseWeapon::Reload()
         float PlayRate = (FinalReloadTime < CurrentWeaponData.ReloadMontage->GetPlayLength()) ? 2.0f : 1.0f;
         OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage, PlayRate);
     }
-
-    bool bIsEmpty = (CurrentAmmo <= 0);
 
     if (!HasAuthority())
     {
