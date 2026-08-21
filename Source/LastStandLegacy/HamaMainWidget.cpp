@@ -103,11 +103,13 @@ void UHamaMainWidget::BindGameState(ALastStandLegacyGameState* InGameState)
 // Event Handlers
 // -------------------------------------------------------------------------
 
+static const FNumberFormattingOptions NoGroupingOptions = FNumberFormattingOptions().SetUseGrouping(false);
+
 void UHamaMainWidget::HandlePointsUpdate(int32 NewPoints)
 {
     if (Points)
     {
-        Points->SetText(FText::AsNumber(NewPoints));
+        Points->SetText(FText::AsNumber(NewPoints, &NoGroupingOptions));
     }
 }
 
@@ -115,7 +117,7 @@ void UHamaMainWidget::HandleKillsUpdate(int32 NewKills)
 {
     if (Kills)
     {
-        Kills->SetText(FText::AsNumber(NewKills));
+        Kills->SetText(FText::AsNumber(NewKills, &NoGroupingOptions));
     }
 }
 
@@ -123,7 +125,7 @@ void UHamaMainWidget::HandleRoundUpdate(int32 NewRound)
 {
     if (Round)
     {
-        Round->SetText(FText::AsNumber(NewRound));
+        Round->SetText(FText::AsNumber(NewRound, &NoGroupingOptions));
     }
 }
 

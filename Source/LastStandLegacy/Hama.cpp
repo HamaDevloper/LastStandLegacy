@@ -1,6 +1,7 @@
 ﻿#include "Hama.h"
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
+#include "HamaAnimInstance.h"
 #include "LastStandLegacyGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
@@ -434,10 +435,19 @@ void AHama::CreateDefaultWeapon()
 
     if (SpawnedWeapon)
     {
-        if (!PrimaryWeapon) PrimaryWeapon = SpawnedWeapon;
-        else if (!SecondaryWeapon) SecondaryWeapon = SpawnedWeapon;
+        if (!PrimaryWeapon)
+        {
+            PrimaryWeapon = SpawnedWeapon;
+        }
+        else if (!SecondaryWeapon)
+        {
+            SecondaryWeapon = SpawnedWeapon;
+        }
         else
         {
+            if (CurrentWeapon == SecondaryWeapon) SecondaryWeapon = nullptr;
+            else if (CurrentWeapon == ThirdWeapon) ThirdWeapon = nullptr;
+
             if (CurrentWeapon) CurrentWeapon->Destroy();
             PrimaryWeapon = SpawnedWeapon;
         }
@@ -447,22 +457,17 @@ void AHama::CreateDefaultWeapon()
 
         CurrentWeapon->EquipWeapon(this);
         OnRep_CurrentWeapon();
-        AttachWeaponToMesh(CurrentWeapon);
     }
 }
 
 TArray<TSubclassOf<ABaseWeapon>> AHama::GetOwnedWeaponClasses() const
 {
     TArray<TSubclassOf<ABaseWeapon>> OwnedClasses;
-    OwnedClasses.Reserve(EquippedWeapons.Num());
+    OwnedClasses.Reserve(3);
 
-    for (const ABaseWeapon* Weapon : EquippedWeapons)
-    {
-        if (IsValid(Weapon))
-        {
-            OwnedClasses.Add(Weapon->GetClass());
-        }
-    }
+    if (IsValid(PrimaryWeapon))   OwnedClasses.Add(PrimaryWeapon->GetClass());
+    if (IsValid(SecondaryWeapon)) OwnedClasses.Add(SecondaryWeapon->GetClass());
+    if (IsValid(ThirdWeapon))     OwnedClasses.Add(ThirdWeapon->GetClass());
 
     return OwnedClasses;
 }
@@ -554,6 +559,14 @@ void AHama::OnRep_CurrentWeapon()
     if (!CurrentWeapon) return;
 
     AttachWeaponToMesh(CurrentWeapon);
+
+    if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+    {
+        if (UHamaAnimInstance* HamaAnimInst = Cast<UHamaAnimInstance>(AnimInst))
+        {
+            HamaAnimInst->SetEquippedWeapon(CurrentWeapon);
+        }
+    }
 
     if (IsLocallyControlled())
     {
@@ -682,6 +695,11 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
     if (IsDrinkingPerk()) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
     if (PendingWeaponForSwap != nullptr) return;
+
+    if(IsSprinting())
+    {
+        StopSprint();
+    }
 
     ABaseWeapon* NextWeapon = TargetWeapon;
   
@@ -1434,7 +1452,8 @@ bool AHama::IsMovingForward() const
 {
     const FVector InputVector = GetLastMovementInputVector();
 
-    if (InputVector.IsNearlyZero())
+    const float MinSprintSpeedSq = 550.f * 550.f;
+    if (InputVector.IsNearlyZero() || GetVelocity().SizeSquared() < MinSprintSpeedSq)
     {
         return false;
     }

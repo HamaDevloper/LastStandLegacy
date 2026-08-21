@@ -208,7 +208,6 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
     FString SurfaceStr = TEXT("BODY / DEFAULT");
     FColor PrintColor = FColor::White;
 
-    // ⚡ DEBUG: گۆڕانکاری - WITH_EDITOR لابرا، ئێستا لە هەموو build-ێکدا (Standalone/Packaged Dev) پیشان دەدرێت نەک تەنها لە Editor
     if (Hit.PhysMaterial.IsValid())
     {
         UPhysicalMaterial* PhysMat = Hit.PhysMaterial.Get();
@@ -237,19 +236,7 @@ float ABaseWeapon::CalculateDamageBySurface(const FHitResult& Hit)
                 *SurfaceStr,
                 ActualDamage);
 
-            GEngine->AddOnScreenDebugMessage(-1, 5.0f, PrintColor, Msg);
-        }
-    }
-    else
-    {
-        if (GEngine)
-        {
-            FString Msg = FString::Printf(TEXT("[%s] ❌ NO PHYS MATERIAL! Bone: %s | Base Damage: %.1f"),
-                HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-                *Hit.BoneName.ToString(),
-                ActualDamage);
-
-            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, Msg);
+            GEngine->AddOnScreenDebugMessage(1, 5.0f, PrintColor, Msg);
         }
     }
 
@@ -353,21 +340,6 @@ void ABaseWeapon::HandleFireLocal()
         }
 
         ShotDirections.Add(ShootDir);
-
-#if ENABLE_DRAW_DEBUG
-        // ⚡ Client Debug Line: ڕەنگی سوور بۆ تەقەی یەکەم، نارنجی بۆ Double Tap
-        FVector DebugEnd = CameraLoc + (ShootDir * CurrentWeaponData.MaxRange);
-        DrawDebugLine(
-            GetWorld(),
-            CameraLoc,
-            DebugEnd,
-            (i == 0) ? FColor::Red : FColor::Orange,
-            false,
-            2.0f,
-            0,
-            1.f
-        );
-#endif
     }
 
     Server_ProcessShot(CameraLoc, ShotDirections);
@@ -459,16 +431,6 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
     TArray<FHitResult> HitResults;
     bool bHit = GetWorld()->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECollisionChannel::ECC_Bullet, Params);
 
-    if (HitResults.Num() == 0)
-    {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue,
-                FString::Printf(TEXT("[SERVER] No hits detected")));
-        }
-        return;
-    }
-
     TArray<AActor*> AlreadyHitActors;
     int32 PenCount = 0;
     const int32 MaxPen = FMath::Max(1, CurrentWeaponData.MaxZombiePenetration);
@@ -482,21 +444,11 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
 
         if (!Damageable)
         {
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Red,
-                    FString::Printf(TEXT("[BREAK] Non-Damageable blocked the trace! Actor=%s"), *HitActor->GetName()));
-            }
             break;
         }
 
         if (!Damageable->CanReceiveWeaponDamage())
         {
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Orange,
-                    FString::Printf(TEXT("[SKIP] CanReceiveWeaponDamage()=false for Actor=%s"), *HitActor->GetName()));
-            }
             continue;
         }
 

@@ -18,6 +18,7 @@ public:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
     virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
+    void SetEquippedWeapon(ABaseWeapon* NewWeapon);
 
 private:
     UPROPERTY()
@@ -68,4 +69,10 @@ protected:
 
     UPROPERTY(BlueprintReadOnly, Category = "Movement Data")
     float Direction = 0.f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation|Aim")
+    float Pitch = 0.f;
+
+private:
+    float CachedPitch = 0.f;
 };
