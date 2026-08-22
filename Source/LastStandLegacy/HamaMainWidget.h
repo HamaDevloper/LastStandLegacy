@@ -60,6 +60,9 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional))
     TObjectPtr<UImage> PowerImage;
 
+    UPROPERTY()
+    TArray<TObjectPtr<UImage>> PerkImagePool;
+
     // 🔥 UE5 Modern Standard: بەکارهێنانی TObjectPtr لە ناو Mapەکاندا
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PowerUp Data")
     TMap<EPowerUpType, TObjectPtr<UTexture2D>> PowerUpIcons;
@@ -74,6 +77,9 @@ protected:
 
     UPROPERTY(EditDefaultsOnly)
     float Perksize = 128.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI | Perks")
+    int32 MaxPerkSlots = 8;
 
 public:
     // --- Event Handlers ---

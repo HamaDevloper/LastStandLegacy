@@ -481,6 +481,8 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
     SpawnParams.Instigator = this;
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
+    ABaseWeapon* OldWeapon = CurrentWeapon;
+
     ABaseWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ABaseWeapon>(WeaponClassToGive, GetActorLocation(), GetActorRotation(), SpawnParams);
     if (!SpawnedWeapon) return;
 
@@ -542,7 +544,7 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
 
     CurrentWeapon->EquipWeapon(this);
     AttachWeaponToMesh(CurrentWeapon);
-    OnRep_CurrentWeapon();
+    OnRep_CurrentWeapon(OldWeapon);
 }
 
 void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
@@ -554,22 +556,20 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
     }
 }
 
-void AHama::OnRep_CurrentWeapon()
+void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 {
+    if (PreviousWeapon)
+    {
+        PreviousWeapon->OnAmmoChanged.Unbind();
+    }
+
     if (!CurrentWeapon) return;
 
     AttachWeaponToMesh(CurrentWeapon);
 
-    if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
-    {
-        if (UHamaAnimInstance* HamaAnimInst = Cast<UHamaAnimInstance>(AnimInst))
-        {
-            HamaAnimInst->SetEquippedWeapon(CurrentWeapon);
-        }
-    }
-
     if (IsLocallyControlled())
     {
+        CurrentWeapon->OnAmmoChanged.Unbind();
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
     }
@@ -840,6 +840,8 @@ void AHama::CompleteWeaponSwap()
 {
     if (!HasAuthority() || !PendingWeaponForSwap) return;
 
+    ABaseWeapon* OldWeapon = CurrentWeapon;
+
     if (CurrentWeapon)
     {
         CurrentWeapon->SetActorHiddenInGame(true);
@@ -861,7 +863,7 @@ void AHama::CompleteWeaponSwap()
     CurrentWeapon->SetActorEnableCollision(true);
     CurrentWeapon->EquipWeapon(this);
 
-    OnRep_CurrentWeapon();
+    OnRep_CurrentWeapon(OldWeapon);
 
     ABaseWeapon* NewlyEquippedWeapon = PendingWeaponForSwap;
     PendingWeaponForSwap = nullptr;
@@ -924,6 +926,8 @@ void AHama::RemoveDeathMachine()
 {
     if (!HasAuthority()) return;
 
+    ABaseWeapon* OldWeapon = CurrentWeapon;
+
     bIsDeathMachineActive = false;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
 
@@ -958,7 +962,7 @@ void AHama::RemoveDeathMachine()
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
 
-        OnRep_CurrentWeapon();
+        OnRep_CurrentWeapon(OldWeapon);
       
         if (CurrentWeapon->CanReload())
         {

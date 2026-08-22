@@ -28,6 +28,30 @@ void UHamaMainWidget::NativeConstruct()
     {
         PowerUpAnimDelegate.BindDynamic(this, &UHamaMainWidget::OnPowerUpAnimFinished);
     }
+
+    if (PerkContainer && PerkImagePool.Num() == 0)
+    {
+        PerkContainer->ClearChildren();
+
+        for (int32 i = 0; i < MaxPerkSlots; ++i)
+        {
+            UImage* NewPerkImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+            if (NewPerkImage)
+            {
+                NewPerkImage->SetVisibility(ESlateVisibility::Collapsed);
+
+                if (UHorizontalBoxSlot* PerkSlot = PerkContainer->AddChildToHorizontalBox(NewPerkImage))
+                {
+                    PerkSlot->SetPadding(FMargin(4.0f, 0.0f, 4.0f, 0.0f));
+                    PerkSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+                    PerkSlot->SetVerticalAlignment(EVerticalAlignment::VAlign_Center);
+                    PerkSlot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Center);
+                }
+
+                PerkImagePool.Add(NewPerkImage);
+            }
+        }
+    }
 }
 
 void UHamaMainWidget::BindCharacter(AHama* InHama)
@@ -109,7 +133,10 @@ void UHamaMainWidget::HandlePointsUpdate(int32 NewPoints)
 {
     if (Points)
     {
-        Points->SetText(FText::AsNumber(NewPoints, &NoGroupingOptions));
+        static const FText PointsFormatPattern = LOCTEXT("PointsFormat", "${0}");
+        const FText FormattedNumber = FText::AsNumber(NewPoints, &NoGroupingOptions);
+
+        Points->SetText(FText::Format(PointsFormatPattern, FormattedNumber));
     }
 }
 
@@ -142,8 +169,11 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
         return;
     }
 
+    const FText CurrentText = FText::AsNumber(CurrentAmmo, &NoGroupingOptions);
+    const FText ReserveText = FText::AsNumber(ReserveAmmo, &NoGroupingOptions);
+
     static const FText AmmoFormatPattern = LOCTEXT("AmmoFormat", "{0} / {1}");
-    Ammo->SetText(FText::Format(AmmoFormatPattern, CurrentAmmo, ReserveAmmo));
+    Ammo->SetText(FText::Format(AmmoFormatPattern, CurrentText, ReserveText));
 
     ABaseWeapon* CurrentWeapon = CachedHamaChar ? CachedHamaChar->GetCurrentWeapon() : nullptr;
 
@@ -208,8 +238,9 @@ void UHamaMainWidget::UpdatePingDisplay()
 
     PingValue = FMath::RoundToInt(CachedHamaPS->GetPingInMilliseconds());
 
+    const FText FormattedPing = FText::AsNumber(PingValue, &NoGroupingOptions);
     static const FText PingFormat = LOCTEXT("PingFormat", "{0} ms");
-    PingText->SetText(FText::Format(PingFormat, PingValue));
+    PingText->SetText(FText::Format(PingFormat, FormattedPing));
 
     FSlateColor PingColor = FLinearColor::Green;
     if (PingValue > 150)
@@ -255,38 +286,37 @@ void UHamaMainWidget::OnPowerUpAnimFinished()
 
 void UHamaMainWidget::HandlePerksUpdate(const TArray<FName>& CurrentPerks)
 {
-    if (!PerkContainer) return;
-
-    PerkContainer->ClearChildren();
+    if (!PerkContainer || PerkImagePool.Num() == 0) return;
 
     const FVector2D DesiredPerkSize(Perksize, Perksize);
+    const int32 NumOwnedPerks = CurrentPerks.Num();
 
-    for (const FName& PerkID : CurrentPerks)
+    for (int32 i = 0; i < PerkImagePool.Num(); ++i)
     {
-        if (const TObjectPtr<UTexture2D>* FoundTexture = PerkIcons.Find(PerkID))
+        UImage* PerkSlotImage = PerkImagePool[i];
+        if (!PerkSlotImage) continue;
+
+        if (i < NumOwnedPerks)
         {
-            if (*FoundTexture)
+            const FName& PerkID = CurrentPerks[NumOwnedPerks - 1 - i];
+
+            if (const TObjectPtr<UTexture2D>* FoundTexture = PerkIcons.Find(PerkID))
             {
-                UImage* NewPerkImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
-                if (NewPerkImage)
+                if (*FoundTexture)
                 {
                     FSlateBrush PerkBrush;
                     PerkBrush.SetResourceObject(*FoundTexture);
                     PerkBrush.ImageSize = DesiredPerkSize;
 
-                    NewPerkImage->SetBrush(PerkBrush);
-                    NewPerkImage->SetDesiredSizeOverride(DesiredPerkSize);
-
-                    if (UHorizontalBoxSlot* PerkSlot = PerkContainer->AddChildToHorizontalBox(NewPerkImage))
-                    {
-                        PerkSlot->SetPadding(FMargin(4.0f, 0.0f, 4.0f, 0.0f));
-                        PerkSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-                        PerkSlot->SetVerticalAlignment(EVerticalAlignment::VAlign_Center);
-                        PerkSlot->SetHorizontalAlignment(EHorizontalAlignment::HAlign_Center);
-                    }
+                    PerkSlotImage->SetBrush(PerkBrush);
+                    PerkSlotImage->SetDesiredSizeOverride(DesiredPerkSize);
+                    PerkSlotImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+                    continue;
                 }
             }
         }
+
+        PerkSlotImage->SetVisibility(ESlateVisibility::Collapsed);
     }
 }
 

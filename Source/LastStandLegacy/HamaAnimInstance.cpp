@@ -38,17 +38,22 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     if (!HamaCharacter)
     {
         HamaCharacter = Cast<AHama>(TryGetPawnOwner());
+        if (!HamaCharacter) return;
     }
-    if (!HamaCharacter) return;
 
     if (!MovementComponent)
     {
         MovementComponent = Cast<UHamaMovementComponent>(HamaCharacter->GetCharacterMovement());
+        if (!MovementComponent) return;
     }
-    if (!MovementComponent) return;
+
+    if (EquippedWeapon != HamaCharacter->GetCurrentWeapon() || !CurrentWeaponIdle)
+    {
+        SetEquippedWeapon(HamaCharacter->GetCurrentWeapon());
+    }
 
     CachedActorRotation = HamaCharacter->GetActorRotation();
-
+    
     const FRotator AimRotation = HamaCharacter->GetBaseAimRotation();
     const FRotator DeltaRot = (AimRotation - CachedActorRotation).GetNormalized();
     CachedPitch = DeltaRot.Pitch;

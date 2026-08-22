@@ -284,7 +284,7 @@ protected:
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, class AActor* DamageCauser) override;
 
     UFUNCTION()
-    void OnRep_CurrentWeapon();
+    void OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon = nullptr);
 
 protected:
     UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
