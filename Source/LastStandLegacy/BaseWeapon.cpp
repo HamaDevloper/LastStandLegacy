@@ -12,10 +12,12 @@
 #include "Chaos/ChaosEngineInterface.h"
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
+#include "Engine/Engine.h"
 #include "Curves/CurveVector.h"
 #include "LastStandLegacyGameState.h"
 #include "RecoilComponent.h"
 #include "DamageableInterface.h"
+#include "Animation/AimOffsetBlendSpace1D.h"
 #include "DrawDebugHelpers.h"
 
 ABaseWeapon::ABaseWeapon()
@@ -82,21 +84,28 @@ void ABaseWeapon::InitializeWeaponData()
         MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, Damage, this);
     }
 
-    if (WeaponMesh && !CurrentWeaponData.WeaponMeshAsset.IsNull())
+    if (!IsRunningDedicatedServer() && WeaponMesh && !CurrentWeaponData.WeaponMeshAsset.IsNull())
     {
-        TWeakObjectPtr<ABaseWeapon> WeakThis(this);
-        UAssetManager::GetStreamableManager().RequestAsyncLoad(
-            CurrentWeaponData.WeaponMeshAsset.ToSoftObjectPath(),
-            [WeakThis]()
-            {
-                if (!WeakThis.IsValid()) return;
-                if (USkeletalMesh* Mesh = WeakThis->CurrentWeaponData.WeaponMeshAsset.Get())
-                {
-                    WeakThis->WeaponMesh->SetSkeletalMesh(Mesh);
-                }
-            }
-        );
+        USkeletalMesh* Mesh = CurrentWeaponData.WeaponMeshAsset.Get();
+
+        if (!Mesh)
+        {
+#if !UE_BUILD_SHIPPING
+            UE_LOG(LogTemp, Warning, TEXT("[BaseWeapon] Mesh '%s' was NOT preloaded! Synchronous load fallback triggered."), *CurrentWeaponData.WeaponMeshAsset.ToString());
+#endif
+            Mesh = CurrentWeaponData.WeaponMeshAsset.LoadSynchronous();
+        }
+
+        if (Mesh)
+        {
+            WeaponMesh->SetSkeletalMeshAsset(Mesh);
+        }
     }
+}
+
+void ABaseWeapon::OnRep_WeaponRowName()
+{
+    InitializeWeaponData();
 }
 
 void ABaseWeapon::EquipWeapon(AHama* NewOwnerCharacter)
@@ -113,6 +122,9 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
+
+    Params.Condition = COND_None;
+    DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, WeaponRowName, Params);
 
     Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseWeapon, bIsReloading, Params);
@@ -559,6 +571,116 @@ bool ABaseWeapon::NeedsAmmo() const
     return  (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
 }
 
+UAnimSequence* ABaseWeapon::GetAimSequence() const
+{
+    if (UAnimSequence* Anim = CurrentWeaponData.AimSequence.Get())
+    {
+        return Anim;
+    }
+
+    if (!CurrentWeaponData.AimSequence.IsNull())
+    {
+        FString DebugMsg = FString::Printf(TEXT("[%s] AimSequence missing from Preload! Synchronous load triggered."), *GetName());
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, DebugMsg);
+        }
+
+        return CurrentWeaponData.AimSequence.LoadSynchronous();
+    }
+    return nullptr;
+}
+
+UAnimSequence* ABaseWeapon::GetWeaponIdle() const
+{
+    if (UAnimSequence* Anim = CurrentWeaponData.WeaponIdle.Get())
+    {
+        return Anim;
+    }
+
+    if (!CurrentWeaponData.WeaponIdle.IsNull())
+    {
+        FString DebugMsg = FString::Printf(TEXT("[%s] WeaponIdle missing from Preload! Synchronous load triggered."), *GetName());
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, DebugMsg);
+        }
+
+        return CurrentWeaponData.WeaponIdle.LoadSynchronous();
+    }
+    return nullptr;
+}
+
+UAnimSequence* ABaseWeapon::GetWeaponSprint() const
+{
+    if (UAnimSequence* Anim = CurrentWeaponData.WeaponSprint.Get())
+    {
+        return Anim;
+    }
+
+    if (!CurrentWeaponData.WeaponSprint.IsNull())
+    {
+        FString DebugMsg = FString::Printf(TEXT("[%s] WeaponSprint missing from Preload! Synchronous load triggered."), *GetName());
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, DebugMsg);
+        }
+
+        return CurrentWeaponData.WeaponSprint.LoadSynchronous();
+    }
+    return nullptr;
+}
+
+UAimOffsetBlendSpace1D* ABaseWeapon::GetAimOffsetAsset() const
+{
+    if (UAimOffsetBlendSpace1D* AO = CurrentWeaponData.AimOffsetAsset.Get())
+    {
+        return AO;
+    }
+
+    if (!CurrentWeaponData.AimOffsetAsset.IsNull())
+    {
+        FString DebugMsg = FString::Printf(TEXT("[%s] AimOffsetAsset missing from Preload! Synchronous load triggered."), *GetName());
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, DebugMsg);
+        }
+
+        return CurrentWeaponData.AimOffsetAsset.LoadSynchronous();
+    }
+    return nullptr;
+}
+
+UAnimMontage* ABaseWeapon::GetReloadMontage() const
+{
+    if (UAnimMontage* Montage = CurrentWeaponData.ReloadMontage.Get())
+    {
+        return Montage;
+    }
+
+    if (!CurrentWeaponData.ReloadMontage.IsNull())
+    {
+        FString DebugMsg = FString::Printf(TEXT("[%s] ReloadMontage missing from Preload! Synchronous load triggered."), *GetName());
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
+
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, DebugMsg);
+        }
+
+        return CurrentWeaponData.ReloadMontage.LoadSynchronous();
+    }
+    return nullptr;
+}
+
 // ------------------- RELOAD REFACTOR -------------------
 
 void ABaseWeapon::RefillAmmo()
@@ -632,12 +754,13 @@ void ABaseWeapon::Reload()
     GetWorldTimerManager().ClearTimer(ReloadTimerHandle);
     bIsReloading = true;
 
-    float FinalReloadTime = GetCalculatedReloadTime();
+    const float FinalReloadTime = GetCalculatedReloadTime();
+    UAnimMontage* ReloadMontage = GetReloadMontage();
 
-    if (CurrentWeaponData.ReloadMontage)
+    if (ReloadMontage)
     {
-        float PlayRate = (FinalReloadTime < CurrentWeaponData.ReloadMontage->GetPlayLength()) ? 2.0f : 1.0f;
-        OwnerCharacter->PlayAnimMontage(CurrentWeaponData.ReloadMontage, PlayRate);
+        const float PlayRate = (FinalReloadTime < ReloadMontage->GetPlayLength()) ? 2.0f : 1.0f;
+        OwnerCharacter->PlayAnimMontage(ReloadMontage, PlayRate);
     }
 
     if (!HasAuthority())
@@ -714,9 +837,11 @@ void ABaseWeapon::CancelReload()
     if (OwnerCharacter)
     {
         USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
-        if (MeshComp && MeshComp->GetAnimInstance() && CurrentWeaponData.ReloadMontage)
+        UAnimMontage* ReloadMontage = GetReloadMontage();
+
+        if (MeshComp && MeshComp->GetAnimInstance() && ReloadMontage)
         {
-            MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
+            MeshComp->GetAnimInstance()->Montage_Stop(0.2f, ReloadMontage);
         }
 
         if (OwnerCharacter->IsLocallyControlled() && !HasAuthority())
@@ -739,9 +864,11 @@ void ABaseWeapon::Client_CancelReload_Implementation()
     if (OwnerCharacter)
     {
         USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
-        if (MeshComp && MeshComp->GetAnimInstance() && CurrentWeaponData.ReloadMontage)
+        UAnimMontage* ReloadMontage = GetReloadMontage();
+
+        if (MeshComp && MeshComp->GetAnimInstance() && ReloadMontage)
         {
-            MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
+            MeshComp->GetAnimInstance()->Montage_Stop(0.2f, ReloadMontage);
         }
     }
 }
@@ -758,9 +885,11 @@ void ABaseWeapon::Server_CancelReload_Implementation()
         OnRep_Reload();
 
         USkeletalMeshComponent* MeshComp = OwnerCharacter->GetMesh();
-        if (MeshComp && MeshComp->GetAnimInstance() && CurrentWeaponData.ReloadMontage)
+        UAnimMontage* ReloadMontage = GetReloadMontage();
+
+        if (MeshComp && MeshComp->GetAnimInstance() && ReloadMontage)
         {
-            MeshComp->GetAnimInstance()->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
+            MeshComp->GetAnimInstance()->Montage_Stop(0.2f, ReloadMontage);
         }
     }
 }
@@ -775,19 +904,16 @@ void ABaseWeapon::OnRep_Reload()
     UAnimInstance* AnimInstance = MeshComp->GetAnimInstance();
     if (!AnimInstance) return;
 
+    UAnimMontage* ReloadMontage = GetReloadMontage();
+    if (!ReloadMontage) return;
+
     if (bIsReloading)
     {
-        if (CurrentWeaponData.ReloadMontage)
-        {
-            float PlayRate = (GetCalculatedReloadTime() < CurrentWeaponData.ReloadMontage->GetPlayLength()) ? 2.0f : 1.0f;
-            AnimInstance->Montage_Play(CurrentWeaponData.ReloadMontage, PlayRate);
-        }
+        float PlayRate = (GetCalculatedReloadTime() < ReloadMontage->GetPlayLength()) ? 2.0f : 1.0f;
+        AnimInstance->Montage_Play(ReloadMontage, PlayRate);
     }
     else
     {
-        if (CurrentWeaponData.ReloadMontage)
-        {
-            AnimInstance->Montage_Stop(0.2f, CurrentWeaponData.ReloadMontage);
-        }
+        AnimInstance->Montage_Stop(0.2f, ReloadMontage);
     }
 }

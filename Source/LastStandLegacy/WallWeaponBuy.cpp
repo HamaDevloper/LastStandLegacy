@@ -107,14 +107,6 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
 
     if (TargetWeaponToRefill)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 100.f, FColor::Green, FString::Printf(TEXT("Player already owns weapon: %s"), *TargetWeaponToRefill->GetName()));
-        GEngine->AddOnScreenDebugMessage(-1, 118.f, FColor::Red,
-            FString::Printf(TEXT("[SERVER] Weapon=%s | ReserveAmmo=%d | MaxReserveAmmo=%d | NeedsAmmo=%s"),
-                *TargetWeaponToRefill->GetName(),
-                TargetWeaponToRefill->ReserveAmmo,
-                TargetWeaponToRefill->ForTest(),
-                TargetWeaponToRefill->NeedsAmmo() ? TEXT("true") : TEXT("false")));
-
         if (TargetWeaponToRefill->NeedsAmmo())
         {
             const bool bIsWeaponUpgraded = (TargetWeaponToRefill->GetClass() != WeaponClass);

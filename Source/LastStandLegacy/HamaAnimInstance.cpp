@@ -21,13 +21,15 @@ void UHamaAnimInstance::SetEquippedWeapon(ABaseWeapon* NewWeapon)
     {
         CurrentWeaponIdle = EquippedWeapon->GetWeaponIdle();
         CurrentWeaponSprint = EquippedWeapon->GetWeaponSprint();
-        CurrentWeaponAim = EquippedWeapon->GetAimMontage();
+        CurrentWeaponAim = EquippedWeapon->GetAimSequence();
+        CurrentAimOffset = EquippedWeapon->GetAimOffsetAsset();
     }
     else
     {
         CurrentWeaponIdle = nullptr;
         CurrentWeaponSprint = nullptr;
         CurrentWeaponAim = nullptr;
+        CurrentAimOffset = nullptr;
     }
 }
 
@@ -47,9 +49,10 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         if (!MovementComponent) return;
     }
 
-    if (EquippedWeapon != HamaCharacter->GetCurrentWeapon() || !CurrentWeaponIdle)
+    ABaseWeapon* TargetWeapon = HamaCharacter->GetCurrentWeapon();
+    if (EquippedWeapon != TargetWeapon)
     {
-        SetEquippedWeapon(HamaCharacter->GetCurrentWeapon());
+        SetEquippedWeapon(TargetWeapon);
     }
 
     CachedActorRotation = HamaCharacter->GetActorRotation();
@@ -70,7 +73,7 @@ void UHamaAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
     Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 
-    Pitch = FMath::ClampAngle(CachedPitch, -90.f, 90.f);
+    Pitch = FMath::Clamp(CachedPitch, -90.f, 90.f);
 
     const FVector2D Velocity2D(PlayerVelocity.X, PlayerVelocity.Y);
     const float SpeedSq = Velocity2D.SizeSquared();

@@ -8,7 +8,6 @@
 
 #define ECC_Bullet ECC_GameTraceChannel1
 
-// Pointers بۆ پێشگریکردن لە Include ـی زیادە (Forward Declarations)
 class AHama;
 class UHamaComponent;
 class USkeletalMeshComponent;
@@ -18,8 +17,8 @@ class UForceFeedbackEffect;
 class UCurveFloat;
 class ALastStandLegacyGameState;
 class URecoilComponent;
+class UAimOffsetBlendSpace1D;
 
-// دروستکردنی Delegate بۆ گۆڕانکارییەکانی فیشەک (بۆ بەکارهێنان لە UI)
 DECLARE_DELEGATE_TwoParams(FOnAmmoChangedSignature, int32, int32);
 
 UENUM(BlueprintType)
@@ -59,7 +58,7 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Core")
     int32 BurstShotCount = 3;
 
-    // --- سیستەمی نوێی AAA Recoil ---
+    // --- Recoil ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
     TSubclassOf<UCameraShakeBase> FireCameraShake;
 
@@ -75,7 +74,7 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|AAA_Recoil")
     float RecoilRecoverySpeed = 15.0f;
 
-    // --- Spread & Accuracy ---
+    // --- Spread ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
     float BulletSpread = 2.0f;
 
@@ -85,7 +84,7 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Spread")
     float AirSpreadMultiplier = 2.0f;
 
-    // --- Ammo Specifications ---
+    // --- Ammo ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
     int32 MaxAmmoInClip = 30;
 
@@ -103,19 +102,22 @@ struct FWeaponData : public FTableRowBase
     TSoftObjectPtr<USkeletalMesh> WeaponMeshAsset;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Visuals")
-    UAnimMontage* ReloadMontage;
+    TSoftObjectPtr<UAnimMontage> ReloadMontage;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Visuals")
     FName MuzzleLocationName = FName("Muzzle");
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
-    UAnimSequence* AimMontage;
+    TSoftObjectPtr<UAnimSequence> AimSequence;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
-    UAnimSequence* WeaponIdle;
+    TSoftObjectPtr<UAnimSequence> WeaponIdle;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
-    UAnimSequence* WeaponSprint;
+    TSoftObjectPtr<UAnimSequence> WeaponSprint;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
+    TSoftObjectPtr<UAimOffsetBlendSpace1D> AimOffsetAsset;
 };
 
 UCLASS()
@@ -131,7 +133,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Mesh")
     TObjectPtr<USkeletalMeshComponent> WeaponMesh;
 
-    // دەتوانرێت کاتێک یاریزان چەکەکە هەڵدەگرێت بانگ بکرێت
     void EquipWeapon(AHama* NewOwnerCharacter);
 
     UFUNCTION(BlueprintCallable, Category = "Weapon")
@@ -149,10 +150,13 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Data")
     UDataTable* WeaponDataTable;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Data")
+    UPROPERTY(ReplicatedUsing = OnRep_WeaponRowName, EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Data")
     FName WeaponRowName;
 
     void InitializeWeaponData();
+
+    UFUNCTION()
+    void OnRep_WeaponRowName();
 
 protected:
     FWeaponData CurrentWeaponData;
@@ -171,7 +175,7 @@ protected:
     UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
     uint8 BurstCounter = 0;
 
-    FTimerHandle FireTimerHandle;
+    FTimerHandle FireTimerHandle; // ◄◄◄ Typo Fixed
     FTimerHandle ReloadTimerHandle;
 
     int32 CurrentBurstShotsLeft = 0;
@@ -207,10 +211,7 @@ public:
     UFUNCTION()
     void OnRep_BurstCounter();
 
-    // --- ڕێکخستنی Reload (Anti-Bloat & Desync Fixes) ---
     void Reload();
-
-    // گۆڕدرا بۆ float چونکە پێویستە ژمارەیەک بگەڕێنێتەوە، و دەبێت const بێت
     float GetCalculatedReloadTime() const;
 
     UFUNCTION(Server, Reliable)
@@ -262,13 +263,17 @@ protected:
     ALastStandLegacyGameState* GetGameStateCache() const;
 
 public:
-    // --- Getters & Inline Functions ---
+    // --- Safe Fast-Path & Fallback Getters ---
     FORCEINLINE float GetWeaponMaxRange() const { return CurrentWeaponData.MaxRange; }
-    UAnimSequence* GetAimMontage() const { return CurrentWeaponData.AimMontage; }
-    FORCEINLINE UAnimSequence* GetWeaponIdle() const { return CurrentWeaponData.WeaponIdle; }
-    FORCEINLINE UAnimSequence* GetWeaponSprint() const { return CurrentWeaponData.WeaponSprint; }
+    UAnimSequence* GetAimSequence() const;
+    UAnimSequence* GetWeaponIdle() const;
+    UAnimSequence* GetWeaponSprint() const;
+    UAimOffsetBlendSpace1D* GetAimOffsetAsset() const;
+    UAnimMontage* GetReloadMontage() const;
     TSubclassOf<ABaseWeapon> GetUpgradedWeaponClass() const { return CurrentWeaponData.UpgradedWeaponClass; }
+
     bool CanReload() const { return CurrentAmmo <= 0 && ReserveAmmo > 0; }
+    bool ShouldReload() const { return CurrentAmmo < MaxAmmoInClip; }
     bool IsReloading() const { return bIsReloading; }
     bool HasAmmo() const;
     int32 GetCurrentAmmo() const { return CurrentAmmo; }
@@ -279,9 +284,5 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
     TSubclassOf<ABaseWeapon> CachedUpgradedClass;
 
-    UFUNCTION(BlueprintCallable)
-    int32 ForTest() { return CurrentWeaponData.MaxReserveAmmo; }
-
     bool NeedsAmmo() const;
-    bool ShouldReload() const { return CurrentAmmo < CurrentWeaponData.MaxAmmoInClip && ReserveAmmo > 0; }
 };

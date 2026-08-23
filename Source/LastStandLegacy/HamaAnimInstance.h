@@ -8,6 +8,7 @@ class AHama;
 class ABaseWeapon;
 class UAnimSequence;
 class UHamaMovementComponent;
+class UAimOffsetBlendSpace1D;
 
 UCLASS()
 class LASTSTANDLEGACY_API UHamaAnimInstance : public UAnimInstance
@@ -44,6 +45,9 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "Weapon Data")
     TObjectPtr<UAnimSequence> CurrentWeaponAim;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Animation|Aiming")
+    TObjectPtr<UAimOffsetBlendSpace1D> CurrentAimOffset;
+
     // ── State Data ────────────────────────────────
     UPROPERTY(BlueprintReadOnly, Category = "State Data")
     bool bIsSprinting = false;
@@ -70,7 +74,7 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "Movement Data")
     float Direction = 0.f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation|Aim")
+    UPROPERTY(BlueprintReadOnly, Category = "Animation|Aim")
     float Pitch = 0.f;
 
 private:

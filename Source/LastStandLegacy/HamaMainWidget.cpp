@@ -133,7 +133,7 @@ void UHamaMainWidget::HandlePointsUpdate(int32 NewPoints)
 {
     if (Points)
     {
-        static const FText PointsFormatPattern = LOCTEXT("PointsFormat", "${0}");
+        static const FText PointsFormatPattern = LOCTEXT("PointsFormat", "${ 0}");
         const FText FormattedNumber = FText::AsNumber(NewPoints, &NoGroupingOptions);
 
         Points->SetText(FText::Format(PointsFormatPattern, FormattedNumber));

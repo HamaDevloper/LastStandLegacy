@@ -1512,7 +1512,7 @@ void AHama::OnSprintStopped()
         FireActionPressed();
     }
    
-    if (CurrentWeapon->CanReload() && CurrentWeapon->CanReload())
+    if (CurrentWeapon->CanReload())
     {
         CurrentWeapon->Reload();
     }
