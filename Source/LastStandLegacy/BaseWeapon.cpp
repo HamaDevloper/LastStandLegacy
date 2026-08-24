@@ -140,7 +140,7 @@ void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 float ABaseWeapon::GetEffectiveFireRate() const
 {
     float ActualFireRate = CurrentWeaponData.FireRate;
-    if (OwnerCharacter && OwnerCharacter->GetDoubleTap())
+    if (OwnerCharacter && OwnerCharacter->HasDoubleTap())
     {
         ActualFireRate = FMath::Max(ActualFireRate / 1.33f, 0.0f);
     }
@@ -314,7 +314,7 @@ void ABaseWeapon::HandleFireLocal()
         OwnerController->ClientPlayForceFeedback(ShootForceFeedback, FeedbackParams);
     }
 
-    const int32 RequestedShots = (OwnerCharacter->GetDoubleTap()) ? 2 : 1;
+    const int32 RequestedShots = (OwnerCharacter->HasDoubleTap()) ? 2 : 1;
 
     float CurrentTime = GetWorld()->GetTimeSeconds();
     NextAllowedFireTime = CurrentTime + GetEffectiveFireRate();
@@ -374,7 +374,7 @@ void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLo
     const float VelocityToleranceSq = OwnerCharacter->GetVelocity().SizeSquared() * 0.0225f;
     float MaxAllowedDistSq = BaseToleranceSq + VelocityToleranceSq;
     float DistSquared = FVector::DistSquared(OwnerCharacter->GetActorLocation(), MuzzleLocation);
-    int32 MaxAllowedShots = OwnerCharacter->GetDoubleTap() ? 2 : 1;
+    int32 MaxAllowedShots = OwnerCharacter->HasDoubleTap() ? 2 : 1;
 
     bool bFireRateViolation = CurrentTime < (ServerNextAllowedFireTime - 0.15f);
     bool bMuzzleSpoofing = DistSquared > MaxAllowedDistSq;
@@ -581,8 +581,6 @@ UAnimSequence* ABaseWeapon::GetAimSequence() const
     if (!CurrentWeaponData.AimSequence.IsNull())
     {
         FString DebugMsg = FString::Printf(TEXT("[%s] AimSequence missing from Preload! Synchronous load triggered."), *GetName());
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
-
         if (GEngine)
         {
             GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow, DebugMsg);
@@ -603,7 +601,6 @@ UAnimSequence* ABaseWeapon::GetWeaponIdle() const
     if (!CurrentWeaponData.WeaponIdle.IsNull())
     {
         FString DebugMsg = FString::Printf(TEXT("[%s] WeaponIdle missing from Preload! Synchronous load triggered."), *GetName());
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
 
         if (GEngine)
         {
@@ -625,7 +622,6 @@ UAnimSequence* ABaseWeapon::GetWeaponSprint() const
     if (!CurrentWeaponData.WeaponSprint.IsNull())
     {
         FString DebugMsg = FString::Printf(TEXT("[%s] WeaponSprint missing from Preload! Synchronous load triggered."), *GetName());
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
 
         if (GEngine)
         {
@@ -647,7 +643,6 @@ UAimOffsetBlendSpace1D* ABaseWeapon::GetAimOffsetAsset() const
     if (!CurrentWeaponData.AimOffsetAsset.IsNull())
     {
         FString DebugMsg = FString::Printf(TEXT("[%s] AimOffsetAsset missing from Preload! Synchronous load triggered."), *GetName());
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
 
         if (GEngine)
         {
@@ -669,7 +664,6 @@ UAnimMontage* ABaseWeapon::GetReloadMontage() const
     if (!CurrentWeaponData.ReloadMontage.IsNull())
     {
         FString DebugMsg = FString::Printf(TEXT("[%s] ReloadMontage missing from Preload! Synchronous load triggered."), *GetName());
-        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugMsg);
 
         if (GEngine)
         {
@@ -730,7 +724,8 @@ void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo, bool b
 
 float ABaseWeapon::GetCalculatedReloadTime() const
 {
-    float BaseTime = CurrentWeaponData.ReloadMontage ? CurrentWeaponData.ReloadMontage->GetPlayLength() : CurrentWeaponData.DefaultReloadTime;
+    UAnimMontage* ReloadMontage = GetReloadMontage();
+    float BaseTime = ReloadMontage ? ReloadMontage->GetPlayLength() : CurrentWeaponData.DefaultReloadTime;
 
     ALastStandLegacyGameState* GS = GetGameStateCache();
     bool bHasFastReload = (GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands());

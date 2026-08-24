@@ -69,7 +69,10 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     PerkBottleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PerkBottleMesh"));
     PerkBottleMesh->SetupAttachment(GetMesh(), TEXT("PerkBottleSocket"));
     PerkBottleMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    PerkBottleMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+    PerkBottleMesh->SetSimulatePhysics(false);
     PerkBottleMesh->SetVisibility(false);
+    PerkBottleMesh->SetCastShadow(false);
 }
 
 const float AHama::CrossHairTimer = 0.05f;
@@ -130,18 +133,13 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 
     Params.Condition = COND_None;
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentWeapon, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasFastHands, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsDead, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, OwnedPerks, Params);
 
     Params.Condition = COND_OwnerOnly;
-    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasDoubleTap, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasMuleKick, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasDeadshot, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bHasQuickRevive, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, PrimaryWeapon, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, SecondaryWeapon, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ThirdWeapon, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, OwnedPerks, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsDeathMachineActive, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentlyUpgradingWeaponClass, Params);
 }
@@ -496,7 +494,7 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
         SecondaryWeapon = SpawnedWeapon;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, SecondaryWeapon, this);
     }
-    else if (!ThirdWeapon && bHasMuleKick)
+    else if (!ThirdWeapon && HasMuleKick())
     {
         ThirdWeapon = SpawnedWeapon;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
@@ -1182,7 +1180,7 @@ void AHama::AimPressedSitck()
         TArray<TEnumAsByte<EObjectTypeQuery>>(),
         AZombie::StaticClass(), ActorsToIgnore, OverlappedZombies);
 
-    FName TargetSocket = bHasDeadshot ? FName("head") : FName("spine_04");
+    FName TargetSocket = HasDeadshot() ? FName("head") : FName("spine_04");
 
     for (AActor* Actor : OverlappedZombies)
     {
@@ -1554,7 +1552,7 @@ void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
 void AHama::Server_StartPerkDrink(ABasePerk* TargetPerk)
 {
     if (!TargetPerk || !HasAuthority() || IsDowned() || bIsDead) return;
-    if (GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle)) return;
+    if (DrinkingPerkTimer()) return;
 
     PendingPerkID = TargetPerk->GetPerkID();
 
@@ -1562,9 +1560,9 @@ void AHama::Server_StartPerkDrink(ABasePerk* TargetPerk)
 
     float DrinkDuration = DrinkPerkMontage ? DrinkPerkMontage->GetPlayLength() : 2.0f;
 
+    // تایمەری سێرڤەر تەنها کاتێک Perk پێدەدات کە یاریزانەکە هێشتا ساغ بێت
     GetWorldTimerManager().SetTimer(PerkDrinkTimerHandle, this, &AHama::GivePendingPerk, DrinkDuration, false);
 }
-
 
 void AHama::GivePendingPerk()
 {
@@ -1596,22 +1594,13 @@ void AHama::AddPerkByID(FName PerkID)
         }
     }
 
-    if (PerkID == FName(TEXT("FastHands")))
-    {
-        bHasFastHands = true;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Fast Hands Perk Acquired!"));
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasFastHands, this);
-    }
-
-    else if (PerkID == FName(TEXT("Juggernaut")))
+    if (PerkID == FName(TEXT("Juggernaut")))
     {
         if (HealthComponent)
         {
-            HealthComponent->UpgradeHealth(250.f);
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Juggernaut Perk Acquired! Health Increased!"));
+            HealthComponent->UpgradeHealth(150.f);
         }
     }
-
     else if (PerkID == FName(TEXT("StaminaUp")))
     {
         if (HamaComponent)
@@ -1624,31 +1613,6 @@ void AHama::AddPerkByID(FName PerkID)
             Client_OnStaminUpAcquired(250.f);
         }
     }
-
-    else if (PerkID == FName(TEXT("DoubleTap")))
-    {
-        bHasDoubleTap = true;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Double Tap Perk Acquired!"));
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDoubleTap, this);
-    }
-    else if (PerkID == FName(TEXT("Deadshot")))
-    {
-        bHasDeadshot = true;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Deadshot Perk Acquired!"));
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDeadshot, this);
-    }
-    else if (PerkID == FName(TEXT("MuleKick")))
-    {
-        bHasMuleKick = true;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Mule Kick Perk Acquired!"));
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasMuleKick, this);
-    }
-    else if (PerkID == FName(TEXT("QuickRevive")))
-    {
-        bHasQuickRevive = true;
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("PhD Flopper Perk Acquired!"));
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasQuickRevive, this);
-    }
 }
 
 void AHama::HandleDeath()
@@ -1658,26 +1622,20 @@ void AHama::HandleDeath()
     GetWorldTimerManager().ClearTimer(PerkDrinkTimerHandle);
     PendingPerkID = NAME_None;
 
+    if (PerkBottleMesh)
+    {
+        PerkBottleMesh->SetVisibility(false);
+        PerkBottleMesh->SetStaticMesh(nullptr);
+    }
+
     OwnedPerks.Empty();
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
-
-    bHasFastHands = false;
-    bHasDoubleTap = false;
-    bHasDeadshot = false;
-    bHasMuleKick = false;
-    bHasQuickRevive = false;
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasFastHands, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDoubleTap, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasDeadshot, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasMuleKick, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bHasQuickRevive, this);
 
     if (HamaComponent)
     {
         HamaComponent->ResetStamina();
     }
-    
+
     bIsDead = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
 
@@ -1711,7 +1669,6 @@ void AHama::HandleDeath()
     }
 }
 
-
 void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPerk)
 {
     if (!TargetPerk || !DrinkPerkMontage) return;
@@ -1720,6 +1677,7 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
     {
         CurrentWeapon->StopFire();
         if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+        CurrentWeapon->SetActorHiddenInGame(true);
     }
 
     if (HamaComponent)
@@ -1761,6 +1719,17 @@ void AHama::OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool 
     {
         PerkBottleMesh->SetVisibility(false);
         PerkBottleMesh->SetStaticMesh(nullptr);
+    }
+
+    if (CurrentWeapon)
+    {
+        CurrentWeapon->SetActorHiddenInGame(false);
+    }
+
+    if (bInterrupted && HasAuthority())
+    {
+        GetWorldTimerManager().ClearTimer(PerkDrinkTimerHandle);
+        PendingPerkID = NAME_None;
     }
 }
 
@@ -2094,7 +2063,7 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
-    if (bHasQuickRevive || (GS && GS->IsTeamAdrenalineActive()))
+    if (HasQuickRevive() || (GS && GS->IsTeamAdrenalineActive()))
     {
         ReviveTime *= 0.5f;
     }

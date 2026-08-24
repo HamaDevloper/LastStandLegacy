@@ -368,11 +368,9 @@ public:
     bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     const TArray<FName>& GetOwnedPerks() const { return OwnedPerks; }
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
-    bool GetDoubleTap() { return bHasDoubleTap; }
-    bool HasDeadshot() const { return bHasDeadshot; }
     bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
-    bool IsDrinkingPerk() const { return CurrentSpawnedBottle != nullptr; }
-    bool HasQuickRevive() const { return bHasQuickRevive; }
+    UFUNCTION(BlueprintCallable, Category = "Hama|Perks")
+    bool IsDrinkingPerk() const { return PerkBottleMesh && PerkBottleMesh->IsVisible(); }
     bool IsMovingForward() const;
     bool IsSliding() const { return HamaComponent->IsSlide(); }
     bool IsDiving() const { return HamaComponent->IsDiving(); }
@@ -409,21 +407,6 @@ protected:
     UFUNCTION()
     void OnRep_OwnedPerks();
 
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
-    bool bHasFastHands = false;
-
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
-    bool bHasDoubleTap = false;
-
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
-    bool bHasDeadshot = false;
-
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
-    bool bHasMuleKick = false;
-
-    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Hama|Perks")
-    bool bHasQuickRevive = false;
-
     FName PendingPerkID;
 
     UPROPERTY()
@@ -443,8 +426,13 @@ public:
     void Server_StartPerkDrink(ABasePerk* TargetPerk);
 
     bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
-    bool HasFastHands() const { return bHasFastHands; }
     void HandleDeath();
+
+    bool HasFastHands() const { return OwnedPerks.Contains(FName("FastHands")); }
+    bool HasDoubleTap() const { return OwnedPerks.Contains(FName("DoubleTap")); }
+    bool HasDeadshot() const { return OwnedPerks.Contains(FName("Deadshot")); }
+    bool HasMuleKick() const { return OwnedPerks.Contains(FName("MuleKick")); }
+    bool HasQuickRevive() const { return OwnedPerks.Contains(FName("QuickRevive")); }
 
 protected:
     FTimerHandle PerkDrinkTimerHandle;
