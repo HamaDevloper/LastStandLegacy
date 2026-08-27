@@ -80,11 +80,6 @@ void UHamaComponent::StartSlide()
     {
         MoveComp->bSlide = true;
     }
-
-    if (OwnerCharacter->HasAuthority())
-    {
-        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
-    }
 }
 
 void UHamaComponent::StopSlide()
@@ -96,11 +91,6 @@ void UHamaComponent::StopSlide()
     if (MoveComp)
     {
         MoveComp->bSlide = bIsSlide;
-    }
-
-    if (OwnerCharacter->HasAuthority())
-    {
-        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
     }
 }
 
@@ -125,11 +115,6 @@ void UHamaComponent::StartDive()
     {
         MoveComp->bDiving = bIsDiving;
     }
-
-    if (OwnerCharacter->HasAuthority())
-    {
-        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
-    }
 }
 
 void UHamaComponent::StopDive()
@@ -140,11 +125,6 @@ void UHamaComponent::StopDive()
     if (MoveComp)
     {
         MoveComp->bDiving = false;
-    }
-
-    if (OwnerCharacter && OwnerCharacter->HasAuthority())
-    {
-        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
     }
 }
 
@@ -292,6 +272,32 @@ void UHamaComponent::ResetStamina()
 {
     MaxStamina = 100.f;
     Stamina = 100.f;
+}
+
+void UHamaComponent::SyncStatesFromCMC(bool bInSlide, bool bInDiving, bool bInSprinting)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    if (bIsSlide != bInSlide)
+    {
+        bIsSlide = bInSlide;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSlide, this);
+        OnRep_Slide();
+    }
+
+    if (bIsDiving != bInDiving)
+    {
+        bIsDiving = bInDiving;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDiving, this);
+        OnRep_Dive();
+    }
+
+    if (bIsSprinting != bInSprinting)
+    {
+        bIsSprinting = bInSprinting;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
+        OnRep_Sprinting();
+    }
 }
 
 void UHamaComponent::OnRep_Sprinting()

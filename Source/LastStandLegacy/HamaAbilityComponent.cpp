@@ -17,7 +17,6 @@ void UHamaAbilityComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    // ⚡ [FIX]: ئەگەر لە BeginPlay دا PlayerState ئامادە نەبوو، Server/Client لە OnRep یان Controller هەوڵ دەدەنەوە
     if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
     {
         if (AHamaPlayerState* PS = OwnerPawn->GetPlayerState<AHamaPlayerState>())

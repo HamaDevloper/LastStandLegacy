@@ -42,6 +42,7 @@ public:
     bool CanSprint() const;
     bool CanDive() const;
 
+    void SyncStatesFromCMC(bool bInSlide, bool bInDiving, bool bInSprinting);
     /* ================================================================================================
      *                                    STAMINA & STATE GETTERS
      * ================================================================================================ */

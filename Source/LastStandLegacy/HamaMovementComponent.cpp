@@ -61,24 +61,17 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 {
     Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
-    // ⚡ [FIX DESYNC & REPLAY BUG]: ئەنجامدانی State Transitions بەبێ دەستکاریکردنی راستەوخۆی HamaComp
-    if (bSlide)
+    if (bSlide && Velocity.SizeSquared2D() < FMath::Square(200.f))
     {
-        if (Velocity.SizeSquared2D() < FMath::Square(200.f))
-        {
-            bSlide = false;
-        }
+        bSlide = false;
     }
 
-    if (bDiving)
+    // 🟢 [FIX DIVE]: تەنها کاتێک Dive کۆتایی پێبێنە کە پێشتر لە هەوادا بووبێت و گەیشتبێتەوە زەوی
+    if (bDiving && bWasDiving && MovementMode != MOVE_Falling)
     {
-        if (MovementMode != MOVE_Falling)
-        {
-            bDiving = false;
-        }
+        bDiving = false;
     }
 
-    // ⚡ [FIX REPLAY DOUBLE-IMPULSE]: تەنها کاتێک Velocity دەگۆڕدرێت کە لە سەرەتای State بێت و لە ناو Replayدا نەبێت
     if (bSlide && !bWasSliding)
     {
         if (CharacterOwner)
@@ -94,7 +87,9 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         {
             FVector DiveDirection = CharacterOwner->GetActorForwardVector();
             Velocity = FVector(DiveDirection.X * DiveImpulseHorizontal, DiveDirection.Y * DiveImpulseHorizontal, DiveImpulseVertical);
+
             SetMovementMode(MOVE_Falling);
+            CurrentFloor.Clear(); // 🟢 پاککردنەوەی Friction لە زەوی
         }
     }
 
@@ -111,6 +106,15 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 
     bWasSliding = bSlide;
     bWasDiving = bDiving;
+
+    // ڕەوانەکردنی State لە Server ڕاستەوخۆ بۆ HamaComp
+    if (CharacterOwner && CharacterOwner->HasAuthority())
+    {
+        if (UHamaComponent* HamaComp = GetHamaComp())
+        {
+            HamaComp->SyncStatesFromCMC(bSlide, bDiving, bSprinting);
+        }
+    }
 }
 
 void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)

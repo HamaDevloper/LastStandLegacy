@@ -86,14 +86,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<UCameraComponent> FPCamera;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UStaticMeshComponent> PerkBottleMesh;
+
     UPROPERTY(BlueprintReadOnly, Category = "Hama|References")
     TObjectPtr<APlayerController> OwnerController;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
     TObjectPtr<USphereComponent> InteractSphere;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-    TObjectPtr<UStaticMeshComponent> PerkBottleMesh;
 
 public:
     // -----------------------------------------------------------------------------
@@ -370,178 +370,178 @@ public:
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
     bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
     UFUNCTION(BlueprintCallable, Category = "Hama|Perks")
-    bool IsDrinkingPerk() const { return PerkBottleMesh && PerkBottleMesh->IsVisible(); }
+    bool IsDrinkingPerk() const {return PerkBottleMesh && PerkBottleMesh->IsVisible(); }
     bool IsMovingForward() const;
     bool IsSliding() const { return HamaComponent->IsSlide(); }
     bool IsDiving() const { return HamaComponent->IsDiving(); }
 
-protected:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
-    float NormalSensitivity = 1.f;
+    protected:
+        UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
+        float NormalSensitivity = 1.f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
-    float AimingSensitivity = 0.5f;
+        UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
+        float AimingSensitivity = 0.5f;
 
-public:
-    UPROPERTY(EditDefaultsOnly, Category = "Hama|Roles Visuals")
-    TMap<EHamaAbilityType, FRoleVisualData> RoleVisuals;
+    public:
+        UPROPERTY(EditDefaultsOnly, Category = "Hama|Roles Visuals")
+        TMap<EHamaAbilityType, FRoleVisualData> RoleVisuals;
 
-    void ApplyRoleVisuals(EHamaAbilityType NewRole);
+        void ApplyRoleVisuals(EHamaAbilityType NewRole);
 
-public:
-    void RefillAllWeapons();
+    public:
+        void RefillAllWeapons();
 
-    UFUNCTION(BlueprintCallable, Category = "Weapon System")
-    void RemoveCurrentWeapon();
+        UFUNCTION(BlueprintCallable, Category = "Weapon System")
+        void RemoveCurrentWeapon();
 
-protected:
-    void HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo);
+    protected:
+        void HandleAmmoChanged(int32 CurrentAmmo, int32 ReserveAmmo);
 
-    // -----------------------------------------------------------------------------
-    // AAA Dynamic Perk System
-    // -----------------------------------------------------------------------------
-protected:
-    UPROPERTY(ReplicatedUsing = OnRep_OwnedPerks, BlueprintReadOnly, Category = "Hama|Perks")
-    TArray<FName> OwnedPerks;
+        // -----------------------------------------------------------------------------
+        // AAA Dynamic Perk System
+        // -----------------------------------------------------------------------------
+    protected:
+        UPROPERTY(ReplicatedUsing = OnRep_OwnedPerks, BlueprintReadOnly, Category = "Hama|Perks")
+        TArray<FName> OwnedPerks;
 
-    UFUNCTION()
-    void OnRep_OwnedPerks();
+        UFUNCTION()
+        void OnRep_OwnedPerks();
 
-    FName PendingPerkID;
+        FName PendingPerkID;
 
-    UPROPERTY()
-    class AStaticMeshActor* CurrentSpawnedBottle;
+        UPROPERTY()
+        class AStaticMeshActor* CurrentSpawnedBottle;
 
-public:
-    UPROPERTY(Replicated)
-    bool bIsDeathMachineActive = false;
+    public:
+        UPROPERTY(Replicated)
+        bool bIsDeathMachineActive = false;
 
-    UFUNCTION(NetMulticast, Reliable)
-    void Multicast_PlayDrinkPerkAnimation(ABasePerk* TargetPerk);
+        UFUNCTION(NetMulticast, Reliable)
+        void Multicast_PlayDrinkPerkAnimation(ABasePerk * TargetPerk);
 
-    UFUNCTION()
-    void OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool bInterrupted);
+        UFUNCTION()
+        void OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage * Montage, bool bInterrupted);
 
-    void AddPerkByID(FName PerkID);
-    void Server_StartPerkDrink(ABasePerk* TargetPerk);
+        void AddPerkByID(FName PerkID);
+        void Server_StartPerkDrink(ABasePerk * TargetPerk);
 
-    bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
-    void HandleDeath();
+        bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
+        void HandleDeath();
 
-    bool HasFastHands() const { return OwnedPerks.Contains(FName("FastHands")); }
-    bool HasDoubleTap() const { return OwnedPerks.Contains(FName("DoubleTap")); }
-    bool HasDeadshot() const { return OwnedPerks.Contains(FName("Deadshot")); }
-    bool HasMuleKick() const { return OwnedPerks.Contains(FName("MuleKick")); }
-    bool HasQuickRevive() const { return OwnedPerks.Contains(FName("QuickRevive")); }
+        bool HasFastHands() const { return OwnedPerks.Contains(FName("FastHands")); }
+        bool HasDoubleTap() const { return OwnedPerks.Contains(FName("DoubleTap")); }
+        bool HasDeadshot() const { return OwnedPerks.Contains(FName("Deadshot")); }
+        bool HasMuleKick() const { return OwnedPerks.Contains(FName("MuleKick")); }
+        bool HasQuickRevive() const { return OwnedPerks.Contains(FName("QuickRevive")); }
 
-protected:
-    FTimerHandle PerkDrinkTimerHandle;
-    void GivePendingPerk();
+    protected:
+        FTimerHandle PerkDrinkTimerHandle;
+        void GivePendingPerk();
 
-public:
-    UFUNCTION(Client, Unreliable)
-    void Client_ShowDamageIndicator(FVector DamageOrigin);
+    public:
+        UFUNCTION(Client, Unreliable)
+        void Client_ShowDamageIndicator(FVector DamageOrigin);
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
-    void OnDamageIndicatorUpdate(float Angle);
+        UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+        void OnDamageIndicatorUpdate(float Angle);
 
-protected:
-    void CheckForInteractables();
+    protected:
+        void CheckForInteractables();
 
-    void OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Datum);
+        void OnInteractTraceCompleted(const FTraceHandle & Handle, FTraceDatum & Datum);
 
-    UPROPERTY()
-    FTimerHandle InteractTimerHandle;
+        UPROPERTY()
+        FTimerHandle InteractTimerHandle;
 
-    class IInteractInterface* FocusedInteractable;
+        class IInteractInterface* FocusedInteractable;
 
-    void InteractActionPressed();
-    void GamepadXActionPressed(const FInputActionInstance& Instance);
-    void GamepadXActionReleased();
+        void InteractActionPressed();
+        void GamepadXActionPressed(const FInputActionInstance & Instance);
+        void GamepadXActionReleased();
 
-    bool bIsxButtonHolded = false;
+        bool bIsxButtonHolded = false;
 
-    UFUNCTION(Server, Reliable)
-    void Server_Interact(AActor* InteractTarget);
+        UFUNCTION(Server, Reliable)
+        void Server_Interact(AActor * InteractTarget);
 
-public:
-    UPROPERTY(Replicated, BlueprintReadOnly)
-    bool bIsDead = false;
+    public:
+        UPROPERTY(Replicated, BlueprintReadOnly)
+        bool bIsDead = false;
 
-protected:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Setting")
-    float SetIntractDistance = 100.f;
+    protected:
+        UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Setting")
+        float SetIntractDistance = 100.f;
 
-    UFUNCTION(Server, Reliable)
-    void Server_ExecuteMelee();
+        UFUNCTION(Server, Reliable)
+        void Server_ExecuteMelee();
 
-    UFUNCTION(Server, Reliable, WithValidation)
-    void Server_ValidateMeleeHit(AActor* HitActor, FVector_NetQuantize HitLocation);
+        UFUNCTION(Server, Reliable, WithValidation)
+        void Server_ValidateMeleeHit(AActor * HitActor, FVector_NetQuantize HitLocation);
 
-    UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
-    float MeleeDamage = 150.0f;
+        UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+        float MeleeDamage = 150.0f;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
-    float MeleeRange = 150.0f;
+        UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+        float MeleeRange = 150.0f;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
-    float MeleeRadius = 40.0f;
+        UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+        float MeleeRadius = 40.0f;
 
-    bool IsMeleeing() const;
+        bool IsMeleeing() const;
 
-public:
-    void PerformMeleeHitDetection();
+    public:
+        void PerformMeleeHitDetection();
 
-public:
-    UFUNCTION(Server, Reliable)
-    void Server_BeginRevive(AHama* DownedPlayer);
+    public:
+        UFUNCTION(Server, Reliable)
+        void Server_BeginRevive(AHama * DownedPlayer);
 
-    UFUNCTION(Server, Reliable)
-    void Server_CancelRevive();
+        UFUNCTION(Server, Reliable)
+        void Server_CancelRevive();
 
-    // ⚡ گۆڕدرا: لادانی Parameter بۆ ڕێگری لە Memory Crash
-    UFUNCTION()
-    void Server_CompleteRevive();
+        // ⚡ گۆڕدرا: لادانی Parameter بۆ ڕێگری لە Memory Crash
+        UFUNCTION()
+        void Server_CompleteRevive();
 
-    void Server_CheckReviveConditions();
-    void ClearAllReviveTimers();
+        void Server_CheckReviveConditions();
+        void ClearAllReviveTimers();
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama | Revive")
-    float DefaultReviveTime = 5.0f;
+        UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama | Revive")
+        float DefaultReviveTime = 5.0f;
 
-private:
-    FTimerHandle ReviveTimerHandle;
-    FTimerHandle ReviveCheckTimerHandle;
+    private:
+        FTimerHandle ReviveTimerHandle;
+        FTimerHandle ReviveCheckTimerHandle;
 
-    UPROPERTY()
-    TWeakObjectPtr<AHama> CurrentReviveTarget;
+        UPROPERTY()
+        TWeakObjectPtr<AHama> CurrentReviveTarget;
 
-    bool bIsCurrentlyReviving = false;
+        bool bIsCurrentlyReviving = false;
 
-    virtual bool CanInteract(AHama* InteractingPlayer) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
-    virtual void Interact(AHama* InteractingPlayer) override;
-    virtual bool Client_PreInteract(AHama* Player) override;
+        virtual bool CanInteract(AHama * InteractingPlayer) override;
+        virtual FString GetInteractMessage(AHama * InteractingPlayer) override;
+        virtual void Interact(AHama * InteractingPlayer) override;
+        virtual bool Client_PreInteract(AHama * Player) override;
 
-    UFUNCTION()
-    void OnInteractSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+        UFUNCTION()
+        void OnInteractSphereBeginOverlap(UPrimitiveComponent * OverlappedComponent, AActor * OtherActor, UPrimitiveComponent * OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult & SweepResult);
 
-    UFUNCTION()
-    void OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+        UFUNCTION()
+        void OnInteractSphereEndOverlap(UPrimitiveComponent * OverlappedComponent, AActor * OtherActor, UPrimitiveComponent * OtherComp, int32 OtherBodyIndex);
 
-    int32 NearbyInteractablesCount = 0;
+        int32 NearbyInteractablesCount = 0;
 
-    UFUNCTION(Client, Reliable)
-    void Client_OnStaminUpAcquired(float NewMaxStamina);
+        UFUNCTION(Client, Reliable)
+        void Client_OnStaminUpAcquired(float NewMaxStamina);
 
-    UFUNCTION(Client, Reliable)
-    void Client_OnPlayerDowned();
+        UFUNCTION(Client, Reliable)
+        void Client_OnPlayerDowned();
 
- public:
-     UFUNCTION(BlueprintCallable, Category = "Weapons")
-     TArray<TSubclassOf<class ABaseWeapon>> GetOwnedWeaponClasses() const;
+    public:
+        UFUNCTION(BlueprintCallable, Category = "Weapons")
+        TArray<TSubclassOf<class ABaseWeapon>> GetOwnedWeaponClasses() const;
 
-protected:
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapons|Inventory")
-    TArray<TObjectPtr<ABaseWeapon>> EquippedWeapons;
-};
+    protected:
+        UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapons|Inventory")
+        TArray<TObjectPtr<ABaseWeapon>> EquippedWeapons;
+    };

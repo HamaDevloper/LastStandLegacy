@@ -34,7 +34,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 
     bReplicates = true;
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(80.f);
+    SetNetUpdateFrequency(75.f);
     SetMinNetUpdateFrequency(33.f);
 
     if (GetCharacterMovement())
@@ -67,12 +67,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     InteractSphere->SetGenerateOverlapEvents(true);
 
     PerkBottleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PerkBottleMesh"));
-    PerkBottleMesh->SetupAttachment(GetMesh(), TEXT("PerkBottleSocket"));
-    PerkBottleMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    PerkBottleMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-    PerkBottleMesh->SetSimulatePhysics(false);
-    PerkBottleMesh->SetVisibility(false);
-    PerkBottleMesh->SetCastShadow(false);
+    PerkBottleMesh->SetupAttachment(GetMesh(), FName("PerkBottleSocket"));
 }
 
 const float AHama::CrossHairTimer = 0.05f;
@@ -1559,8 +1554,6 @@ void AHama::Server_StartPerkDrink(ABasePerk* TargetPerk)
     Multicast_PlayDrinkPerkAnimation(TargetPerk);
 
     float DrinkDuration = DrinkPerkMontage ? DrinkPerkMontage->GetPlayLength() : 2.0f;
-
-    // تایمەری سێرڤەر تەنها کاتێک Perk پێدەدات کە یاریزانەکە هێشتا ساغ بێت
     GetWorldTimerManager().SetTimer(PerkDrinkTimerHandle, this, &AHama::GivePendingPerk, DrinkDuration, false);
 }
 
@@ -1696,6 +1689,7 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
     }
 
     UStaticMesh* BottleMesh = TargetPerk->GetBottleMesh();
+
     if (BottleMesh && PerkBottleMesh)
     {
         PerkBottleMesh->SetStaticMesh(BottleMesh);
@@ -1706,7 +1700,6 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
     if (AnimInstance)
     {
         AnimInstance->Montage_Play(DrinkPerkMontage, 1.0f);
-
         FOnMontageEnded MontageEndedDelegate;
         MontageEndedDelegate.BindUObject(this, &AHama::OnDrinkPerkAnimationCompleteFromMontage);
         AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, DrinkPerkMontage);

@@ -102,6 +102,9 @@ void ABasePerk::Interact(AHama* InteractingPlayer)
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     if (!GS) return;
 
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(300.f)) return;
+
     const bool bIsSoloQuickRevive = (PerkID == FName("QuickRevive") && GS->bIsSoloMatch);
     if (!bIsSoloQuickRevive && !GS->bIsPowerOn) return;
 
