@@ -1495,7 +1495,7 @@ void AHama::OnSprintStopped()
 {
     if (!CurrentWeapon) return;
 
-    if (IsAimButtonHold())
+    if (bIsAimButtonHold)
     {
         OnAim(true);
     }
@@ -1884,6 +1884,18 @@ bool AHama::IsMeleeing() const
 void AHama::MeleeActionPressed()
 {
     if (IsMeleeing() || IsDrinkingPerk()) return;
+
+    if (bIsAimButtonHold)
+    {
+        AimActionReleased();
+    }
+
+    if (IsSprinting())
+    {
+        StopSprint();
+    }
+
+    // 🟢 [Client-Side Prediction]: کڵاینتی خۆت دەستبەجێ ئەنیمەیشن لێدەداتەوە تا Input Lag دروست نەبێت
     if (MeleeAttackMontage)
     {
         PlayAnimMontage(MeleeAttackMontage);
@@ -1895,14 +1907,20 @@ void AHama::MeleeActionPressed()
 void AHama::Server_ExecuteMelee_Implementation()
 {
     if (IsDrinkingPerk()) return;
+    Multicast_ExecuteMelee();
+}
 
+void AHama::Multicast_ExecuteMelee_Implementation()
+{
     if (MeleeAttackMontage && !IsLocallyControlled())
+    {
         PlayAnimMontage(MeleeAttackMontage);
+    }
 }
 
 void AHama::PerformMeleeHitDetection()
 {
-    if (!IsLocallyControlled() && !HasAuthority()) return;
+    if (!IsLocallyControlled()) return;
 
     FVector CameraLocation;
     FRotator ViewRotation;
@@ -1917,10 +1935,10 @@ void AHama::PerformMeleeHitDetection()
         ViewRotation = GetActorRotation();
     }
 
-    FVector StartLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f);
-    FVector EndLocation = StartLocation + (ViewRotation.Vector() * MeleeRange);
+    const FVector StartLocation = CameraLocation;
+    const FVector EndLocation = StartLocation + (ViewRotation.Vector() * MeleeRange);
 
-    FCollisionQueryParams Params;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeSweep), false);
     Params.AddIgnoredActor(this);
     if (CurrentWeapon) Params.AddIgnoredActor(CurrentWeapon);
 
@@ -1928,70 +1946,80 @@ void AHama::PerformMeleeHitDetection()
     FCollisionShape MeleeSphere = FCollisionShape::MakeSphere(MeleeRadius);
 
     bool bHit = GetWorld()->SweepSingleByChannel(
-        HitResult, StartLocation, EndLocation, FQuat::Identity,
-        ECC_Bullet,
-        MeleeSphere, Params
+        HitResult,
+        StartLocation,
+        EndLocation,
+        FQuat::Identity,
+        ECC_Melee,
+        MeleeSphere,
+        Params
     );
 
-    if (bHit && HitResult.GetActor())
+    if (bHit && IsValid(HitResult.GetActor()))
     {
-        AZombie* HitZombie = Cast<AZombie>(HitResult.GetActor());
-        if (HitZombie && !HitZombie->IsDead())
-        {
-            if (!HasAuthority())
-            {
-                Server_ValidateMeleeHit(HitZombie, HitResult.ImpactPoint);
-            }
-            else
-            {
-                FPointDamageEvent PointDamageEvent;
-                PointDamageEvent.Damage = MeleeDamage;
-                PointDamageEvent.HitInfo = HitResult;
-                PointDamageEvent.ShotDirection = ViewRotation.Vector();
-                PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
+        AActor* HitActor = HitResult.GetActor();
+        IDamageableInterface* DamageableActor = Cast<IDamageableInterface>(HitActor);
 
-                HitZombie->TakeDamage(MeleeDamage, PointDamageEvent, OwnerController, this);
-            }
+        if (DamageableActor && DamageableActor->CanReceiveWeaponDamage())
+        {
+            Server_ValidateMeleeHit(HitActor, HitResult.ImpactPoint);
         }
     }
 }
 
-bool AHama::Server_ValidateMeleeHit_Validate(AActor* HitActor, FVector_NetQuantize HitLocation)
-{
-    if (!HitActor || !HitActor->IsA(AZombie::StaticClass()))
-    {
-        return false;
-    }
-
-    return true;
-}
-
 void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_NetQuantize HitLocation)
 {
-    AZombie* HitZombie = Cast<AZombie>(HitActor);
-    if (!HitZombie || HitZombie->IsDead()) return;
+    if (!IsValid(HitActor)) return;
 
-    // --- Anti-Cheat Check ---
-    float Distance = FVector::Dist(GetActorLocation(), HitZombie->GetActorLocation());
-    float MaxAllowedDistance = MeleeRange + MeleeRadius + 150.f;
-
-    if (Distance <= MaxAllowedDistance)
+    // Rate Limiting
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (CurrentTime - LastServerMeleeTime < (MeleeCooldown * 0.7f))
     {
-        FPointDamageEvent PointDamageEvent;
-        PointDamageEvent.Damage = MeleeDamage;
-
-        FHitResult ServerHit(HitZombie, nullptr, HitLocation, HitLocation);
-
-        PointDamageEvent.HitInfo = ServerHit;
-        PointDamageEvent.ShotDirection = (HitLocation - GetActorLocation()).GetSafeNormal();
-        PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
-
-        HitZombie->TakeDamage(MeleeDamage, PointDamageEvent, OwnerController, this);
+        return;
     }
-    else
+    LastServerMeleeTime = CurrentTime;
+
+    // Interface Check
+    IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor);
+    if (!Damageable || !Damageable->CanReceiveWeaponDamage()) return;
+
+    // 🟢 [FIX 3]: پێوانی دووری بەراورد بە HitLocation (نەک Actor Center Location)
+    const FVector PlayerLoc = GetActorLocation();
+    const float MaxAllowedDistanceSq = FMath::Square(MeleeRange + MeleeRadius + 100.f);
+    const float ActualDistSq = FVector::DistSquared(PlayerLoc, HitLocation);
+
+    if (ActualDistSq > MaxAllowedDistanceSq)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Melee Exploit Detected! Player %s attacked from too far!"), *GetName());
+        return; // Too Far Exploit Rejected
     }
+
+    // Anti-Wallhack Check
+    FHitResult WallHit;
+    FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(MeleeLoS), false, this);
+    TraceParams.AddIgnoredActor(HitActor);
+    if (CurrentWeapon) TraceParams.AddIgnoredActor(CurrentWeapon);
+
+    const FVector EyeLocation = PlayerLoc + FVector(0.f, 0.f, 50.f);
+    bool bBlockedByWall = GetWorld()->LineTraceSingleByChannel(
+        WallHit,
+        EyeLocation,
+        HitLocation,
+        ECC_WorldStatic,
+        TraceParams
+    );
+
+    if (bBlockedByWall) return; // Wallhack Rejected
+
+    // 🟢 SUCCESS: دەستنیشانکردنی دیمەج تەنها لە سەرڤەردا بە ۱ جار
+    FPointDamageEvent PointDamageEvent;
+    PointDamageEvent.Damage = MeleeDamage;
+
+    FHitResult ServerHit(HitActor, nullptr, HitLocation, (HitLocation - PlayerLoc).GetSafeNormal());
+    PointDamageEvent.HitInfo = ServerHit;
+    PointDamageEvent.ShotDirection = (HitLocation - PlayerLoc).GetSafeNormal();
+    PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
+
+    HitActor->TakeDamage(MeleeDamage, PointDamageEvent, GetController(), this);
 }
 
 bool AHama::CanInteract(AHama* InteractingPlayer)

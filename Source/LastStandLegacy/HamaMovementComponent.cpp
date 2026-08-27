@@ -10,7 +10,6 @@ UHamaMovementComponent::UHamaMovementComponent()
     bDowned = false;
     bSlide = false;
 
-    // Default values
     DefaultGroundFriction = 8.0f;
     DefaultBrakingDecelerationWalking = 2048.0f;
 }
@@ -49,7 +48,7 @@ float UHamaMovementComponent::GetMaxSpeed() const
 
 FVector UHamaMovementComponent::ScaleInputAcceleration(const FVector& InputAcceleration) const
 {
-    if ((bSlide && Velocity.SizeSquared2D() > FMath::Square(200.f)) || bDiving)
+    if (bSlide || bDiving)
     {
         return FVector::ZeroVector;
     }
@@ -61,12 +60,16 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 {
     Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
+    if (bAiming)
+    {
+        bSprinting = false;
+    }
+
     if (bSlide && Velocity.SizeSquared2D() < FMath::Square(200.f))
     {
         bSlide = false;
     }
 
-    // 🟢 [FIX DIVE]: تەنها کاتێک Dive کۆتایی پێبێنە کە پێشتر لە هەوادا بووبێت و گەیشتبێتەوە زەوی
     if (bDiving && bWasDiving && MovementMode != MOVE_Falling)
     {
         bDiving = false;
@@ -81,7 +84,8 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         }
     }
 
-    if (bDiving && !bWasDiving)
+    // 🟢 [FIX 1]: دڵنیابوونەوە لەسەر زەوی بوون بەر لە دایڤ (ڕێگریکردن لە Mid-Air Dive Exploit)
+    if (bDiving && !bWasDiving && IsMovingOnGround())
     {
         if (CharacterOwner)
         {
@@ -89,7 +93,7 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
             Velocity = FVector(DiveDirection.X * DiveImpulseHorizontal, DiveDirection.Y * DiveImpulseHorizontal, DiveImpulseVertical);
 
             SetMovementMode(MOVE_Falling);
-            CurrentFloor.Clear(); // 🟢 پاککردنەوەی Friction لە زەوی
+            CurrentFloor.Clear();
         }
     }
 
@@ -104,17 +108,19 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         BrakingDecelerationWalking = DefaultBrakingDecelerationWalking;
     }
 
-    bWasSliding = bSlide;
-    bWasDiving = bDiving;
-
-    // ڕەوانەکردنی State لە Server ڕاستەوخۆ بۆ HamaComp
     if (CharacterOwner && CharacterOwner->HasAuthority())
     {
-        if (UHamaComponent* HamaComp = GetHamaComp())
+        if (bWasSliding != bSlide || bWasDiving != bDiving)
         {
-            HamaComp->SyncStatesFromCMC(bSlide, bDiving, bSprinting);
+            if (UHamaComponent* HamaComp = GetHamaComp())
+            {
+                HamaComp->SyncStatesFromCMC(bSlide, bDiving, bSprinting);
+            }
         }
     }
+
+    bWasSliding = bSlide;
+    bWasDiving = bDiving;
 }
 
 void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
@@ -144,30 +150,30 @@ void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT
 {
     FSavedMove_Character::SetMoveFor(C, DT, Accel, Data);
 
-    if (UHamaMovementComponent* Comp = Cast<UHamaMovementComponent>(C->GetCharacterMovement()))
-    {
-        bSavedWantsToAim = Comp->bAiming;
-        bSavedWantsToSprint = Comp->bSprinting;
-        bSavedWantsToDive = Comp->bDiving;
-        bSavedWantsToSlide = Comp->bSlide;
-        bSavedWasSliding = Comp->bWasSliding;
-        bSavedWasDiving = Comp->bWasDiving;
-    }
+    UHamaMovementComponent* Comp = static_cast<UHamaMovementComponent*>(C->GetCharacterMovement());
+    check(Comp);
+
+    bSavedWantsToAim = Comp->bAiming;
+    bSavedWantsToSprint = Comp->bSprinting;
+    bSavedWantsToDive = Comp->bDiving;
+    bSavedWantsToSlide = Comp->bSlide;
+    bSavedWasSliding = Comp->bWasSliding;
+    bSavedWasDiving = Comp->bWasDiving;
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 {
     FSavedMove_Character::PrepMoveFor(C);
 
-    if (UHamaMovementComponent* Comp = Cast<UHamaMovementComponent>(C->GetCharacterMovement()))
-    {
-        Comp->bSprinting = bSavedWantsToSprint;
-        Comp->bAiming = bSavedWantsToAim;
-        Comp->bDiving = bSavedWantsToDive;
-        Comp->bSlide = bSavedWantsToSlide;
-        Comp->bWasSliding = bSavedWasSliding;
-        Comp->bWasDiving = bSavedWasDiving;
-    }
+    UHamaMovementComponent* Comp = static_cast<UHamaMovementComponent*>(C->GetCharacterMovement());
+    check(Comp);
+
+    Comp->bSprinting = bSavedWantsToSprint;
+    Comp->bAiming = bSavedWantsToAim;
+    Comp->bDiving = bSavedWantsToDive;
+    Comp->bSlide = bSavedWantsToSlide;
+    Comp->bWasSliding = bSavedWasSliding;
+    Comp->bWasDiving = bSavedWasDiving;
 }
 
 bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* C, float MaxDelta) const

@@ -14,6 +14,7 @@
 #define ECC_Bullet ECC_GameTraceChannel1
 #define ECC_CrossHair ECC_GameTraceChannel2
 #define ECC_Intract ECC_GameTraceChannel3
+#define ECC_Melee ECC_GameTraceChannel4
 
 //DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
 DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
@@ -475,8 +476,11 @@ public:
         UFUNCTION(Server, Reliable)
         void Server_ExecuteMelee();
 
-        UFUNCTION(Server, Reliable, WithValidation)
+        UFUNCTION(Server, Reliable)
         void Server_ValidateMeleeHit(AActor * HitActor, FVector_NetQuantize HitLocation);
+
+        UFUNCTION(NetMulticast, Unreliable)
+        void Multicast_ExecuteMelee();
 
         UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
         float MeleeDamage = 150.0f;
@@ -486,6 +490,11 @@ public:
 
         UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
         float MeleeRadius = 40.0f;
+
+        UPROPERTY(EditDefaultsOnly, Category = "Combat")
+        float MeleeCooldown = 0.8f;
+
+        float LastServerMeleeTime = 0.f;
 
         bool IsMeleeing() const;
 

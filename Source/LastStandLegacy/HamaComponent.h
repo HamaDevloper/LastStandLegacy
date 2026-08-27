@@ -38,8 +38,6 @@ public:
     void SetAiming(bool bNewAiming);
     void SetDowned(bool NewValue);
 
-    /** Helpers for state conditions */
-    bool CanSprint() const;
     bool CanDive() const;
 
     void SyncStatesFromCMC(bool bInSlide, bool bInDiving, bool bInSprinting);
@@ -95,6 +93,7 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float NormalDelayStamina = 0.5f;
 
+public:
     // --- REPLICATED STATES ---
     UPROPERTY(ReplicatedUsing = OnRep_Sprinting, EditAnywhere, BlueprintReadOnly, Category = "Hama|State")
     bool bIsSprinting = false;
@@ -111,6 +110,7 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_Dive, EditAnywhere, BlueprintReadOnly, Category = "Hama|State")
     bool bIsDiving = false;
 
+protected:
     // --- INTERNAL LOGIC ---
     void SetSprinting(bool bNewSprinting);
     void DrainStamina();

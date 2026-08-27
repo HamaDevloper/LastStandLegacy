@@ -202,26 +202,23 @@ void AZombie::ExecuteMeleeHit()
     }
 }
 
-float AZombie::TakeDamage(
-    float DamageAmount,
-    FDamageEvent const& DamageEvent,
-    AController* EventInstigator,
-    AActor* DamageCauser)
+float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
+    // 🟢 1. Authority & Death Check
     if (!HasAuthority() || bIsDead)
     {
         return 0.f;
     }
 
-    float DamageApplied =
-        Super::TakeDamage(
-            DamageAmount,
-            DamageEvent,
-            EventInstigator,
-            DamageCauser);
+    // 🟢 2. Super Call Safety Check
+    float DamageApplied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    if (DamageApplied <= 0.f && DamageAmount > 0.f)
+    {
+        // ئەگەر Super بڕی 0ی گەڕاندەوە، بەهۆی CanBeDamaged بووە، بڕە بنەڕەتیەکەی بدەرێ
+        DamageApplied = DamageAmount;
+    }
 
-    const bool bIsMelee =
-        DamageEvent.DamageTypeClass &&
+    const bool bIsMelee = DamageEvent.DamageTypeClass &&
         DamageEvent.DamageTypeClass->IsChildOf(UMeleeDamageType::StaticClass());
 
     bool bDoublePoints = false;
@@ -232,26 +229,26 @@ float AZombie::TakeDamage(
 
         if (CachedGS->bHasInstaKill)
         {
-            DamageApplied = Health;
+            DamageApplied = Health; // 🟢 InstaKill: ڕاستەوخۆ هەموو تەندروستی زۆمبییەکە دەبات
         }
     }
 
-    Health -= DamageApplied;
+    // 🟢 3. Health Reduction
+    Health = FMath::Clamp(Health - DamageApplied, 0.f, MaxHealth);
 
-    AHamaPlayerState* TargetPlayerState =
-        EventInstigator
-        ? EventInstigator->GetPlayerState<AHamaPlayerState>()
-        : nullptr;
+    // 🟢 4. PlayerState & Point Awarding Check
+    AHamaPlayerState* TargetPlayerState = nullptr;
+    if (EventInstigator)
+    {
+        TargetPlayerState = EventInstigator->GetPlayerState<AHamaPlayerState>();
+    }
 
     if (Health <= 0.f)
     {
         if (TargetPlayerState)
         {
             const int32 Points = bIsMelee ? 130 : 100;
-
-            TargetPlayerState->AddPoints(
-                bDoublePoints ? Points * 2 : Points);
-
+            TargetPlayerState->AddPoints(bDoublePoints ? Points * 2 : Points);
             TargetPlayerState->AddKills(1);
         }
 
@@ -260,9 +257,7 @@ float AZombie::TakeDamage(
     else if (TargetPlayerState)
     {
         const int32 Points = bIsMelee ? 20 : 10;
-
-        TargetPlayerState->AddPoints(
-            bDoublePoints ? Points * 2 : Points);
+        TargetPlayerState->AddPoints(bDoublePoints ? Points * 2 : Points);
     }
 
     return DamageApplied;
