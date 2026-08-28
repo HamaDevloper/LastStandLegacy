@@ -12,6 +12,10 @@ UHamaMovementComponent::UHamaMovementComponent()
 
     DefaultGroundFriction = 8.0f;
     DefaultBrakingDecelerationWalking = 2048.0f;
+
+    NetworkSmoothingMode = ENetworkSmoothingMode::Exponential;
+    NetworkMaxSmoothUpdateDistance = 192.0f;
+    NetworkNoSmoothUpdateDistance = 350.0f;
 }
 
 void UHamaMovementComponent::BeginPlay()
@@ -179,6 +183,11 @@ void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* C, float MaxDelta) const
 {
     const FSavedMove_Hama* Other = static_cast<const FSavedMove_Hama*>(NewMove.Get());
+
+    if (!Other)
+    {
+        return false;
+    }
 
     if (bSavedWantsToSprint != Other->bSavedWantsToSprint) return false;
     if (bSavedWantsToAim != Other->bSavedWantsToAim) return false;

@@ -24,10 +24,24 @@ AZombie::AZombie()
     SetNetUpdateFrequency(10.f);
     SetMinNetUpdateFrequency(2.f);
 
+    SetNetCullDistanceSquared(1600000000.0f);
+
     MaxHealth = BaseHealth;
     Health = MaxHealth;
 
     AttackDistanceSq = FMath::Square(AttackDistance);
+
+    UCapsuleComponent* Capsule = GetCapsuleComponent();
+    if (Capsule)
+    {
+        Capsule->SetCanEverAffectNavigation(false);
+        Capsule->SetGenerateOverlapEvents(false);
+    }
+
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        MeshComp->bComponentUseFixedSkelBounds = true;
+    }
 }
 
 void AZombie::PossessedBy(AController* NewController)
