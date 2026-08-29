@@ -71,10 +71,10 @@ void AZombie::BeginPlay()
             MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
             MeshComp->bCastFarShadow = false;
             MeshComp->SetGenerateOverlapEvents(false);
+            MeshComp->bEnableUpdateRateOptimizations = true;
         }
-        else
+        if (IsRunningDedicatedServer())
         {
-            MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
             MeshComp->bNoSkeletonUpdate = true;
         }
     }

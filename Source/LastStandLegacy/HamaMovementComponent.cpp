@@ -64,11 +64,6 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 {
     Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
-    if (bAiming)
-    {
-        bSprinting = false;
-    }
-
     if (bSlide && Velocity.SizeSquared2D() < FMath::Square(200.f))
     {
         bSlide = false;
@@ -88,7 +83,6 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         }
     }
 
-    // 🟢 [FIX 1]: دڵنیابوونەوە لەسەر زەوی بوون بەر لە دایڤ (ڕێگریکردن لە Mid-Air Dive Exploit)
     if (bDiving && !bWasDiving && IsMovingOnGround())
     {
         if (CharacterOwner)
@@ -98,6 +92,17 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 
             SetMovementMode(MOVE_Falling);
             CurrentFloor.Clear();
+        }
+    }
+
+    if (bSprinting)
+    {
+        if (UHamaComponent* HamaComp = GetHamaComp())
+        {
+            if (HamaComp->GetStamina() <= 0.f)
+            {
+                bSprinting = false;
+            }
         }
     }
 
@@ -114,7 +119,7 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 
     if (CharacterOwner && CharacterOwner->HasAuthority())
     {
-        if (bWasSliding != bSlide || bWasDiving != bDiving)
+        if (bWasSliding != bSlide || bWasDiving != bDiving || bWasSprinting != bSprinting)
         {
             if (UHamaComponent* HamaComp = GetHamaComp())
             {
@@ -125,6 +130,7 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 
     bWasSliding = bSlide;
     bWasDiving = bDiving;
+    bWasSprinting = bSprinting;
 }
 
 void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
@@ -183,11 +189,6 @@ void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* C, float MaxDelta) const
 {
     const FSavedMove_Hama* Other = static_cast<const FSavedMove_Hama*>(NewMove.Get());
-
-    if (!Other)
-    {
-        return false;
-    }
 
     if (bSavedWantsToSprint != Other->bSavedWantsToSprint) return false;
     if (bSavedWantsToAim != Other->bSavedWantsToAim) return false;

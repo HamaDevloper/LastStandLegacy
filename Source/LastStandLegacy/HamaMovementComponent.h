@@ -42,6 +42,7 @@ public:
 private:
     bool bWasSliding = false;
     bool bWasDiving = false;
+    bool bWasSprinting = false;
 
     TWeakObjectPtr<class UHamaComponent> CachedHamaComp;
     UHamaComponent* GetHamaComp();
