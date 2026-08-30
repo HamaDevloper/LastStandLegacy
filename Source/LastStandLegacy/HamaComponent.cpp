@@ -180,7 +180,7 @@ void UHamaComponent::DrainStamina()
     if (MoveComp->IsFalling()) return;
 
     FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
-    if (InputVector.SizeSquared() < 0.1f)
+    if (InputVector.SizeSquared() < 0.64f)
     {
         SetSprinting(false);
         return;
@@ -199,12 +199,6 @@ void UHamaComponent::DrainStamina()
 
     FVector CurrentVelocity = OwnerCharacter->GetVelocity();
     CurrentVelocity.Z = 0.f;
-
-    if (CurrentVelocity.SizeSquared() < FMath::Square(750.f))
-    {
-        SetSprinting(false);
-        return;
-    }
 
     if (!GSCache)
     {

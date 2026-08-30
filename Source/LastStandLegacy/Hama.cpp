@@ -1448,19 +1448,12 @@ void AHama::SwitchCameraReleased()
 bool AHama::IsMovingForward() const
 {
     const FVector InputVector = GetLastMovementInputVector();
-
-    const float MinSprintSpeedSq = 550.f * 550.f;
-    if (InputVector.IsNearlyZero() || GetVelocity().SizeSquared() < MinSprintSpeedSq)
-    {
-        return false;
-    }
+    if (InputVector.IsNearlyZero()) return false;
 
     const FVector Forward2D = GetActorForwardVector().GetSafeNormal2D();
     const FVector Input2D = InputVector.GetSafeNormal2D();
 
-    const float ForwardDot = FVector::DotProduct(Forward2D, Input2D);
-
-    return ForwardDot > 0.5f;
+    return FVector::DotProduct(Forward2D, Input2D) > 0.5f;
 }
 
 void AHama::SprintActionPressed()
@@ -1471,12 +1464,7 @@ void AHama::SprintActionPressed()
     if (IsSliding()) return;
     if (IsDiving()) return;
     if (GetCharacterMovement()->IsFalling()) return;
-
-    if (HamaComponent->IsAiming())
-    {
-        HamaComponent->SetAiming(false);
-        OnAim(false);
-    }
+    if (HamaComponent->IsAiming())   OnAim(false);
     if (bIsFireButtonHold && CurrentWeapon) CurrentWeapon->StopFire();
     if (CurrentWeapon && CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
     if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching()) UnCrouch();

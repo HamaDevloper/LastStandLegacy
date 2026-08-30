@@ -43,6 +43,7 @@ UHamaComponent* UHamaMovementComponent::GetHamaComp()
 float UHamaMovementComponent::GetMaxSpeed() const
 {
     if (bDowned) return DownSpeed;
+    if (IsCrouching()) return MaxWalkSpeedCrouched;
     if (bSlide) return SlideSpeed;
     if (bAiming) return AimSpeed;
     if (bSprinting) return SprintSpeed;
@@ -194,8 +195,6 @@ bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr
     if (bSavedWantsToAim != Other->bSavedWantsToAim) return false;
     if (bSavedWantsToDive != Other->bSavedWantsToDive) return false;
     if (bSavedWantsToSlide != Other->bSavedWantsToSlide) return false;
-    if (bSavedWasSliding != Other->bSavedWasSliding) return false;
-    if (bSavedWasDiving != Other->bSavedWasDiving) return false;
 
     return FSavedMove_Character::CanCombineWith(NewMove, C, MaxDelta);
 }
