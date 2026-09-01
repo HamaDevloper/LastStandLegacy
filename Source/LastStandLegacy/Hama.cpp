@@ -694,6 +694,19 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
         StopSprint();
     }
 
+    if (bIsDeathMachineActive)
+    {
+        if (HasAuthority())
+        {
+            RemoveDeathMachine();
+        }
+        else
+        {
+            Server_SwapWeapon(nullptr);
+        }
+        return;
+    }
+
     ABaseWeapon* NextWeapon = TargetWeapon;
   
     if (!NextWeapon)
@@ -755,8 +768,15 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 
 void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 {
-    if (!NewWeapon) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
+
+    if (bIsDeathMachineActive)
+    {
+        RemoveDeathMachine();
+        return;
+    }
+
+    if (!NewWeapon) return;
 
     if (NewWeapon != PrimaryWeapon && NewWeapon != SecondaryWeapon && NewWeapon != ThirdWeapon)
     {
@@ -812,6 +832,19 @@ void AHama::Multicast_PlaySwapMontage_Implementation(float PlayRate)
     }
 }
 
+void AHama::Multicast_StopSwapMontage_Implementation()
+{
+    if (IsLocallyControlled()) return;
+
+    if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+    {
+        if (SwapWeaponMontage && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+        {
+            AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
+        }
+    }
+}
+
 void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
     if (HasAuthority())
@@ -819,19 +852,27 @@ void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
         CompleteWeaponSwap();
     }
 
-    if (IsLocallyControlled() && !HasAuthority())
+    if (IsLocallyControlled())
     {
-        if (!bInterrupted && PendingWeaponForSwap && PendingWeaponForSwap->CanReload())
+        if (!HasAuthority() && !bInterrupted && PendingWeaponForSwap && PendingWeaponForSwap->CanReload())
         {
             PendingWeaponForSwap->Reload();
         }
+
         PendingWeaponForSwap = nullptr;
     }
 }
 
+
 void AHama::CompleteWeaponSwap()
 {
     if (!HasAuthority() || !PendingWeaponForSwap) return;
+
+    if (bIsDeathMachineActive)
+    {
+        PendingWeaponForSwap = nullptr;
+        return;
+    }
 
     ABaseWeapon* OldWeapon = CurrentWeapon;
 
@@ -872,6 +913,23 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
     if (!HasAuthority() || !WeaponClass) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
 
+    PendingWeaponForSwap = nullptr;
+
+    if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+    {
+        if (SwapWeaponMontage && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+        {
+            FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(SwapWeaponMontage);
+            if (MontageInstance)
+            {
+                MontageInstance->OnMontageEnded.Unbind();
+            }
+            AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
+        }
+    }
+
+    Multicast_StopSwapMontage();
+
     if (GetWorldTimerManager().IsTimerActive(DeathMachineTimerHandle))
     {
         GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
@@ -909,15 +967,32 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
-        OnRep_CurrentWeapon();
+
+        OnRep_CurrentWeapon(nullptr);
     }
 
     GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
 }
 
+void AHama::OnRep_bIsDeathMachineActive()
+{
+    if (bIsDeathMachineActive)
+    {
+        PendingWeaponForSwap = nullptr;
+
+        UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+        if (AnimInstance && SwapWeaponMontage && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+        {
+            AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
+        }
+    }
+}
+
 void AHama::RemoveDeathMachine()
 {
     if (!HasAuthority()) return;
+
+    GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
 
     ABaseWeapon* OldWeapon = CurrentWeapon;
 
@@ -951,7 +1026,6 @@ void AHama::RemoveDeathMachine()
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
         CurrentWeapon->SetActorHiddenInGame(false);
-        CurrentWeapon->SetActorEnableCollision(true);
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
 

@@ -168,12 +168,18 @@ protected:
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_PlaySwapMontage(float PlayRate);
 
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_StopSwapMontage();
+
     UFUNCTION()
     void OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 public:
     ABaseWeapon* GetNextWeaponWithAmmo() const;
     void AutoSwapToAvailableWeapon();
+
+    void ExecuteWeaponSwap();
+    void HandleWeaponSwapNotify();
 
     // -----------------------------------------------------------------------------
     // Input Mapping & Actions
@@ -414,8 +420,11 @@ public:
         class AStaticMeshActor* CurrentSpawnedBottle;
 
     public:
-        UPROPERTY(Replicated)
-        bool bIsDeathMachineActive = false;
+        UPROPERTY(ReplicatedUsing = OnRep_bIsDeathMachineActive)
+        bool bIsDeathMachineActive;
+
+        UFUNCTION()
+        void OnRep_bIsDeathMachineActive();
 
         UFUNCTION(NetMulticast, Reliable)
         void Multicast_PlayDrinkPerkAnimation(ABasePerk * TargetPerk);
