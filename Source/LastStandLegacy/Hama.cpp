@@ -689,6 +689,14 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
     if (HamaComponent && HamaComponent->IsDowned()) return;
     if (PendingWeaponForSwap != nullptr) return;
 
+    if (PendingWeaponForSwap != nullptr)
+    {
+        if (HasAuthority())
+        {
+            CompleteWeaponSwap();
+        }
+    }
+
     if(IsSprinting())
     {
         StopSprint();
@@ -740,7 +748,7 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 
     if (AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
     {
-        AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
+        AnimInstance->Montage_Stop(0.05f, SwapWeaponMontage);
     }
 
     PendingWeaponForSwap = NextWeapon;
@@ -755,6 +763,11 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
     }
 
     AnimInstance->Montage_Play(SwapWeaponMontage, TargetPlayRate);
+
+    if(HasAuthority())
+    {
+        Multicast_PlaySwapMontage(TargetPlayRate);
+    }
 
     FOnMontageEnded MontageEndedDelegate;
     MontageEndedDelegate.BindUObject(this, &AHama::OnSwapWeaponMontageEnded);
@@ -790,7 +803,7 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
         UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
         if (AnimInstance && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
         {
-            AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
+            AnimInstance->Montage_Stop(0.05f, SwapWeaponMontage);
         }
 
         float BasePlayRate = 1.0f;
@@ -806,7 +819,6 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
             BasePlayRate = 2.0f;
         }
 
-        PlayAnimMontage(SwapWeaponMontage, BasePlayRate);
         Multicast_PlaySwapMontage(BasePlayRate);
 
         if (AnimInstance)
@@ -845,13 +857,16 @@ void AHama::Multicast_StopSwapMontage_Implementation()
     }
 }
 
-void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+void AHama::HandleWeaponSwapNotify()
 {
     if (HasAuthority())
     {
         CompleteWeaponSwap();
     }
+}
 
+void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
     if (IsLocallyControlled())
     {
         if (!HasAuthority() && !bInterrupted && PendingWeaponForSwap && PendingWeaponForSwap->CanReload())
@@ -1947,17 +1962,9 @@ void AHama::MeleeActionPressed()
 {
     if (IsMeleeing() || IsDrinkingPerk()) return;
 
-    if (bIsAimButtonHold)
-    {
-        AimActionReleased();
-    }
+    if (bIsAimButtonHold) AimActionReleased();
+    if (IsSprinting()) StopSprint();
 
-    if (IsSprinting())
-    {
-        StopSprint();
-    }
-
-    // 🟢 [Client-Side Prediction]: کڵاینتی خۆت دەستبەجێ ئەنیمەیشن لێدەداتەوە تا Input Lag دروست نەبێت
     if (MeleeAttackMontage)
     {
         PlayAnimMontage(MeleeAttackMontage);
@@ -1969,6 +1976,15 @@ void AHama::MeleeActionPressed()
 void AHama::Server_ExecuteMelee_Implementation()
 {
     if (IsDrinkingPerk()) return;
+
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (CurrentTime - LastServerMeleeTime < (MeleeCooldown * 0.8f))
+    {
+        return;
+    }
+
+    LastServerMeleeTime = CurrentTime;
+
     Multicast_ExecuteMelee();
 }
 
@@ -1982,87 +1998,113 @@ void AHama::Multicast_ExecuteMelee_Implementation()
 
 void AHama::PerformMeleeHitDetection()
 {
-    if (!IsLocallyControlled()) return;
+    if (!IsLocallyControlled() && !HasAuthority()) return;
+    if (!GetMesh()) return;
 
-    FVector CameraLocation;
-    FRotator ViewRotation;
+    const FVector SocketLocation = GetMesh()->GetSocketLocation(MeleeSocketName);
+    const FVector ForwardVector = GetActorForwardVector();
+    const FVector TraceEnd = SocketLocation + (ForwardVector * MeleeRange);
 
-    if (OwnerController)
-    {
-        OwnerController->GetPlayerViewPoint(CameraLocation, ViewRotation);
-    }
-    else
-    {
-        CameraLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f);
-        ViewRotation = GetActorRotation();
-    }
-
-    const FVector StartLocation = CameraLocation;
-    const FVector EndLocation = StartLocation + (ViewRotation.Vector() * MeleeRange);
-
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeSweep), false);
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeTrace), false);
     Params.AddIgnoredActor(this);
     if (CurrentWeapon) Params.AddIgnoredActor(CurrentWeapon);
 
     FHitResult HitResult;
-    FCollisionShape MeleeSphere = FCollisionShape::MakeSphere(MeleeRadius);
+    FCollisionShape SphereShape = FCollisionShape::MakeSphere(MeleeRadius);
 
     bool bHit = GetWorld()->SweepSingleByChannel(
         HitResult,
-        StartLocation,
-        EndLocation,
+        SocketLocation,
+        TraceEnd,
         FQuat::Identity,
         ECC_Melee,
-        MeleeSphere,
+        SphereShape,
         Params
     );
 
+#if ENABLE_DRAW_DEBUG
+    FColor DebugColor = bHit ? FColor::Green : FColor::Red;
+    const FVector TargetEndLoc = bHit ? HitResult.ImpactPoint : TraceEnd;
+
+    DrawDebugSphere(GetWorld(), SocketLocation, MeleeRadius, 12, DebugColor, false, 1.5f, 0, 1.0f);
+    DrawDebugSphere(GetWorld(), TargetEndLoc, MeleeRadius, 12, DebugColor, false, 1.5f, 0, 1.0f);
+    DrawDebugLine(GetWorld(), SocketLocation, TargetEndLoc, DebugColor, false, 1.5f, 0, 1.5f);
+#endif
+
     if (bHit && IsValid(HitResult.GetActor()))
     {
-        AActor* HitActor = HitResult.GetActor();
-        IDamageableInterface* DamageableActor = Cast<IDamageableInterface>(HitActor);
-
+        IDamageableInterface* DamageableActor = Cast<IDamageableInterface>(HitResult.GetActor());
         if (DamageableActor && DamageableActor->CanReceiveWeaponDamage())
         {
-            Server_ValidateMeleeHit(HitActor, HitResult.ImpactPoint);
+            if (HasAuthority())
+            {
+                ApplyMeleeDamageInternal(HitResult.GetActor(), HitResult.ImpactPoint);
+            }
+            else
+            {
+                Server_ValidateMeleeHit(HitResult.GetActor(), HitResult.ImpactPoint);
+            }
         }
     }
 }
 
 void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_NetQuantize HitLocation)
 {
-    if (!IsValid(HitActor)) return;
-
-    // Rate Limiting
-    const float CurrentTime = GetWorld()->GetTimeSeconds();
-    if (CurrentTime - LastServerMeleeTime < (MeleeCooldown * 0.7f))
+    // 🔴 RETURN 1: ئاکتەرەکە دروست نییە (Invalid)
+    if (!IsValid(HitActor))
     {
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, TEXT("[Server Reject]: HitActor is Invalid"));
+        }
         return;
     }
-    LastServerMeleeTime = CurrentTime;
 
-    // Interface Check
+    // 🔴 RETURN 2: کاتی نێوان هێرش و لێدان زۆر زۆری پێچووە (Expired Window / Timing Issue)
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    if ((CurrentTime - LastServerMeleeTime) > (MeleeCooldown + 1.2f))
+    {
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, TEXT("[Server Reject]: Melee Attack Window Expired!"));
+        }
+        return;
+    }
+
+    // 🔴 RETURN 3: ئاکتەرەکە Interfaceی Damageableی نییە یان ئامادە نییە دیمەج وەربگرێت
     IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor);
-    if (!Damageable || !Damageable->CanReceiveWeaponDamage()) return;
+    if (!Damageable || !Damageable->CanReceiveWeaponDamage())
+    {
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("[Server Reject]: %s cannot receive damage"), *HitActor->GetName()));
+        }
+        return;
+    }
 
-    // 🟢 [FIX 3]: پێوانی دووری بەراورد بە HitLocation (نەک Actor Center Location)
+    // 🔴 RETURN 4: دووری لە ڕادەبەدەرە (Distance Exploit)
     const FVector PlayerLoc = GetActorLocation();
     const float MaxAllowedDistanceSq = FMath::Square(MeleeRange + MeleeRadius + 100.f);
     const float ActualDistSq = FVector::DistSquared(PlayerLoc, HitLocation);
 
     if (ActualDistSq > MaxAllowedDistanceSq)
     {
-        return; // Too Far Exploit Rejected
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("[Server Reject]: Distance Too Far! Max: %.1f | Actual: %.1f"), FMath::Sqrt(MaxAllowedDistanceSq), FMath::Sqrt(ActualDistSq)));
+        }
+        return;
     }
 
-    // Anti-Wallhack Check
+    // Line Trace parameters setup
     FHitResult WallHit;
     FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(MeleeLoS), false, this);
     TraceParams.AddIgnoredActor(HitActor);
     if (CurrentWeapon) TraceParams.AddIgnoredActor(CurrentWeapon);
 
     const FVector EyeLocation = PlayerLoc + FVector(0.f, 0.f, 50.f);
-    bool bBlockedByWall = GetWorld()->LineTraceSingleByChannel(
+
+    const bool bBlockedByWall = GetWorld()->LineTraceSingleByChannel(
         WallHit,
         EyeLocation,
         HitLocation,
@@ -2070,15 +2112,44 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
         TraceParams
     );
 
-    if (bBlockedByWall) return; // Wallhack Rejected
+#if ENABLE_DRAW_DEBUG
+    FColor LineColor = bBlockedByWall ? FColor::Red : FColor::Green;
+    DrawDebugLine(GetWorld(), EyeLocation, HitLocation, LineColor, false, 2.0f, 0, 1.5f);
 
-    // 🟢 SUCCESS: دەستنیشانکردنی دیمەج تەنها لە سەرڤەردا بە ۱ جار
+    if (bBlockedByWall && WallHit.bBlockingHit)
+    {
+        DrawDebugPoint(GetWorld(), WallHit.ImpactPoint, 12.0f, FColor::Red, false, 2.0f);
+    }
+#endif
+
+    // 🔴 RETURN 5: دیواری لە نێواندا هەیە (Wallhack Reject)
+    if (bBlockedByWall)
+    {
+        if (GEngine)
+        {
+            FString WallName = IsValid(WallHit.GetActor()) ? WallHit.GetActor()->GetName() : TEXT("Static Mesh");
+            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("[Server Reject]: Line of Sight Blocked by: %s"), *WallName));
+        }
+        return;
+    }
+
+    // 🟢 SUCCESS: سەرکەوتوو بوو و دیمەجەکە دەدرێت
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("[Server Success]: Valid Hit on %s"), *HitActor->GetName()));
+    }
+
+    ApplyMeleeDamageInternal(HitActor, HitLocation);
+}
+
+void AHama::ApplyMeleeDamageInternal(AActor* HitActor, const FVector& HitLocation)
+{
     FPointDamageEvent PointDamageEvent;
     PointDamageEvent.Damage = MeleeDamage;
 
-    FHitResult ServerHit(HitActor, nullptr, HitLocation, (HitLocation - PlayerLoc).GetSafeNormal());
-    PointDamageEvent.HitInfo = ServerHit;
-    PointDamageEvent.ShotDirection = (HitLocation - PlayerLoc).GetSafeNormal();
+    const FVector HitDir = (HitLocation - GetActorLocation()).GetSafeNormal();
+    PointDamageEvent.HitInfo = FHitResult(HitActor, nullptr, HitLocation, HitDir);
+    PointDamageEvent.ShotDirection = HitDir;
     PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
 
     HitActor->TakeDamage(MeleeDamage, PointDamageEvent, GetController(), this);

@@ -153,6 +153,8 @@ public:
     UPROPERTY(Replicated)
     TSubclassOf<ABaseWeapon> CurrentlyUpgradingWeaponClass;
 
+    void HandleWeaponSwapNotify();
+
 protected:
     UPROPERTY()
     TObjectPtr<ABaseWeapon> PendingWeaponForSwap;
@@ -177,9 +179,6 @@ protected:
 public:
     ABaseWeapon* GetNextWeaponWithAmmo() const;
     void AutoSwapToAvailableWeapon();
-
-    void ExecuteWeaponSwap();
-    void HandleWeaponSwapNotify();
 
     // -----------------------------------------------------------------------------
     // Input Mapping & Actions
@@ -491,21 +490,26 @@ public:
         UFUNCTION(NetMulticast, Unreliable)
         void Multicast_ExecuteMelee();
 
-        UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+        UPROPERTY(EditDefaultsOnly, Category = "Hama|Melee")
         float MeleeDamage = 150.0f;
 
-        UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+        UPROPERTY(EditDefaultsOnly, Category = "Hama|Melee")
         float MeleeRange = 150.0f;
 
-        UPROPERTY(EditDefaultsOnly, Category = "Hama | Melee")
+        UPROPERTY(EditDefaultsOnly, Category = "Hama|Melee")
         float MeleeRadius = 40.0f;
 
-        UPROPERTY(EditDefaultsOnly, Category = "Combat")
+        UPROPERTY(EditDefaultsOnly, Category = "Hama|Melee")
         float MeleeCooldown = 0.8f;
+
+        UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Melee")
+        FName MeleeSocketName = TEXT("Hand_R");
 
         float LastServerMeleeTime = 0.f;
 
         bool IsMeleeing() const;
+
+        void ApplyMeleeDamageInternal(AActor* HitActor, const FVector& HitLocation);
 
     public:
         void PerformMeleeHitDetection();
