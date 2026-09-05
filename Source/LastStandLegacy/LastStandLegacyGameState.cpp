@@ -97,11 +97,6 @@ void ALastStandLegacyGameState::OnRep_PowerOn()
     {
         OnPowerStateChangedDelegate.Broadcast(bIsPowerOn);
     }
-
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Yellow, FString::Printf(TEXT("CLIENT: Power State Replicated: %s"), bIsPowerOn ? TEXT("ON") : TEXT("OFF")));
-    }
 }
 
 void ALastStandLegacyGameState::StartTeamAdrenaline(float Duration)

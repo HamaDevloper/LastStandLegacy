@@ -719,7 +719,7 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
   
     if (!NextWeapon)
     {
-        if (CurrentWeapon == PrimaryWeapon)
+        if (CurrentWeapon == PrimaryWeapon)+
         {
             if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
             else if (ThirdWeapon) NextWeapon = ThirdWeapon;
@@ -1590,12 +1590,19 @@ void AHama::OnSprintStopped()
 
 void AHama::AbilityActionPressed()
 {
-    if (HamaComponent && HamaComponent->IsDowned()) return;
+    if (HealthComponent && HealthComponent->IsDowned()) return;
     if (IsDrinkingPerk()) return;
-    if (!HamaAbilityComponent || !HamaAbilityComponent->IsPowerFull()) return;
+    if (!HamaAbilityComponent || !HamaAbilityComponent->IsPowerFull() || HamaAbilityComponent->IsAbilityActive()) return;
+    if (HamaAbilityComponent->GetAssignedAbility() == EHamaAbilityType::MedicalSupport)
+    {
+        if (!HamaAbilityComponent->CanActivateMedicalSupportLocal())
+        {
+            return;
+        }
+    }
+
     HamaAbilityComponent->Server_ActivateAbility();
 }
-
 
 void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
 {

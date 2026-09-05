@@ -16,14 +16,25 @@ UHamaAbilityComponent::UHamaAbilityComponent()
 void UHamaAbilityComponent::BeginPlay()
 {
     Super::BeginPlay();
+    CachedOwner = Cast<AHama>(GetOwner());
+}
 
-    if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+ALastStandLegacyGameState* UHamaAbilityComponent::GetGameState()
+{
+    if (!CachedGameState && GetWorld())
     {
-        if (AHamaPlayerState* PS = OwnerPawn->GetPlayerState<AHamaPlayerState>())
-        {
-            SetAssignedAbility(PS->GetAssignedRole());
-        }
+        CachedGameState = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     }
+    return CachedGameState;
+}
+
+UZombieDirectorSubsystem* UHamaAbilityComponent::GetZombieDirector()
+{
+    if (!CachedDirector && GetWorld())
+    {
+        CachedDirector = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>();
+    }
+    return CachedDirector;
 }
 
 void UHamaAbilityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -60,6 +71,12 @@ void UHamaAbilityComponent::AddPower(float Amount)
     }
 }
 
+bool UHamaAbilityComponent::IsAbilityActive() const
+{
+    return bIsAbilityActive;
+}
+
+
 void UHamaAbilityComponent::StartAbilityCooldown(float Duration)
 {
     bIsAbilityActive = true;
@@ -78,7 +95,7 @@ void UHamaAbilityComponent::StartAbilityCooldown(float Duration)
         );
     }
 
-    if (GetOwner() && GetOwner()->HasAuthority())
+    if (GetOwner() && GetOwner()->HasAuthority() && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_IsAbilityActive();
     }
@@ -89,13 +106,12 @@ void UHamaAbilityComponent::EndAbilityCooldown()
     bIsAbilityActive = false;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsAbilityActive, this);
 
-    // ⚡ کاتێک Cooldown تەواو بوو، ئەگەر Ghost Mode چالاک بوو دەبێت بکوژێنرێتەوە
     if (bIsGhost)
     {
         DeactivateGhostMode();
     }
 
-    if (GetOwner() && GetOwner()->HasAuthority())
+    if (GetOwner() && GetOwner()->HasAuthority() && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_IsAbilityActive();
     }
@@ -103,7 +119,7 @@ void UHamaAbilityComponent::EndAbilityCooldown()
 
 void UHamaAbilityComponent::OnRep_IsAbilityActive()
 {
-    // Broadcast لێرەدا دەکرێت بۆ UI
+    // Broadcast بۆ UI
 }
 
 void UHamaAbilityComponent::ResetPower()
@@ -142,6 +158,8 @@ void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
 {
     if (CurrentPower < MaxPower || bIsAbilityActive || CurrentAssignedAbility == EHamaAbilityType::None) return;
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+    if (!CachedOwner || CachedOwner->IsDrinkingPerk()) return;
+    if (CachedOwner->IsDowned()) return;
 
     switch (CurrentAssignedAbility)
     {
@@ -165,54 +183,66 @@ void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
 
 void UHamaAbilityComponent::ActivateBulletStorm()
 {
-    UWorld* World = GetWorld();
-    if (!World) return;
-
-    if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+    if (ALastStandLegacyGameState* GS = GetGameState())
     {
         GS->StartGlobalBulletStorm(AbilityDuration);
         StartAbilityCooldown(AbilityDuration);
     }
 }
 
-void UHamaAbilityComponent::ActivateMedicalSupport()
+bool UHamaAbilityComponent::CanActivateMedicalSupportLocal() const
 {
-    AActor* Owner = GetOwner();
-    if (!Owner || !Owner->HasAuthority()) return;
+    ALastStandLegacyGameState* GS = GetGameState();
+    if (!GS || !CachedOwner) return false;
 
-    UWorld* World = GetWorld();
-    if (!World) return;
-
-    ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
-    if (!GS) return;
-
-    const FVector CenterLocation = Owner->GetActorLocation();
+    const FVector CenterLocation = CachedOwner->GetActorLocation();
     const float SphereRadiusSq = FMath::Square(SphereRadius);
-    bool bSuccessfullyRevivedSomeone = false;
 
     for (APlayerState* PS : GS->PlayerArray)
     {
         if (!PS) continue;
 
         AHama* TargetHama = Cast<AHama>(PS->GetPawn());
-        if (!TargetHama || TargetHama == Owner) continue;
+        if (!TargetHama || TargetHama == CachedOwner) continue;
 
-        UHealthComponent* TargetHealth = TargetHama->HealthComponent;
-        if (!TargetHealth) continue;
-
-        if (FVector::DistSquared(CenterLocation, TargetHama->GetActorLocation()) <= SphereRadiusSq)
+        if (TargetHama->HealthComponent && TargetHama->HealthComponent->IsDowned())
         {
-            if (TargetHealth->IsDowned())
+            if (FVector::DistSquared(CenterLocation, TargetHama->GetActorLocation()) <= SphereRadiusSq)
             {
-                TargetHealth->Revive();
-                bSuccessfullyRevivedSomeone = true;
+                return true;
             }
         }
     }
 
-    if (bSuccessfullyRevivedSomeone)
+    return false;
+}
+
+
+void UHamaAbilityComponent::ActivateMedicalSupport()
+{
+    ALastStandLegacyGameState* GS = GetGameState();
+    if (!CachedOwner || !CachedOwner->HasAuthority() || !GS) return;
+
+    const FVector CenterLocation = CachedOwner->GetActorLocation();
+    const float SphereRadiusSq = FMath::Square(SphereRadius);
+    bool bRevivedAnyPlayer = false;
+
+    for (APlayerState* PS : GS->PlayerArray)
     {
-        ResetPower();
+        if (!PS) continue;
+
+        AHama* TargetHama = Cast<AHama>(PS->GetPawn());
+        if (!TargetHama || TargetHama == CachedOwner) continue;
+
+        UHealthComponent* TargetHealth = TargetHama->HealthComponent;
+        if (TargetHealth && TargetHealth->IsDowned())
+        {
+            if (FVector::DistSquared(CenterLocation, TargetHama->GetActorLocation()) <= SphereRadiusSq)
+            {
+                TargetHealth->Revive();
+                bRevivedAnyPlayer = true;
+            }
+        }
     }
 }
 
@@ -223,22 +253,20 @@ void UHamaAbilityComponent::ActivateGhostMode()
     bIsGhost = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsGhost, this);
 
-    if (GetOwner() && GetOwner()->HasAuthority())
+    if (UZombieDirectorSubsystem* Director = GetZombieDirector())
     {
-        if (UWorld* World = GetWorld())
+        if (CachedOwner && CachedOwner->HasAuthority())
         {
-            if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
-            {
-                if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
-                {
-                    Director->SetPlayerTargetable(OwnerPawn, false);
-                }
-            }
+            Director->SetPlayerTargetable(CachedOwner, false);
         }
     }
 
     StartAbilityCooldown(AbilityDuration);
-    OnRep_IsGhost();
+
+    if (GetNetMode() != NM_DedicatedServer)
+    {
+        OnRep_IsGhost();
+    }
 }
 
 void UHamaAbilityComponent::DeactivateGhostMode()
@@ -248,21 +276,18 @@ void UHamaAbilityComponent::DeactivateGhostMode()
     bIsGhost = false;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsGhost, this);
 
-    if (GetOwner() && GetOwner()->HasAuthority())
+    if (UZombieDirectorSubsystem* Director = GetZombieDirector())
     {
-        if (UWorld* World = GetWorld())
+        if (CachedOwner && CachedOwner->HasAuthority())
         {
-            if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
-            {
-                if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
-                {
-                    Director->SetPlayerTargetable(OwnerPawn, true);
-                }
-            }
+            Director->SetPlayerTargetable(CachedOwner, true);
         }
     }
 
-    OnRep_IsGhost();
+    if (GetNetMode() != NM_DedicatedServer)
+    {
+        OnRep_IsGhost();
+    }
 }
 
 void UHamaAbilityComponent::OnRep_IsGhost()
@@ -282,10 +307,7 @@ void UHamaAbilityComponent::OnRep_IsGhost()
 
 void UHamaAbilityComponent::ActivateBlitz()
 {
-    UWorld* World = GetWorld();
-    if (!World) return;
-
-    if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+    if (ALastStandLegacyGameState* GS = GetGameState())
     {
         GS->StartTeamAdrenaline(BlitzAbilityDuration);
         StartAbilityCooldown(BlitzAbilityDuration);
@@ -294,8 +316,7 @@ void UHamaAbilityComponent::ActivateBlitz()
 
 void UHamaAbilityComponent::StopAllAbilities()
 {
-    UWorld* World = GetWorld();
-    if (World)
+    if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(AbilityDurationTimerHandle);
     }

@@ -6,6 +6,9 @@
 #include "Components/ActorComponent.h"
 #include "HamaAbilityComponent.generated.h"
 
+class AHama;
+class ALastStandLegacyGameState;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPowerChangedSignature, float, NewPower);
 
 UENUM(BlueprintType)
@@ -100,4 +103,22 @@ protected:
 private:
     FTimerHandle GhostTimerHandle;
     FTimerHandle AbilityDurationTimerHandle;
+
+    UPROPERTY()
+    TObjectPtr<AHama> CachedOwner;
+
+    UPROPERTY()
+    TObjectPtr<ALastStandLegacyGameState> CachedGameState;
+
+    UPROPERTY()
+    TObjectPtr<UZombieDirectorSubsystem> CachedDirector;
+
+    ALastStandLegacyGameState* GetGameState();
+
+    UZombieDirectorSubsystem* GetZombieDirector();
+
+
+public:
+    bool CanActivateMedicalSupportLocal() const;
+    bool IsAbilityActive() const;
 };
