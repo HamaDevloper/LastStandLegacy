@@ -551,7 +551,7 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
 
 void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 {
-    if (PreviousWeapon)
+    if (IsValid(PreviousWeapon))
     {
         PreviousWeapon->OnAmmoChanged.Unbind();
     }
@@ -719,7 +719,7 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
   
     if (!NextWeapon)
     {
-        if (CurrentWeapon == PrimaryWeapon)+
+        if (CurrentWeapon == PrimaryWeapon)
         {
             if (SecondaryWeapon) NextWeapon = SecondaryWeapon;
             else if (ThirdWeapon) NextWeapon = ThirdWeapon;
@@ -1630,7 +1630,7 @@ void AHama::ApplyRoleVisuals(EHamaAbilityType NewRole)
 
 void AHama::Server_StartPerkDrink(ABasePerk* TargetPerk)
 {
-    if (!TargetPerk || !HasAuthority() || IsDowned() || bIsDead) return;
+    if (!TargetPerk || bIsDead || !HasAuthority() || IsDowned()) return;
     if (DrinkingPerkTimer()) return;
 
     PendingPerkID = TargetPerk->GetPerkID();

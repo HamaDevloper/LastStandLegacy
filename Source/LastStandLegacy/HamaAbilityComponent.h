@@ -8,6 +8,7 @@
 
 class AHama;
 class ALastStandLegacyGameState;
+class UZombieDirectorSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPowerChangedSignature, float, NewPower);
 
@@ -108,14 +109,14 @@ private:
     TObjectPtr<AHama> CachedOwner;
 
     UPROPERTY()
-    TObjectPtr<ALastStandLegacyGameState> CachedGameState;
+    mutable TObjectPtr<ALastStandLegacyGameState> CachedGameState;
 
     UPROPERTY()
-    TObjectPtr<UZombieDirectorSubsystem> CachedDirector;
+    mutable TObjectPtr<UZombieDirectorSubsystem> CachedDirector;
 
-    ALastStandLegacyGameState* GetGameState();
+    ALastStandLegacyGameState* GetGameState() const;
 
-    UZombieDirectorSubsystem* GetZombieDirector();
+    UZombieDirectorSubsystem* GetZombieDirector() const;
 
 
 public:

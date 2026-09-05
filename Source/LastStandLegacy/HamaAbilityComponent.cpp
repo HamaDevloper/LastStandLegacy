@@ -19,7 +19,7 @@ void UHamaAbilityComponent::BeginPlay()
     CachedOwner = Cast<AHama>(GetOwner());
 }
 
-ALastStandLegacyGameState* UHamaAbilityComponent::GetGameState()
+ALastStandLegacyGameState* UHamaAbilityComponent::GetGameState() const
 {
     if (!CachedGameState && GetWorld())
     {
@@ -28,7 +28,7 @@ ALastStandLegacyGameState* UHamaAbilityComponent::GetGameState()
     return CachedGameState;
 }
 
-UZombieDirectorSubsystem* UHamaAbilityComponent::GetZombieDirector()
+UZombieDirectorSubsystem* UHamaAbilityComponent::GetZombieDirector() const
 {
     if (!CachedDirector && GetWorld())
     {
