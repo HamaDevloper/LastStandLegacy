@@ -65,7 +65,7 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 {
     Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
-    if (bSlide && Velocity.SizeSquared2D() < FMath::Square(200.f))
+    if (bSlide && Velocity.SizeSquared2D() < FMath::Square(50.f))
     {
         bSlide = false;
     }

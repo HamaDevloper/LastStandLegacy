@@ -44,7 +44,14 @@ void UHamaComponent::SetAiming(bool bNewAiming)
     if (bIsAiming == bNewAiming) return;
     bIsAiming = bNewAiming;
 
-    if (MoveComp) MoveComp->bAiming = bIsAiming;
+    if (MoveComp)
+    {
+        MoveComp->bAiming = bIsAiming;
+        if (bIsAiming)
+        {
+            MoveComp->bSprinting = false;
+        }
+    }
 
     if (bNewAiming)
     {

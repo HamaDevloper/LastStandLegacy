@@ -1923,17 +1923,10 @@ void AHama::GamepadXActionPressed(const FInputActionInstance& Instance)
 
 void AHama::GamepadXActionReleased()
 {
-    if (IsDrinkingPerk()) return;
-
     if (bIsxButtonHolded)
     {
         bIsxButtonHolded = false;
-
-        if (bIsCurrentlyReviving)
-        {
-            bIsCurrentlyReviving = false;
-            Server_CancelRevive();
-        }
+        InteractActionReleased();
     }
     else
     {
@@ -1945,8 +1938,9 @@ void AHama::Server_Interact_Implementation(AActor* InteractTarget)
 {
     if (!InteractTarget) return;
 
-    float Distance = FVector::Dist(GetActorLocation(), InteractTarget->GetActorLocation());
-    if (Distance > 300.f) return;
+    GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, FString::Printf(TEXT("Server_Interact called for: %s"), *InteractTarget->GetName()));
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractTarget->GetActorLocation());
+    if (DistSq > FMath::Square(350.f)) return;
 
     IInteractInterface* Interface = Cast<IInteractInterface>(InteractTarget);
     if (Interface)
@@ -2057,7 +2051,6 @@ void AHama::PerformMeleeHitDetection()
 
 void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_NetQuantize HitLocation)
 {
-    // 🔴 RETURN 1: ئاکتەرەکە دروست نییە (Invalid)
     if (!IsValid(HitActor))
     {
         if (GEngine)
