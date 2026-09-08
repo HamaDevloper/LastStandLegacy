@@ -125,8 +125,6 @@ void AMysteryBox::CacheWeaponMeshes()
 
 void AMysteryBox::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    GetWorldTimerManager().ClearTimer(TimerHandle_InitialSetup);
-    GetWorldTimerManager().ClearTimer(TimerHandle_VisualSpinCycle);
     GetWorldTimerManager().ClearAllTimersForObject(this);
 
     if (HasAuthority())
@@ -162,7 +160,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
 
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive || InteractingPlayer->IsDrinkingPerk())
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->GetDeathMachine() || InteractingPlayer->IsDrinkingPerk())
     {
         return false;
     }

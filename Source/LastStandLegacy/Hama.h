@@ -6,8 +6,9 @@
 #include "GameFramework/Character.h"
 #include "HamaComponent.h"
 #include "HealthComponent.h"
-#include "BaseWeapon.h"
 #include "HamaAbilityComponent.h"
+#include "ThrowableComponent.h"
+#include "BaseWeapon.h"
 #include "InteractInterface.h"
 #include "Hama.generated.h"
 
@@ -77,6 +78,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<UHamaAbilityComponent> HamaAbilityComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|Equipment", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UThrowableComponent> ThrowableComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<USpringArmComponent> SpringArm;
@@ -227,8 +231,11 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> GamepadXAction;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Hama | Input")
+    UPROPERTY(EditDefaultsOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> MeleeAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> ThrowInputAction;
 
     // -----------------------------------------------------------------------------
     // UI & HUD (MainWidgetRef Removed)
@@ -336,6 +343,7 @@ protected:
     void AbilityActionPressed();
     void MeleeActionPressed();
     void InteractActionReleased();
+    void OnThrowPressed();
 
 protected:
     static const float CrossHairTimer;

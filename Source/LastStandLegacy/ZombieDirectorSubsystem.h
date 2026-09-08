@@ -10,6 +10,17 @@ class APawn;
 class AMysteryBoxSpawnPoint;
 class AMysteryBox;
 
+USTRUCT(BlueprintType)
+struct FAttractorData
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    TWeakObjectPtr<AActor> AttractorActor;
+
+    float RadiusSq = 0.0f;
+};
+
 UCLASS()
 class LASTSTANDLEGACY_API UZombieDirectorSubsystem : public UTickableWorldSubsystem
 {
@@ -39,6 +50,9 @@ public:
 
     void RegisterMysteryBox(AMysteryBox* Box);
     void UnregisterMysteryBox(AMysteryBox* Box);
+
+    void RegisterAttractor(AActor* AttractorActor, float Radius);
+    void UnregisterAttractor(AActor* AttractorActor);
 
     void StartFireSale(float Duration);
     void EndFireSale();
@@ -78,4 +92,9 @@ private:
     FSpatialHashGrid2D SpatialGrid;
 
     int32 CurrentZombieIndex = 0;
+
+    UPROPERTY()
+    TArray<FAttractorData> ActiveAttractors;
+
+    void CleanInvalidAttractors();
 };

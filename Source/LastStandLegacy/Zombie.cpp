@@ -10,6 +10,7 @@
 #include "MeleeDamageType.h"
 #include "ZombieDirectorSubsystem.h"
 #include "Engine/AssetManager.h"
+#include "Engine/DamageEvents.h"
 
 AZombie::AZombie()
 {
@@ -116,7 +117,7 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
     Params.bIsPushBased = true;
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, bIsDead, Params);
-  
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, CurrentTarget, Params);
     DOREPLIFETIME_CONDITION(AZombie, MeshIndexSelected, COND_InitialOnly);
     DOREPLIFETIME_CONDITION(AZombie, MaxHealth, COND_InitialOnly);
 }

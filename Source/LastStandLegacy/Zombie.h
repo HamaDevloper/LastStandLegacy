@@ -25,9 +25,8 @@ public:
 
     void SetStatsForRound(int32 CurrentRound);
 
-    // گۆڕاوە نوێیەکان بۆ Subsystem
-    UPROPERTY(Transient)
-    APawn* CurrentTarget = nullptr;
+    UPROPERTY(BlueprintReadOnly, Replicated)
+    TObjectPtr<AActor> CurrentTarget;
 
     UPROPERTY(Transient)
     FVector LastTargetLocation = FVector::ZeroVector;

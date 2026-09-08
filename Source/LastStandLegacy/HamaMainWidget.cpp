@@ -160,7 +160,18 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
 {
     if (!Ammo) return;
 
-    if (CachedHamaChar && CachedHamaChar->GetDeathMachine())
+    if (!CachedHamaChar || !CachedHamaChar->GetCurrentWeapon())
+    {
+        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Green, "No Weapon Avalible");
+        Ammo->SetText(FText::GetEmpty());
+        if (AmmoWarningText)
+        {
+            AmmoWarningText->SetVisibility(ESlateVisibility::Hidden);
+        }
+        return;
+    }
+
+    if (CachedHamaChar->GetDeathMachine())
     {
         static const FText InfinityText = LOCTEXT("InfinityAmmo", "\u221E / \u221E");
         Ammo->SetText(InfinityText);
@@ -175,8 +186,7 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
     static const FText AmmoFormatPattern = LOCTEXT("AmmoFormat", "{0} / {1}");
     Ammo->SetText(FText::Format(AmmoFormatPattern, CurrentText, ReserveText));
 
-    ABaseWeapon* CurrentWeapon = CachedHamaChar ? CachedHamaChar->GetCurrentWeapon() : nullptr;
-
+    ABaseWeapon* CurrentWeapon = CachedHamaChar->GetCurrentWeapon();
     if (AmmoWarningText && CurrentWeapon)
     {
         int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo();

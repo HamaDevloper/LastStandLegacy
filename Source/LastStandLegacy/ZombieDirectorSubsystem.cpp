@@ -5,6 +5,7 @@
 #include "Navigation/PathFollowingComponent.h"
 #include "Engine/World.h"
 #include "MysteryBox.h"
+#include "Kismet/GameplayStatics.h"
 
 void UZombieDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -61,8 +62,8 @@ void UZombieDirectorSubsystem::RegisterPlayer(APawn* Player)
 {
     if (Player && !ActivePlayers.Contains(Player))
     {
-      /*  ActivePlayers.Add(Player);
-        SetPlayerTargetable(Player, true);*/
+        ActivePlayers.Add(Player);
+        SetPlayerTargetable(Player, true);
     }
 }
 
@@ -98,6 +99,56 @@ void UZombieDirectorSubsystem::SetPlayerTargetable(APawn* Player, bool bIsTarget
     }
 }
 
+// ==========================================
+// Attractor / Monkey Bomb Registration
+// ==========================================
+
+void UZombieDirectorSubsystem::RegisterAttractor(AActor* AttractorActor, float Radius)
+{
+    if (!AttractorActor || GetWorld()->GetNetMode() == NM_Client) return;
+
+    // ڕێگریکردن لە دووبارەبوونەوە
+    const bool bAlreadyExists = ActiveAttractors.ContainsByPredicate(
+        [AttractorActor](const FAttractorData& Data)
+        {
+            return Data.AttractorActor.Get() == AttractorActor;
+        });
+
+    if (!bAlreadyExists)
+    {
+        FAttractorData NewAttractor;
+        NewAttractor.AttractorActor = AttractorActor;
+        // ⚡ FIX: Location لێرەدا زەخیرە ناکەین تاوەکو کێشەی جوڵەی مەیموونەکە دروست نەبێت
+        NewAttractor.RadiusSq = FMath::Square(Radius);
+
+        ActiveAttractors.Add(NewAttractor);
+    }
+}
+
+void UZombieDirectorSubsystem::UnregisterAttractor(AActor* AttractorActor)
+{
+    if (!AttractorActor || GetWorld()->GetNetMode() == NM_Client) return;
+
+    ActiveAttractors.RemoveAllSwap(
+        [AttractorActor](const FAttractorData& Data)
+        {
+            return !Data.AttractorActor.IsValid() || Data.AttractorActor.Get() == AttractorActor;
+        },
+        EAllowShrinking::No
+    );
+}
+
+void UZombieDirectorSubsystem::CleanInvalidAttractors()
+{
+    ActiveAttractors.RemoveAllSwap(
+        [](const FAttractorData& Data)
+        {
+            return !Data.AttractorActor.IsValid();
+        },
+        EAllowShrinking::No
+    );
+}
+
 void UZombieDirectorSubsystem::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
@@ -105,7 +156,12 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     if (GetWorld()->GetNetMode() == NM_Client) return;
     if (ActiveZombies.IsEmpty()) return;
 
-    if (ValidTargetPlayers.IsEmpty())
+    CleanInvalidAttractors();
+
+    const bool bHasAttractors = !ActiveAttractors.IsEmpty();
+
+    // 2. چاککردنەوەی کێشەکە: ئەگەر بێتو نە یاریزان هەبێت و نە مەیموون، زۆمبییەکان ڕابگرە
+    if (ValidTargetPlayers.IsEmpty() && !bHasAttractors)
     {
         for (const TWeakObjectPtr<AZombie>& ZombieWeak : ActiveZombies)
         {
@@ -124,6 +180,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         return;
     }
 
+    // --- بەشی دروستکردنی Cache ی یاریزانەکان ---
     PlayerCacheRefreshTimer -= DeltaTime;
 
     if (PlayerCacheRefreshTimer <= 0.f)
@@ -166,8 +223,6 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         }
     }
 
-    if (CachedPlayerMap.IsEmpty() || ActiveZombies.IsEmpty()) return;
-
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     const int32 ZombieCount = ActiveZombies.Num();
 
@@ -175,7 +230,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     const double StartTime = FPlatformTime::Seconds();
     static constexpr float TargetMovedThresholdSq = 180.f * 180.f;
 
-    int32 MaxRepathRequestsThisFrame = 3;
+    const int32 MaxRepathRequestsThisFrame = FMath::Clamp(ActiveZombies.Num() / 5, 3, 8);
     int32 CurrentRepathCount = 0;
 
     int32 i = CurrentZombieIndex;
@@ -190,98 +245,129 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         if (!IsValid(Zombie) || Zombie->IsDead()) continue;
 
         const FVector ZombieLoc = Zombie->GetActorLocation();
-        APawn* TargetPlayer = nullptr;
-        FVector PlayerLoc = FVector::ZeroVector;
 
-        bool bNeedsSearch = (CurrentTime >= Zombie->NextTargetSearchTime || !IsValid(Zombie->CurrentTarget));
+        AActor* FinalTargetActor = nullptr;
+        FVector FinalTargetLoc = FVector::ZeroVector;
 
-        if (!bNeedsSearch && Zombie->CurrentTarget)
+        // =========================================================
+        // A. ئەولەویەت بۆ مەیموونەکە (Attractor Priority)
+        // =========================================================
+        if (bHasAttractors)
         {
-            if (const FVector* FoundLoc = CachedPlayerMap.Find(Zombie->CurrentTarget))
+            float BestAttractorDistSq = UE_BIG_NUMBER;
+            for (const FAttractorData& Attractor : ActiveAttractors)
             {
-                TargetPlayer = Zombie->CurrentTarget;
-                PlayerLoc = *FoundLoc;
-            }
-            else
-            {
-                bNeedsSearch = true;
-            }
-        }
-
-        if (bNeedsSearch)
-        {
-            float ClosestDistanceSq = UE_BIG_NUMBER;
-            TargetPlayer = SpatialGrid.FindNearestPlayerInRadius(ZombieLoc, ClosestDistanceSq);
-
-            if (TargetPlayer)
-            {
-                if (const FVector* FoundLoc = CachedPlayerMap.Find(TargetPlayer))
+                // ⚡ FIX 2: خوێندنەوەی شوێنی هەنووکەیی ئەکتەرەکە لەبری (0,0,0)
+                if (AActor* AttractorActor = Attractor.AttractorActor.Get())
                 {
-                    PlayerLoc = *FoundLoc;
-                }
-                else
-                {
-                    TargetPlayer = nullptr;
-                }
-            }
+                    const FVector CurrentLoc = AttractorActor->GetActorLocation();
+                    const float DistSq = FVector::DistSquared(ZombieLoc, CurrentLoc);
 
-            if (!TargetPlayer)
-            {
-                for (const auto& Pair : CachedPlayerMap)
-                {
-                    // ⚡ FIX: TWeakObjectPtr هیچ implicit conversion-ی بۆ raw pointer نییە
-                    // (بەپێچەوانەی TObjectPtr) — پێویستە .Get() بانگ بکرێت
-                    APawn* CandidatePlayer = Pair.Key.Get();
-                    if (!IsValid(CandidatePlayer)) continue;
-
-                    const float DistSq = FVector::DistSquared(ZombieLoc, Pair.Value);
-                    if (DistSq < ClosestDistanceSq)
+                    if (DistSq <= Attractor.RadiusSq && DistSq < BestAttractorDistSq)
                     {
-                        ClosestDistanceSq = DistSq;
-                        TargetPlayer = CandidatePlayer;
+                        BestAttractorDistSq = DistSq;
+                        FinalTargetActor = AttractorActor;
+                        FinalTargetLoc = CurrentLoc;
                     }
                 }
             }
+        }
 
-            if (TargetPlayer)
+        // =========================================================
+        // B. ئەگەر مەیموون نەبوو یان لە دەرەوەی بازنەکە بوو -> ئامانجی یاریزان بگرە
+        // =========================================================
+        if (!FinalTargetActor)
+        {
+            bool bNeedsSearch = (CurrentTime >= Zombie->NextTargetSearchTime || !IsValid(Zombie->CurrentTarget));
+
+            if (!bNeedsSearch && Zombie->CurrentTarget)
             {
-                float NextInterval = 0.25f;
-                if (ClosestDistanceSq > 16000000.f)
+                if (APawn* TargetPawn = Cast<APawn>(Zombie->CurrentTarget))
                 {
-                    NextInterval = 1.8f;
+                    if (const FVector* FoundLoc = CachedPlayerMap.Find(TargetPawn))
+                    {
+                        FinalTargetActor = Zombie->CurrentTarget;
+                        FinalTargetLoc = *FoundLoc;
+                    }
+                    else
+                    {
+                        bNeedsSearch = true;
+                    }
                 }
-                else if (ClosestDistanceSq > 1000000.f)
+                else
                 {
-                    NextInterval = 0.6f;
+                    bNeedsSearch = true;
+                }
+            }
+
+            if (bNeedsSearch)
+            {
+                float ClosestDistanceSq = UE_BIG_NUMBER;
+                APawn* TargetPlayer = SpatialGrid.FindNearestPlayerInRadius(ZombieLoc, ClosestDistanceSq);
+
+                if (TargetPlayer)
+                {
+                    if (const FVector* FoundLoc = CachedPlayerMap.Find(TargetPlayer))
+                    {
+                        FinalTargetLoc = *FoundLoc;
+                        FinalTargetActor = TargetPlayer;
+                    }
                 }
 
-                Zombie->NextTargetSearchTime = CurrentTime + NextInterval + FMath::RandRange(0.0f, 0.1f);
+                if (!FinalTargetActor)
+                {
+                    for (const auto& Pair : CachedPlayerMap)
+                    {
+                        APawn* CandidatePlayer = Pair.Key.Get();
+                        if (!IsValid(CandidatePlayer)) continue;
+
+                        const float DistSq = FVector::DistSquared(ZombieLoc, Pair.Value);
+                        if (DistSq < ClosestDistanceSq)
+                        {
+                            ClosestDistanceSq = DistSq;
+                            FinalTargetActor = CandidatePlayer;
+                            FinalTargetLoc = Pair.Value;
+                        }
+                    }
+                }
+
+                if (FinalTargetActor)
+                {
+                    float NextInterval = 0.25f;
+                    if (ClosestDistanceSq > 16000000.f) NextInterval = 1.8f;
+                    else if (ClosestDistanceSq > 1000000.f) NextInterval = 0.6f;
+
+                    Zombie->NextTargetSearchTime = CurrentTime + NextInterval + FMath::RandRange(0.0f, 0.1f);
+                }
             }
         }
 
+        // =========================================================
+        // C. ئەنجامدانی جوڵە (AI Repathing)
+        // =========================================================
         AAIController* AICon = Zombie->CachedAIController;
         if (!AICon) continue;
 
-        if (TargetPlayer)
+        if (FinalTargetActor)
         {
-            const float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, PlayerLoc);
+            const float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, FinalTargetLoc);
             const bool bIsAIIdle = AICon->GetMoveStatus() == EPathFollowingStatus::Idle;
 
-            const bool bShouldRepath = (Zombie->CurrentTarget != TargetPlayer) ||
+            const bool bShouldRepath = (Zombie->CurrentTarget != FinalTargetActor) ||
                 (TargetMovedDistSq > TargetMovedThresholdSq) ||
                 (bIsAIIdle && CurrentTime >= Zombie->NextForceRepathTime);
 
             if (bShouldRepath && CurrentRepathCount < MaxRepathRequestsThisFrame)
             {
-                Zombie->CurrentTarget = TargetPlayer;
-                Zombie->LastTargetLocation = PlayerLoc;
+                Zombie->CurrentTarget = FinalTargetActor;
+                Zombie->LastTargetLocation = FinalTargetLoc;
 
                 if (bIsAIIdle)
                 {
                     Zombie->NextForceRepathTime = CurrentTime + 0.5f;
                 }
 
-                FAIMoveRequest MoveReq(TargetPlayer);
+                FAIMoveRequest MoveReq(FinalTargetActor);
                 MoveReq.SetAcceptanceRadius(40.f);
                 MoveReq.SetUsePathfinding(true);
 

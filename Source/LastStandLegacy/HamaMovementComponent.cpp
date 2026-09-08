@@ -77,23 +77,26 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 
     if (bSlide && !bWasSliding)
     {
-        if (CharacterOwner)
+        FVector MoveDir = Velocity.GetSafeNormal2D();
+        if (MoveDir.IsNearlyZero() && CharacterOwner)
         {
-            FVector SlideDirection = CharacterOwner->GetActorForwardVector();
-            Velocity = FVector(SlideDirection.X * SlideSpeed, SlideDirection.Y * SlideSpeed, Velocity.Z);
+            MoveDir = CharacterOwner->GetActorForwardVector();
         }
+
+        Velocity = FVector(MoveDir.X * SlideSpeed, MoveDir.Y * SlideSpeed, Velocity.Z);
     }
 
     if (bDiving && !bWasDiving && IsMovingOnGround())
     {
-        if (CharacterOwner)
+        FVector DiveDir = Velocity.GetSafeNormal2D();
+        if (DiveDir.IsNearlyZero() && CharacterOwner)
         {
-            FVector DiveDirection = CharacterOwner->GetActorForwardVector();
-            Velocity = FVector(DiveDirection.X * DiveImpulseHorizontal, DiveDirection.Y * DiveImpulseHorizontal, DiveImpulseVertical);
-
-            SetMovementMode(MOVE_Falling);
-            CurrentFloor.Clear();
+            DiveDir = CharacterOwner->GetActorForwardVector();
         }
+
+        Velocity = FVector(DiveDir.X * DiveImpulseHorizontal, DiveDir.Y * DiveImpulseHorizontal, DiveImpulseVertical);
+        SetMovementMode(MOVE_Falling);
+        CurrentFloor.Clear();
     }
 
     if (bSprinting)

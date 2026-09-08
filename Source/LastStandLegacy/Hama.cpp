@@ -34,7 +34,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 
     bReplicates = true;
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(75.f);
+    SetNetUpdateFrequency(80.f);
     SetMinNetUpdateFrequency(33.f);
 
     if (GetCharacterMovement())
@@ -45,6 +45,7 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     HamaComponent = CreateDefaultSubobject<UHamaComponent>(TEXT("HamaComponent"));
     HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
     HamaAbilityComponent = CreateDefaultSubobject<UHamaAbilityComponent>(TEXT("HamaAbilityComponent"));
+    ThrowableComponent = CreateDefaultSubobject<UThrowableComponent>(TEXT("ThrowableComponent"));
     HamaMovementComponent = Cast<UHamaMovementComponent>(GetCharacterMovement());
 
     SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
@@ -553,6 +554,7 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 {
     if (IsValid(PreviousWeapon))
     {
+        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Black, "UnBind Called");
         PreviousWeapon->OnAmmoChanged.Unbind();
     }
 
@@ -653,17 +655,16 @@ void AHama::RemoveCurrentWeapon()
         }
     }
 
-    WeaponToDestroy->Destroy();
-
     if (CurrentWeapon)
     {
         CurrentWeapon->SetActorHiddenInGame(false);
-        CurrentWeapon->SetActorEnableCollision(true);
         CurrentWeapon->EquipWeapon(this);
         AttachWeaponToMesh(CurrentWeapon);
     }
 
-    OnRep_CurrentWeapon();
+    OnRep_CurrentWeapon(WeaponToDestroy);
+
+    WeaponToDestroy->Destroy();
 }
 
 void AHama::AutoSwapToAvailableWeapon()
@@ -689,14 +690,6 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
     if (HamaComponent && HamaComponent->IsDowned()) return;
     if (PendingWeaponForSwap != nullptr) return;
 
-    if (PendingWeaponForSwap != nullptr)
-    {
-        if (HasAuthority())
-        {
-            CompleteWeaponSwap();
-        }
-    }
-
     if(IsSprinting())
     {
         StopSprint();
@@ -704,14 +697,8 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 
     if (bIsDeathMachineActive)
     {
-        if (HasAuthority())
-        {
-            RemoveDeathMachine();
-        }
-        else
-        {
-            Server_SwapWeapon(nullptr);
-        }
+        if (HasAuthority())  RemoveDeathMachine();
+        else  Server_SwapWeapon(nullptr);
         return;
     }
 
@@ -740,6 +727,11 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
     if (!AnimInstance) return;
+
+    if(bIsFireButtonHold)
+    {
+        CurrentWeapon->StopFire();
+    }
 
     if (CurrentWeapon->IsReloading())
     {
@@ -782,6 +774,8 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 {
     if (HamaComponent && HamaComponent->IsDowned()) return;
+    if (IsDrinkingPerk()) return;
+    if (!CurrentWeapon) return;
 
     if (bIsDeathMachineActive)
     {
@@ -1164,6 +1158,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Triggered, this, &AHama::GamepadXActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Completed, this, &AHama::GamepadXActionReleased);
         EnhancedInput->BindAction(MeleeAction, ETriggerEvent::Started, this, &AHama::MeleeActionPressed);
+        EnhancedInput->BindAction(ThrowInputAction, ETriggerEvent::Started, this, &AHama::OnThrowPressed);
     }
 }
 
@@ -1937,10 +1932,11 @@ void AHama::GamepadXActionReleased()
 void AHama::Server_Interact_Implementation(AActor* InteractTarget)
 {
     if (!InteractTarget) return;
+    if (bIsDead || GetDeathMachine() || IsDowned()|| IsDrinkingPerk()) return;
 
     GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, FString::Printf(TEXT("Server_Interact called for: %s"), *InteractTarget->GetName()));
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractTarget->GetActorLocation());
-    if (DistSq > FMath::Square(350.f)) return;
+    if (DistSq > FMath::Square(300.f)) return;
 
     IInteractInterface* Interface = Cast<IInteractInterface>(InteractTarget);
     if (Interface)
@@ -2060,7 +2056,6 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
         return;
     }
 
-    // 🔴 RETURN 2: کاتی نێوان هێرش و لێدان زۆر زۆری پێچووە (Expired Window / Timing Issue)
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     if ((CurrentTime - LastServerMeleeTime) > (MeleeCooldown + 1.2f))
     {
@@ -2193,7 +2188,7 @@ void AHama::Interact(AHama* InteractingPlayer)
 
 bool AHama::Client_PreInteract(AHama* Player)
 {
-    return HamaComponent && !HamaComponent->IsDowned() && !bIsDead;
+    return HamaComponent && !HamaComponent->IsDowned() && !bIsDead && !GetDeathMachine();
 }
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
@@ -2326,5 +2321,13 @@ void AHama::Client_OnPlayerDowned_Implementation()
     if (HamaComponent)
     {
         HamaComponent->ResetStamina();
+    }
+}
+
+void AHama::OnThrowPressed()
+{
+    if (ThrowableComponent)
+    {
+        ThrowableComponent->RequestThrow();
     }
 }

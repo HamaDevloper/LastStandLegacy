@@ -41,7 +41,7 @@ bool ABaseDoor::CanInteract(AHama* InteractingPlayer)
     if (!IsValid(InteractingPlayer) || bIsDoorOpen) return false;
 
     if (InteractingPlayer->IsDowned() ||
-        InteractingPlayer->bIsDeathMachineActive ||
+        InteractingPlayer->GetDeathMachine() ||
         InteractingPlayer->IsDrinkingPerk())
     {
         return false;
@@ -86,8 +86,7 @@ FString ABaseDoor::GetInteractMessage(AHama* InteractingPlayer)
 
 void ABaseDoor::OpenDoor(AHama* InteractingPlayer, AHamaPlayerState* PS)
 {
-    check(HasAuthority());
-    if (!PS || bIsDoorOpen) return;
+    if (!HasAuthority() || !PS || bIsDoorOpen) return;
 
     PS->RemovePoints(DoorPrice);
 

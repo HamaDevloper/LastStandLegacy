@@ -35,7 +35,7 @@ bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || !WeaponClass) return false;
 
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive || InteractingPlayer->IsDrinkingPerk())
+    if (InteractingPlayer->IsDowned() || InteractingPlayer->GetDeathMachine() || InteractingPlayer->IsDrinkingPerk())
     {
         return false;
     }
