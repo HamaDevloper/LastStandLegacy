@@ -160,7 +160,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
 
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->GetDeathMachine() || InteractingPlayer->IsDrinkingPerk())
+    if (!InteractingPlayer->SetCanInteract())
     {
         return false;
     }

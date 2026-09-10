@@ -42,14 +42,7 @@ void ABasePerk::BeginPlay()
 bool ABasePerk::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
-
-    if (InteractingPlayer->IsDowned() ||
-        InteractingPlayer->GetDeathMachine() ||
-        InteractingPlayer->HasPerkID(PerkID) ||
-        InteractingPlayer->IsDrinkingPerk())
-    {
-        return false;
-    }
+    if (!InteractingPlayer->SetCanInteract()) return false;
 
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     if (!GS) return false;

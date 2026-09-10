@@ -41,6 +41,8 @@ protected:
     UFUNCTION()
     void OnRep_ThrowableCount();
 
+    void SetWeaponVisibility(bool bVisible);
+
 public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|Config")
     TSubclassOf<AActor> ThrowableClass;
@@ -70,8 +72,13 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_ThrowableCount, EditDefaultsOnly,  BlueprintReadOnly, Category = "Throwable|State")
     int32 CurrentThrowableCount = 3;
 
+    UPROPERTY(Replicated)
+    bool bIsThrowingInProcess = false;
+
     UPROPERTY(BlueprintAssignable, Category = "Throwable|Events")
     FOnThrowableCountChanged OnThrowableCountChanged;
+
+    bool IsThrowingInProcess() const { return bIsThrowingInProcess; }
 
 private:
     UPROPERTY()
@@ -86,4 +93,5 @@ private:
     void OnRep_IsCharging();
 
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
+    FVector GetCrosshairAimDirection() const;
 };

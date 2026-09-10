@@ -686,8 +686,7 @@ void AHama::Input_SwapWeapon()
 void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 {
     if (!SwapWeaponMontage || !CurrentWeapon) return;
-    if (IsDrinkingPerk()) return;
-    if (HamaComponent && HamaComponent->IsDowned()) return;
+    if (!SetCanInteract()) return;
     if (PendingWeaponForSwap != nullptr) return;
 
     if(IsSprinting())
@@ -773,8 +772,7 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 
 void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 {
-    if (HamaComponent && HamaComponent->IsDowned()) return;
-    if (IsDrinkingPerk()) return;
+    if (!SetCanInteract()) return;
     if (!CurrentWeapon) return;
 
     if (bIsDeathMachineActive)
@@ -1170,6 +1168,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AHama::FireActionPressed()
 {
     if (!HamaComponent || !CurrentWeapon) return;
+    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
     if (IsDrinkingPerk()) return;
     bIsFireButtonHold = true;
     CurrentWeapon->StartFire();
@@ -2340,4 +2339,19 @@ void AHama::OnThrowReleased()
     {
         ThrowableComponent->ReleaseThrow();
     }
+}
+
+bool AHama::SetCanInteract() const
+{
+   if(bIsDeathMachineActive || bIsDead || IsDowned() || IsDrinkingPerk())
+   {
+       return false;
+   }
+
+   if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess())
+   {
+       return false;
+   }
+   
+   return true;
 }

@@ -15,6 +15,8 @@ UThrowableComponent::UThrowableComponent()
     PrimaryComponentTick.bCanEverTick = false;
     SetIsReplicatedByDefault(true);
     bIsCharging = false;
+    bIsThrowingInProcess = false;
+    LastThrowTime = -100.0f;
 }
 
 void UThrowableComponent::BeginPlay()
@@ -32,29 +34,20 @@ void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
     DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, CurrentThrowableCount, Params);
     DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, bIsCharging, Params);
+    DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, bIsThrowingInProcess, Params);
 }
 
 void UThrowableComponent::StartThrowCharge()
 {
-    if (!CharacterOwner)
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("[StartThrowCharge] RETURN: CharacterOwner is NULL!"));
-        return;
-    }
+    if (!CharacterOwner || CurrentThrowableCount <= 0 || bIsCharging || bIsThrowingInProcess) return;
 
-    if (CurrentThrowableCount <= 0)
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, FString::Printf(TEXT("[StartThrowCharge] RETURN: No Ammo! Count: %d"), CurrentThrowableCount));
-        return;
-    }
-
-    if (bIsCharging)
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("[StartThrowCharge] RETURN: Already Charging!"));
-        return;
-    }
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (CurrentTime - LastThrowTime < ThrowCooldown) return;
 
     bIsCharging = true;
+    bIsThrowingInProcess = true;
+
+    SetWeaponVisibility(true);
 
     if (ThrowMontage && CharacterOwner->GetMesh())
     {
@@ -64,14 +57,6 @@ void UThrowableComponent::StartThrowCharge()
             AnimInstance->Montage_JumpToSection(HoldSectionName, ThrowMontage);
             AnimInstance->Montage_SetPlayRate(ThrowMontage, 0.0f);
         }
-        else
-        {
-            if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("[StartThrowCharge] ERROR: AnimInstance is NULL!"));
-        }
-    }
-    else
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("[StartThrowCharge] ERROR: ThrowMontage or CharacterMesh Missing!"));
     }
 
     if (!GetOwner()->HasAuthority())
@@ -82,14 +67,23 @@ void UThrowableComponent::StartThrowCharge()
 
 void UThrowableComponent::Server_StartThrowCharge_Implementation()
 {
-    if (!CharacterOwner || CurrentThrowableCount <= 0 || bIsCharging)
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+
+    if (!CharacterOwner || CurrentThrowableCount <= 0 || (CurrentTime - LastThrowTime < ThrowCooldown))
     {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("[Server_StartThrowCharge] RETURN: Validation Failed on Server!"));
+        bIsCharging = false;
+        bIsThrowingInProcess = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
+
+        SetWeaponVisibility(true);
         return;
     }
 
     bIsCharging = true;
+    bIsThrowingInProcess = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
 
     if (GetNetMode() == NM_ListenServer && !CharacterOwner->IsLocallyControlled())
     {
@@ -97,11 +91,18 @@ void UThrowableComponent::Server_StartThrowCharge_Implementation()
     }
 }
 
+
+FVector UThrowableComponent::GetCrosshairAimDirection() const
+{
+    if (!CharacterOwner) return FVector::ForwardVector;
+
+    return CharacterOwner->GetControlRotation().Vector();
+}
+
 void UThrowableComponent::ReleaseThrow()
 {
     if (!CharacterOwner || !bIsCharging) return;
 
-    // 🛑 1. چاککردنی ئەنیمەیشن: دەستبەجێ خێرایی دەکەینەوە 1.0f و پاشان Jump دەبەستین
     if (ThrowMontage && CharacterOwner->GetMesh())
     {
         if (UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance())
@@ -111,7 +112,7 @@ void UThrowableComponent::ReleaseThrow()
         }
     }
 
-    FVector LaunchDir = CharacterOwner->GetControlRotation().Vector();
+    FVector LaunchDir = GetCrosshairAimDirection();
 
     if (!GetOwner()->HasAuthority())
     {
@@ -121,34 +122,38 @@ void UThrowableComponent::ReleaseThrow()
     Server_ReleaseThrow(LaunchDir);
 }
 
+// 2. نوێکردنەوەی شوێنی دروستبوونی بۆمبەکە لە سێرڤەر
 void UThrowableComponent::Server_ReleaseThrow_Implementation(FVector_NetQuantizeNormal LaunchDirection)
 {
-    if (!CharacterOwner || !ThrowableClass || CurrentThrowableCount <= 0 || !bIsCharging) return;
-
     const float CurrentTime = GetWorld()->GetTimeSeconds();
-    if (CurrentTime - LastThrowTime < ThrowCooldown) return;
 
-    bIsCharging = false;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
-
-    if (GetNetMode() == NM_ListenServer && !CharacterOwner->IsLocallyControlled())
+    if (!CharacterOwner || !ThrowableClass || CurrentThrowableCount <= 0 || !bIsCharging || (CurrentTime - LastThrowTime < ThrowCooldown))
     {
-        OnRep_IsCharging();
+        bIsCharging = false;
+        bIsThrowingInProcess = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
+        SetWeaponVisibility(false);
+        return;
     }
 
     LastThrowTime = CurrentTime;
 
+    bIsCharging = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
+
     FVector SafeDir = LaunchDirection.GetSafeNormal();
 
-    // 🛑 1. دوورخستنەوەی خاڵی Spawn بە بڕی 60 یەکە بۆ پێشەوە لە چاوی کاراکتەرەکە (ڕێگری لە Clipping)
-    FVector ViewLoc = CharacterOwner->GetPawnViewLocation();
-    FVector FinalSpawnLoc = ViewLoc + (SafeDir * 60.0f);
+    // 🛑 چارەسەری بنەڕەتی: سپاونکردن ڕێک لە ناوەڕاستی شاشەکەوە (Camera) بە دووری 80 یەکە پێشەوە.
+    // هەرگیز سۆکێتی دەست بەکارمەهێنە لێرەدا، چونکە کێشەی Desync و لاربوونەوە دروست دەکات.
+    FVector SpawnLoc = CharacterOwner->GetPawnViewLocation() + (SafeDir * 80.0f);
 
     CurrentThrowableCount--;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentThrowableCount, this);
     OnRep_ThrowableCount();
 
-    FTransform SpawnTransform(CharacterOwner->GetControlRotation(), FinalSpawnLoc);
+    FRotator SpawnRotation = SafeDir.Rotation();
+    FTransform SpawnTransform(SpawnRotation, SpawnLoc);
 
     AActor* SpawnedThrowable = GetWorld()->SpawnActorDeferred<AActor>(
         ThrowableClass,
@@ -168,17 +173,19 @@ void UThrowableComponent::Server_ReleaseThrow_Implementation(FVector_NetQuantize
 
         UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
     }
+
+    bIsThrowingInProcess = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
+
+    SetWeaponVisibility(false);
 }
 
 void UThrowableComponent::OnRep_IsCharging()
 {
-    if (CharacterOwner && CharacterOwner->IsLocallyControlled()) return;
+    SetWeaponVisibility(!bIsCharging);
 
-    if (!ThrowMontage || !CharacterOwner || !CharacterOwner->GetMesh())
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("[OnRep_IsCharging] RETURN: Missing Mesh or Montage on Client!"));
-        return;
-    }
+    if (CharacterOwner && CharacterOwner->IsLocallyControlled()) return;
+    if (!ThrowMontage || !CharacterOwner || !CharacterOwner->GetMesh()) return;
 
     UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
     if (!AnimInstance) return;
@@ -196,19 +203,22 @@ void UThrowableComponent::OnRep_IsCharging()
     }
 }
 
+void UThrowableComponent::SetWeaponVisibility(bool bVisible)
+{
+    if (CharacterOwner && IsValid(CharacterOwner->CurrentWeapon))
+    {
+        CharacterOwner->CurrentWeapon->SetActorHiddenInGame(bVisible);
+    }
+}
+
 void UThrowableComponent::RefillThrowables(int32 Amount)
 {
-    if (!GetOwner() || !GetOwner()->HasAuthority())
-    {
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("[RefillThrowables] RETURN: No Authority!"));
-        return;
-    }
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 
     CurrentThrowableCount = FMath::Clamp(CurrentThrowableCount + Amount, 0, MaxThrowableCount);
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentThrowableCount, this);
 
     OnRep_ThrowableCount();
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, FString::Printf(TEXT("[RefillThrowables] SUCCESS: New Count: %d"), CurrentThrowableCount));
 }
 
 void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const

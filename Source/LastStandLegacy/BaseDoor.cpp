@@ -40,9 +40,7 @@ bool ABaseDoor::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || bIsDoorOpen) return false;
 
-    if (InteractingPlayer->IsDowned() ||
-        InteractingPlayer->GetDeathMachine() ||
-        InteractingPlayer->IsDrinkingPerk())
+    if (!InteractingPlayer->SetCanInteract())
     {
         return false;
     }

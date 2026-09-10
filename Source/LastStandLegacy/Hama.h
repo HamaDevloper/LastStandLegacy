@@ -575,4 +575,7 @@ public:
     protected:
         UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapons|Inventory")
         TArray<TObjectPtr<ABaseWeapon>> EquippedWeapons;
-    };
+
+public:
+    bool SetCanInteract() const;
+};

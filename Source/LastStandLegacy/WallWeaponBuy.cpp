@@ -35,19 +35,14 @@ bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || !WeaponClass) return false;
 
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->GetDeathMachine() || InteractingPlayer->IsDrinkingPerk())
-    {
-        return false;
-    }
-
-    return true;
+    return InteractingPlayer->SetCanInteract();
 }
 
 bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || !WeaponClass) return false;
 
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive || InteractingPlayer->IsDrinkingPerk())
+    if(!CanInteract(InteractingPlayer))
     {
         return false;
     }

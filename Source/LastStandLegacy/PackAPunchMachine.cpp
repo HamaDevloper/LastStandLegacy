@@ -73,11 +73,34 @@ void APackAPunchMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 // Interaction Interface & Network RPC
 // -----------------------------------------------------------------------------
 
+bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
+{
+    if (!IsValid(InteractingPlayer)) return false;
+    if (!InteractingPlayer->SetCanInteract()) return false;
+    if (MachineState == EPaPState::Idle)
+    {
+        ABaseWeapon* Weapon = InteractingPlayer->GetCurrentWeapon();
+        if (!Weapon) return false;
+
+        return Weapon->GetUpgradedWeaponClass() != nullptr;
+    }
+    else if (MachineState == EPaPState::Upgrading)
+    {
+        return false;
+    }
+    else if (MachineState == EPaPState::ReadyForPickup)
+    {
+        return CurrentOwnerPlayer == InteractingPlayer;
+    }
+
+    return false;
+}
+
 bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
 
-    if (InteractingPlayer->GetDeathMachine() || InteractingPlayer->IsDowned() || InteractingPlayer->IsDrinkingPerk()) return false;
+    if (!CanInteract(InteractingPlayer))
 
     if (MachineState == EPaPState::Idle)
     {
@@ -110,29 +133,6 @@ bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
     }
 
     return true;
-}
-
-bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
-{
-    if (!IsValid(InteractingPlayer)) return false;
-    if (InteractingPlayer->GetDeathMachine() || InteractingPlayer->IsDowned() || InteractingPlayer->IsDrinkingPerk()) return false;
-    if (MachineState == EPaPState::Idle)
-    {
-        ABaseWeapon* Weapon = InteractingPlayer->GetCurrentWeapon();
-        if (!Weapon) return false;
-
-        return Weapon->GetUpgradedWeaponClass() != nullptr;
-    }
-    else if (MachineState == EPaPState::Upgrading)
-    {
-        return false;
-    }
-    else if (MachineState == EPaPState::ReadyForPickup)
-    {
-        return CurrentOwnerPlayer == InteractingPlayer;
-    }
-
-    return false;
 }
 
 void APackAPunchMachine::Interact(AHama* InteractingPlayer)
