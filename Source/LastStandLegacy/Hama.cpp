@@ -1159,6 +1159,8 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Completed, this, &AHama::GamepadXActionReleased);
         EnhancedInput->BindAction(MeleeAction, ETriggerEvent::Started, this, &AHama::MeleeActionPressed);
         EnhancedInput->BindAction(ThrowInputAction, ETriggerEvent::Started, this, &AHama::OnThrowPressed);
+        EnhancedInput->BindAction(ThrowInputAction, ETriggerEvent::Completed, this, &AHama::OnThrowReleased);
+    
     }
 }
 
@@ -2328,6 +2330,14 @@ void AHama::OnThrowPressed()
 {
     if (ThrowableComponent)
     {
-        ThrowableComponent->RequestThrow();
+        ThrowableComponent->StartThrowCharge();
+    }
+}
+
+void AHama::OnThrowReleased()
+{
+    if (ThrowableComponent)
+    {
+        ThrowableComponent->ReleaseThrow();
     }
 }

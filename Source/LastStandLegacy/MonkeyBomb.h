@@ -4,10 +4,12 @@
 #include "GameFramework/Actor.h"
 #include "MonkeyBomb.generated.h"
 
+#define ECC_Bullet ECC_GameTraceChannel1
+
 class USphereComponent;
 class UStaticMeshComponent;
-class UProjectileMovementComponent;
 class UAudioComponent;
+class UProjectileMovementComponent;
 class USoundBase;
 class UParticleSystem;
 
@@ -19,10 +21,12 @@ class LASTSTANDLEGACY_API AMonkeyBomb : public AActor
 public:
     AMonkeyBomb();
 
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 protected:
     virtual void BeginPlay() override;
 
-    // --- Components ---
+    // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<USphereComponent> CollisionComp;
 
@@ -30,48 +34,53 @@ protected:
     TObjectPtr<UStaticMeshComponent> MeshComp;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-    TObjectPtr<UProjectileMovementComponent> ProjectileMovementComp;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UAudioComponent> AttractionAudioComp;
 
-    // --- Config & Tuning ---
-    UPROPERTY(EditDefaultsOnly, Category = "Monkey Properties")
-    float AttractionRadius = 2500.0f;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    TObjectPtr<UProjectileMovementComponent> ProjectileMovementComp;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Monkey Properties")
+    // Config Properties
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|Config")
+    float AttractionRadius = 2000.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|Config")
     float FuseDuration = 8.0f;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Monkey Properties|Damage")
-    float BaseDamage = 1000.0f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|Config")
+    float BaseDamage = 500.0f;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Monkey Properties|Damage")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|Config")
     float DamageRadius = 600.0f;
 
-    // --- FX & Audio ---
-    UPROPERTY(EditDefaultsOnly, Category = "Monkey Properties|Effects")
+    // FX Assets
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|FX")
     TObjectPtr<USoundBase> AttractionSound;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Monkey Properties|Effects")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|FX")
     TObjectPtr<USoundBase> ExplosionSound;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Monkey Properties|Effects")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|FX")
     TObjectPtr<UParticleSystem> ExplosionVFX;
 
-    // --- Collision & Logic ---
+    UPROPERTY(ReplicatedUsing = OnRep_AttractionActivated)
+    uint8 bAttractionActivated : 1;
+
+    uint8 bHasExploded : 1;
+
+    FTimerHandle FuseTimerHandle;
+
+    UFUNCTION()
+    void OnRep_AttractionActivated();
+
+    UFUNCTION()
+    void OnProjectileStopped(const FHitResult& ImpactResult);
+
     UFUNCTION()
     void OnBounce(const FHitResult& ImpactResult, const FVector& ImpactVelocity);
 
     void ActivateAttraction();
     void Explode();
 
-    // --- Net Multicasts ---
-    UFUNCTION(NetMulticast, Unreliable)
-    void Multicast_PlaySound();
-
     UFUNCTION(NetMulticast, Unreliable)
     void Multicast_PlayExplosionFX();
-
-private:
-    FTimerHandle FuseTimerHandle;
 };

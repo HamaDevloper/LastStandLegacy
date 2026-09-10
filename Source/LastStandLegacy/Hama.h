@@ -344,6 +344,7 @@ protected:
     void MeleeActionPressed();
     void InteractActionReleased();
     void OnThrowPressed();
+    void OnThrowReleased();
 
 protected:
     static const float CrossHairTimer;
