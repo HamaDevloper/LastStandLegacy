@@ -29,6 +29,8 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     void RefillThrowables(int32 Amount = 3);
 
+    bool IsThrowingInProcess() const { return bIsThrowingInProcess; }
+
 protected:
     virtual void BeginPlay() override;
 
@@ -36,10 +38,16 @@ protected:
     void Server_StartThrowCharge();
 
     UFUNCTION(Server, Reliable)
-    void Server_ReleaseThrow(FVector_NetQuantizeNormal LaunchDirection);
+    void Server_ReleaseThrow(FVector_NetQuantizeNormal AimDirection);
+
+    UFUNCTION(Client, Reliable)
+    void Client_ResetThrowState();
 
     UFUNCTION()
     void OnRep_ThrowableCount();
+
+    UFUNCTION()
+    void OnRep_IsCharging();
 
     void SetWeaponVisibility(bool bVisible);
 
@@ -69,7 +77,7 @@ public:
     float ThrowCooldown = 1.0f;
 
     // State Properties
-    UPROPERTY(ReplicatedUsing = OnRep_ThrowableCount, EditDefaultsOnly,  BlueprintReadOnly, Category = "Throwable|State")
+    UPROPERTY(ReplicatedUsing = OnRep_ThrowableCount, EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|State")
     int32 CurrentThrowableCount = 3;
 
     UPROPERTY(Replicated)
@@ -78,20 +86,19 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Throwable|Events")
     FOnThrowableCountChanged OnThrowableCountChanged;
 
-    bool IsThrowingInProcess() const { return bIsThrowingInProcess; }
-
 private:
     UPROPERTY()
     TObjectPtr<AHama> CharacterOwner;
+
+    UPROPERTY()
+    TObjectPtr<APlayerController> OwnerController;
 
     float LastThrowTime = 0.0f;
 
     UPROPERTY(ReplicatedUsing = OnRep_IsCharging)
     uint8 bIsCharging : 1;
 
-    UFUNCTION()
-    void OnRep_IsCharging();
-
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
-    FVector GetCrosshairAimDirection() const;
+    FVector GetCameraAimDirection() const;
+    FVector GetCrosshairTargetPoint(const FVector& AimDir) const;
 };

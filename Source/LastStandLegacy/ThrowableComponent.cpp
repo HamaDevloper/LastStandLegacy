@@ -3,12 +3,12 @@
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
-#include "Engine/Engine.h"
 
 UThrowableComponent::UThrowableComponent()
 {
@@ -35,6 +35,52 @@ void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, CurrentThrowableCount, Params);
     DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, bIsCharging, Params);
     DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, bIsThrowingInProcess, Params);
+}
+
+FVector UThrowableComponent::GetCameraAimDirection() const
+{
+    if (!CharacterOwner) return FVector::ForwardVector;
+
+    APlayerController* PC = Cast<APlayerController>(CharacterOwner->GetController());
+    if (PC)
+    {
+        FVector CameraLoc;
+        FRotator CameraRot;
+        PC->GetPlayerViewPoint(CameraLoc, CameraRot);
+        return CameraRot.Vector();
+    }
+
+    return CharacterOwner->GetBaseAimRotation().Vector();
+}
+
+FVector UThrowableComponent::GetCrosshairTargetPoint(const FVector& AimDir) const
+{
+    if (!CharacterOwner) return FVector::ZeroVector;
+
+    FVector CameraLoc;
+    FRotator CameraRot;
+
+    APlayerController* PC = Cast<APlayerController>(CharacterOwner->GetController());
+    if (PC)
+    {
+        PC->GetPlayerViewPoint(CameraLoc, CameraRot);
+    }
+    else
+    {
+        CameraLoc = CharacterOwner->GetPawnViewLocation();
+    }
+
+    FVector TraceEnd = CameraLoc + (AimDir * 10000.0f);
+    FHitResult Hit;
+    FCollisionQueryParams TraceParams;
+    TraceParams.AddIgnoredActor(CharacterOwner);
+
+    if (GetWorld() && GetWorld()->LineTraceSingleByChannel(Hit, CameraLoc, TraceEnd, ECC_Visibility, TraceParams))
+    {
+        return Hit.ImpactPoint;
+    }
+
+    return TraceEnd;
 }
 
 void UThrowableComponent::StartThrowCharge()
@@ -71,12 +117,7 @@ void UThrowableComponent::Server_StartThrowCharge_Implementation()
 
     if (!CharacterOwner || CurrentThrowableCount <= 0 || (CurrentTime - LastThrowTime < ThrowCooldown))
     {
-        bIsCharging = false;
-        bIsThrowingInProcess = false;
-        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
-        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
-
-        SetWeaponVisibility(true);
+        Client_ResetThrowState();
         return;
     }
 
@@ -89,14 +130,6 @@ void UThrowableComponent::Server_StartThrowCharge_Implementation()
     {
         OnRep_IsCharging();
     }
-}
-
-
-FVector UThrowableComponent::GetCrosshairAimDirection() const
-{
-    if (!CharacterOwner) return FVector::ForwardVector;
-
-    return CharacterOwner->GetControlRotation().Vector();
 }
 
 void UThrowableComponent::ReleaseThrow()
@@ -112,48 +145,50 @@ void UThrowableComponent::ReleaseThrow()
         }
     }
 
-    FVector LaunchDir = GetCrosshairAimDirection();
+    // 🛠️ تەنها ئاڕاستەی بەرەوپێشچوونی کامێرا (Normalized Vector) بنێرە
+    FVector AimDir = GetCameraAimDirection();
 
     if (!GetOwner()->HasAuthority())
     {
         bIsCharging = false;
     }
 
-    Server_ReleaseThrow(LaunchDir);
+    Server_ReleaseThrow(AimDir);
 }
 
-// 2. نوێکردنەوەی شوێنی دروستبوونی بۆمبەکە لە سێرڤەر
 void UThrowableComponent::Server_ReleaseThrow_Implementation(FVector_NetQuantizeNormal LaunchDirection)
 {
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
     if (!CharacterOwner || !ThrowableClass || CurrentThrowableCount <= 0 || !bIsCharging || (CurrentTime - LastThrowTime < ThrowCooldown))
     {
-        bIsCharging = false;
-        bIsThrowingInProcess = false;
-        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
-        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
-        SetWeaponVisibility(false);
+        Client_ResetThrowState();
         return;
     }
 
     LastThrowTime = CurrentTime;
-
     bIsCharging = false;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
 
-    FVector SafeDir = LaunchDirection.GetSafeNormal();
+    // 🛠️ 1. پشکنینی ئاڕاستەی تەواو لە سەرڤەر بەپێی Vector نێردراوەکە
+    FVector ValidatedAimDir = LaunchDirection.GetSafeNormal();
+    FVector TargetPoint = GetCrosshairTargetPoint(ValidatedAimDir);
 
-    // 🛑 چارەسەری بنەڕەتی: سپاونکردن ڕێک لە ناوەڕاستی شاشەکەوە (Camera) بە دووری 80 یەکە پێشەوە.
-    // هەرگیز سۆکێتی دەست بەکارمەهێنە لێرەدا، چونکە کێشەی Desync و لاربوونەوە دروست دەکات.
-    FVector SpawnLoc = CharacterOwner->GetPawnViewLocation() + (SafeDir * 80.0f);
+    // 🛠️ 2. دۆزینەوەی شوێنی سەلامەت لەبەردەم کامێرا/Pawn
+    FVector StartLoc = CharacterOwner->GetPawnViewLocation();
+    FVector DesiredTarget = StartLoc + (ValidatedAimDir * 50.0f);
+    FVector FinalSpawnLoc;
+    GetSafeSpawnLocation(StartLoc, DesiredTarget, FinalSpawnLoc);
+
+    // 🛠️ 3. ئاڕاستەی دروستی فڕێدان بەبێ Double Rotation
+    FVector TrueLaunchDir = (TargetPoint - FinalSpawnLoc).GetSafeNormal();
 
     CurrentThrowableCount--;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentThrowableCount, this);
     OnRep_ThrowableCount();
 
-    FRotator SpawnRotation = SafeDir.Rotation();
-    FTransform SpawnTransform(SpawnRotation, SpawnLoc);
+    FRotator SpawnRotation = TrueLaunchDir.Rotation();
+    FTransform SpawnTransform(SpawnRotation, FinalSpawnLoc);
 
     AActor* SpawnedThrowable = GetWorld()->SpawnActorDeferred<AActor>(
         ThrowableClass,
@@ -167,8 +202,9 @@ void UThrowableComponent::Server_ReleaseThrow_Implementation(FVector_NetQuantize
     {
         if (UProjectileMovementComponent* ProjComp = SpawnedThrowable->FindComponentByClass<UProjectileMovementComponent>())
         {
+            ProjComp->bInitialVelocityInLocalSpace = false;
             ProjComp->MaxSpeed = FMath::Max(ProjComp->MaxSpeed, ThrowImpulseStrength);
-            ProjComp->Velocity = SafeDir * ThrowImpulseStrength;
+            ProjComp->Velocity = TrueLaunchDir * ThrowImpulseStrength;
         }
 
         UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
@@ -178,6 +214,47 @@ void UThrowableComponent::Server_ReleaseThrow_Implementation(FVector_NetQuantize
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
 
     SetWeaponVisibility(false);
+}
+
+void UThrowableComponent::Client_ResetThrowState_Implementation()
+{
+    bIsCharging = false;
+    bIsThrowingInProcess = false;
+
+    if (CharacterOwner && CharacterOwner->GetMesh())
+    {
+        if (UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance())
+        {
+            if (ThrowMontage && AnimInstance->Montage_IsPlaying(ThrowMontage))
+            {
+                AnimInstance->Montage_Stop(0.2f, ThrowMontage);
+            }
+        }
+    }
+
+    SetWeaponVisibility(false);
+}
+
+void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const
+{
+    if (!GetWorld() || !CharacterOwner)
+    {
+        OutSpawnLoc = TargetLoc;
+        return;
+    }
+
+    FHitResult HitResult;
+    FCollisionQueryParams QueryParams;
+    QueryParams.AddIgnoredActor(CharacterOwner);
+
+    if (GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, TargetLoc, ECC_WorldStatic, QueryParams))
+    {
+        OutSpawnLoc = HitResult.Location - (TargetLoc - StartLoc).GetSafeNormal() * 10.0f;
+    }
+    else
+    {
+        OutSpawnLoc = TargetLoc;
+    }
 }
 
 void UThrowableComponent::OnRep_IsCharging()
@@ -219,28 +296,6 @@ void UThrowableComponent::RefillThrowables(int32 Amount)
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentThrowableCount, this);
 
     OnRep_ThrowableCount();
-}
-
-void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const
-{
-    if (!GetWorld() || !CharacterOwner)
-    {
-        OutSpawnLoc = TargetLoc;
-        return;
-    }
-
-    FHitResult HitResult;
-    FCollisionQueryParams QueryParams;
-    QueryParams.AddIgnoredActor(CharacterOwner);
-
-    if (GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, TargetLoc, ECC_WorldStatic, QueryParams))
-    {
-        OutSpawnLoc = HitResult.Location - (TargetLoc - StartLoc).GetSafeNormal() * 10.0f;
-    }
-    else
-    {
-        OutSpawnLoc = TargetLoc;
-    }
 }
 
 void UThrowableComponent::OnRep_ThrowableCount()
