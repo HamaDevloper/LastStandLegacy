@@ -585,6 +585,12 @@ void AHama::RefillAllWeapons()
     if (PrimaryWeapon) PrimaryWeapon->RefillAmmo();
     if (SecondaryWeapon) SecondaryWeapon->RefillAmmo();
     if (ThirdWeapon) ThirdWeapon->RefillAmmo();
+
+    if (ThrowableComponent)
+    {
+        ThrowableComponent->RefillMonkeyToMax();
+        ThrowableComponent->RefillGrenadesToMax();
+    }
 }
 
 ABaseWeapon* AHama::GetNextWeaponWithAmmo() const
@@ -1174,9 +1180,10 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Triggered, this, &AHama::GamepadXActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Completed, this, &AHama::GamepadXActionReleased);
         EnhancedInput->BindAction(MeleeAction, ETriggerEvent::Started, this, &AHama::MeleeActionPressed);
-        EnhancedInput->BindAction(ThrowInputAction, ETriggerEvent::Started, this, &AHama::OnThrowPressed);
-        EnhancedInput->BindAction(ThrowInputAction, ETriggerEvent::Completed, this, &AHama::OnThrowReleased);
-    
+        EnhancedInput->BindAction(IA_ThrowGrenade, ETriggerEvent::Started, this, &AHama::Input_ThrowGrenadePressed);
+        EnhancedInput->BindAction(IA_ThrowGrenade, ETriggerEvent::Completed, this, &AHama::Input_ThrowGrenadeReleased);
+        EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Started, this, &AHama::Input_ThrowMonkeyPressed);
+        EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Completed, this, &AHama::Input_ThrowMonkeyReleased);
     }
 }
 
@@ -2343,36 +2350,35 @@ void AHama::Client_OnPlayerDowned_Implementation()
     }
 }
 
-void AHama::OnThrowPressed()
+void AHama::Input_ThrowGrenadePressed()
 {
-    if (IsSwappingWeapon())
-    {
-        return;
-    }
-
-    if (CurrentWeapon)
-    {
-        if(bIsFireButtonHold)
-        {
-            CurrentWeapon->StopFire();
-        }
-        if (CurrentWeapon->IsReloading())
-        {
-            CurrentWeapon->CancelReload();
-        }
-    }
-
     if (ThrowableComponent)
     {
-        ThrowableComponent->StartThrowCharge();
+        ThrowableComponent->StartGrenadeCharge();
     }
 }
 
-void AHama::OnThrowReleased()
+void AHama::Input_ThrowGrenadeReleased()
 {
     if (ThrowableComponent)
     {
-        ThrowableComponent->ReleaseThrow();
+        ThrowableComponent->ReleaseGrenadeThrow();
+    }
+}
+
+void AHama::Input_ThrowMonkeyPressed()
+{
+    if (ThrowableComponent)
+    {
+        ThrowableComponent->StartMonkeyCharge();
+    }
+}
+
+void AHama::Input_ThrowMonkeyReleased()
+{
+    if (ThrowableComponent)
+    {
+        ThrowableComponent->ReleaseMonkeyThrow();
     }
 }
 

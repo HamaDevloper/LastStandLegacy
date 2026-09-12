@@ -171,5 +171,21 @@ protected:
 
     TArray<TObjectPtr<UStaticMesh>> CachedWeaponMeshes;
 
+protected:
+    // 🔴 زانیارییەکانی Monkey Bomb
+    UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|Throwable")
+    TSubclassOf<AActor> MonkeyBombClass;
+
+    UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|Throwable")
+    TObjectPtr<UStaticMesh> MonkeyBombMesh;
+
+    UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|Throwable", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float MonkeyBombChance = 0.12f; // چانسی دەرچوونی مەیموون (12%)
+
+    UPROPERTY(ReplicatedUsing = OnRep_OfferedThrowableClass, BlueprintReadOnly, Category = "MysteryBox")
+    TSubclassOf<AActor> OfferedThrowableClass;
+
+    UFUNCTION()
+    void OnRep_OfferedThrowableClass();
 
 };

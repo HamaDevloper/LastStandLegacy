@@ -2,13 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Engine/EngineTypes.h"
+#include "Engine/NetSerialization.h"
 #include "ThrowableComponent.generated.h"
 
-class UAnimMontage;
 class AHama;
+class UAnimMontage;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnThrowableCountChanged, int32, NewCount);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnThrowableCountChanged, int32, MonkeyCount, int32, GrenadeCount);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class LASTSTANDLEGACY_API UThrowableComponent : public UActorComponent
@@ -18,94 +18,141 @@ class LASTSTANDLEGACY_API UThrowableComponent : public UActorComponent
 public:
     UThrowableComponent();
 
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
-    UFUNCTION(BlueprintCallable, Category = "Throwable")
-    void StartThrowCharge();
-
-    UFUNCTION(BlueprintCallable, Category = "Throwable")
-    void ReleaseThrow();
-
-    UFUNCTION(BlueprintCallable, Category = "Throwable")
-    void RefillThrowables(int32 Amount = 3);
-
-    bool IsThrowingInProcess() const { return bIsThrowingInProcess; }
-
 protected:
     virtual void BeginPlay() override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+public:
+    // =========================================================================
+    // 🎯 DELEGATES & PUBLIC API
+    // =========================================================================
+
+    UPROPERTY(BlueprintAssignable, Category = "Throwable|Events")
+    FOnThrowableCountChanged OnThrowableCountChanged;
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    void StartGrenadeCharge();
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    void ReleaseGrenadeThrow();
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    void StartMonkeyCharge();
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    void ReleaseMonkeyThrow();
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    void UnlockAndRefillMonkeyBomb(TSubclassOf<AActor> NewMonkeyClass, int32 Amount = 3);
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    void RefillMonkeyToMax();
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    void RefillGrenadesToMax();
+
+    // 🛠️ GETTERS FOR CHARACTER / WEAPON / INTERACTION CHECKS
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    bool IsThrowingInProcess() const { return bIsCharging || bIsThrowingInProcess; }
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    bool IsCharging() const { return bIsCharging; }
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    TSubclassOf<AActor> GetMonkeyClass() const { return MonkeyClass; }
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    int32 GetCurrentGrenadeCount() const { return CurrentGrenadeCount; }
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    int32 GetCurrentMonkeyCount() const { return CurrentMonkeyCount; }
+
+protected:
+    // =========================================================================
+    // ⚙️ CONFIGURATION & PROPERTIES
+    // =========================================================================
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    TSubclassOf<AActor> GrenadeClass;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    TSubclassOf<AActor> MonkeyClass;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    UAnimMontage* GrenadeThrowMontage;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    UAnimMontage* MonkeyThrowMontage;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    FName HoldSectionName = FName("Hold");
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    FName ReleaseSectionName = FName("Release");
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    float ThrowImpulseStrength = 1500.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    int32 MaxGrenadeCount = 5;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    int32 MaxMonkeyCount = 3;
+
+    // =========================================================================
+    // 🌐 REPLICATED STATE
+    // =========================================================================
+
+    UPROPERTY(ReplicatedUsing = OnRep_GrenadeCount)
+    int32 CurrentGrenadeCount;
+
+    UPROPERTY(ReplicatedUsing = OnRep_MonkeyCount)
+    int32 CurrentMonkeyCount;
+
+    UPROPERTY(ReplicatedUsing = OnRep_IsCharging)
+    bool bIsCharging;
+
+    bool bIsThrowingInProcess;
+    float LastThrowTime;
+    float ThrowCooldown;
+
+    FTimerHandle TimerHandle_ResetThrowState;
+
+    UPROPERTY()
+    AHama* CharacterOwner;
+
+    // =========================================================================
+    // 📡 NETWORKING & INTERNAL HELPER FUNCTIONS
+    // =========================================================================
 
     UFUNCTION(Server, Reliable)
-    void Server_StartThrowCharge();
+    void Server_StartCharge();
 
     UFUNCTION(Server, Reliable)
-    void Server_ReleaseThrow(FVector_NetQuantizeNormal LaunchDirection);
+    void Server_ExecuteThrow(FVector_NetQuantizeNormal LaunchDirection, bool bIsMonkey);
 
     UFUNCTION(Client, Reliable)
     void Client_ResetThrowState();
 
     UFUNCTION()
-    void OnRep_ThrowableCount();
+    void OnRep_GrenadeCount();
+
+    UFUNCTION()
+    void OnRep_MonkeyCount();
 
     UFUNCTION()
     void OnRep_IsCharging();
 
     UFUNCTION()
-    void ResetThrowState_Server();
-
-    UFUNCTION()
     void OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
-    void SetWeaponVisibility(bool bVisible);
+    void Internal_StartCharge(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay);
+    void Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey);
 
-public:
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|Config")
-    TSubclassOf<AActor> ThrowableClass;
+    void ResetThrowState_Server();
+    void SetWeaponHidden(bool bHidden);
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|Config")
-    TObjectPtr<UAnimMontage> ThrowMontage;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Anim")
-    FName HoldSectionName = TEXT("Hold");
-
-    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Anim")
-    FName ReleaseSectionName = TEXT("Release");
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|Config")
-    float ThrowImpulseStrength = 1200.0f;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|Config")
-    FName HandSocketName = TEXT("Muzzle_R_Hand");
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|Config")
-    int32 MaxThrowableCount = 3;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|Config")
-    float ThrowCooldown = 1.0f;
-
-    UPROPERTY(ReplicatedUsing = OnRep_ThrowableCount, EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|State")
-    int32 CurrentThrowableCount = 3;
-
-    UPROPERTY(Replicated)
-    bool bIsThrowingInProcess = false;
-
-    UPROPERTY(BlueprintAssignable, Category = "Throwable|Events")
-    FOnThrowableCountChanged OnThrowableCountChanged;
-
-private:
-    UPROPERTY()
-    TObjectPtr<AHama> CharacterOwner;
-
-    UPROPERTY()
-    FVector CachedThrowStartLoc;
-
-    float LastThrowTime = -100.0f;
-
-    UPROPERTY(ReplicatedUsing = OnRep_IsCharging)
-    uint8 bIsCharging : 1;
-
-    FTimerHandle TimerHandle_ResetThrowState;
-
-    void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
     FVector GetCameraAimDirection() const;
     FVector GetCrosshairTargetPoint(const FVector& AimDir) const;
+    void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
 };

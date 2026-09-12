@@ -234,8 +234,11 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> MeleeAction;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Input")
-    TObjectPtr<UInputAction> ThrowInputAction;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Throwable")
+    TObjectPtr<UInputAction> IA_ThrowGrenade;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Throwable")
+    TObjectPtr<UInputAction> IA_ThrowMonkey;
 
     // -----------------------------------------------------------------------------
     // UI & HUD (MainWidgetRef Removed)
@@ -343,8 +346,10 @@ protected:
     void AbilityActionPressed();
     void MeleeActionPressed();
     void InteractActionReleased();
-    void OnThrowPressed();
-    void OnThrowReleased();
+    void Input_ThrowGrenadePressed();
+    void Input_ThrowGrenadeReleased();
+    void Input_ThrowMonkeyPressed();
+    void Input_ThrowMonkeyReleased();
 
 protected:
     static const float CrossHairTimer;

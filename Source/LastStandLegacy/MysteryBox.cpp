@@ -11,6 +11,7 @@
 #include "HamaPlayerState.h"
 #include "MysteryBoxSpawnPoint.h"
 #include "ZombieDirectorSubsystem.h"
+#include "ThrowableComponent.h"
 
 AMysteryBox::AMysteryBox()
 {
@@ -121,6 +122,11 @@ void AMysteryBox::CacheWeaponMeshes()
             }
         }
     }
+
+    if (MonkeyBombMesh)
+    {
+        CachedWeaponMeshes.Add(MonkeyBombMesh);
+    }
 }
 
 void AMysteryBox::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -147,6 +153,7 @@ void AMysteryBox::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, BoxState, Param);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, OfferedWeaponClass, Param);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, OfferedThrowableClass, Param);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, CurrentBuyer, Param);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, bIsFireSaleActive, Param);
 }
@@ -214,7 +221,14 @@ void AMysteryBox::Interact(AHama* InteractingPlayer)
     }
     else if (BoxState == EMysteryBoxState::WeaponOffered)
     {
-        if (OfferedWeaponClass)
+        if (OfferedThrowableClass)
+        {
+            if (UThrowableComponent* ThrowableComp = InteractingPlayer->FindComponentByClass<UThrowableComponent>())
+            {
+                ThrowableComp->UnlockAndRefillMonkeyBomb(OfferedThrowableClass, 3);
+            }
+        }
+        else if (OfferedWeaponClass)
         {
             InteractingPlayer->GiveWeapon(OfferedWeaponClass);
         }
@@ -281,6 +295,44 @@ void AMysteryBox::FinishSpin()
         return;
     }
 
+    // 🟢 پشکنینی چانسی دەرچوونی مەیموون (تەنها کاتێک دەردەچێت کە یاریزانەکە لەو کاتەدا مەیموونی پێ نەبێت)
+    bool bShouldOfferMonkey = false;
+    if (MonkeyBombClass && IsValid(CurrentBuyer))
+    {
+        bool bPlayerAlreadyHasMonkey = false;
+        if (UThrowableComponent* ThrowableComp = CurrentBuyer->FindComponentByClass<UThrowableComponent>())
+        {
+            if (ThrowableComp->GetMonkeyClass() == MonkeyBombClass)
+            {
+                bPlayerAlreadyHasMonkey = true;
+            }
+        }
+
+        if (!bPlayerAlreadyHasMonkey && (FMath::FRand() <= MonkeyBombChance))
+        {
+            bShouldOfferMonkey = true;
+        }
+    }
+
+    if (bShouldOfferMonkey)
+    {
+        OfferedThrowableClass = MonkeyBombClass;
+        OfferedWeaponClass = nullptr;
+
+        MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, OfferedThrowableClass, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, OfferedWeaponClass, this);
+
+        BoxState = EMysteryBoxState::WeaponOffered;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
+        HandleBoxStateChanged();
+
+        FlushNetDormancy();
+        ForceNetUpdate();
+
+        GetWorldTimerManager().SetTimer(TimerHandle_OfferTimeout, this, &AMysteryBox::ResetBox, OfferDuration, false);
+        return;
+    }
+
     TArray<TSubclassOf<ABaseWeapon>> FilteredWeapons = GetFilteredWeaponsForPlayer(CurrentBuyer);
 
     if (FilteredWeapons.Num() == 0)
@@ -296,12 +348,13 @@ void AMysteryBox::FinishSpin()
 
     int32 RandomIndex = FMath::RandRange(0, FilteredWeapons.Num() - 1);
     OfferedWeaponClass = FilteredWeapons[RandomIndex];
+    OfferedThrowableClass = nullptr;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, OfferedWeaponClass, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, OfferedThrowableClass, this);
 
     BoxState = EMysteryBoxState::WeaponOffered;
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
-    HandleBoxStateChanged();
 
     FlushNetDormancy();
     ForceNetUpdate();
@@ -380,10 +433,12 @@ void AMysteryBox::ResetBox()
 {
     BoxState = EMysteryBoxState::Cooldown;
     OfferedWeaponClass = nullptr;
+    OfferedThrowableClass = nullptr;
     CurrentBuyer = nullptr;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, OfferedWeaponClass, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, OfferedThrowableClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, CurrentBuyer, this);
 
     HandleBoxStateChanged();
@@ -522,6 +577,11 @@ void AMysteryBox::OnRep_OfferedWeaponClass()
     UpdateVisuals();
 }
 
+void AMysteryBox::OnRep_OfferedThrowableClass()
+{
+    UpdateVisuals();
+}
+
 void AMysteryBox::CycleRandomWeaponMesh()
 {
     if (CachedWeaponMeshes.Num() == 0 || !OfferedWeaponMesh) return;
@@ -555,17 +615,27 @@ void AMysteryBox::UpdateVisuals()
         return;
     }
 
-    if (BoxState == EMysteryBoxState::WeaponOffered && OfferedWeaponClass)
+    if (BoxState == EMysteryBoxState::WeaponOffered)
     {
-        if (const ABaseWeapon* DefaultWeapon = OfferedWeaponClass->GetDefaultObject<ABaseWeapon>())
+        if (OfferedThrowableClass && MonkeyBombMesh)
         {
-            if (const UStaticMeshComponent* MeshComp = DefaultWeapon->FindComponentByClass<UStaticMeshComponent>())
+            OfferedWeaponMesh->SetStaticMesh(MonkeyBombMesh);
+            OfferedWeaponMesh->SetVisibility(true);
+            return;
+        }
+
+        if (OfferedWeaponClass)
+        {
+            if (const ABaseWeapon* DefaultWeapon = OfferedWeaponClass->GetDefaultObject<ABaseWeapon>())
             {
-                if (UStaticMesh* Mesh = MeshComp->GetStaticMesh())
+                if (const UStaticMeshComponent* MeshComp = DefaultWeapon->FindComponentByClass<UStaticMeshComponent>())
                 {
-                    OfferedWeaponMesh->SetStaticMesh(Mesh);
-                    OfferedWeaponMesh->SetVisibility(true);
-                    return;
+                    if (UStaticMesh* Mesh = MeshComp->GetStaticMesh())
+                    {
+                        OfferedWeaponMesh->SetStaticMesh(Mesh);
+                        OfferedWeaponMesh->SetVisibility(true);
+                        return;
+                    }
                 }
             }
         }
