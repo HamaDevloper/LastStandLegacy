@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/EngineTypes.h"
 #include "ThrowableComponent.generated.h"
 
 class UAnimMontage;
@@ -19,7 +20,6 @@ public:
 
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    // BO3-Style Hold & Release API
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     void StartThrowCharge();
 
@@ -38,7 +38,7 @@ protected:
     void Server_StartThrowCharge();
 
     UFUNCTION(Server, Reliable)
-    void Server_ReleaseThrow(FVector_NetQuantizeNormal AimDirection);
+    void Server_ReleaseThrow(FVector_NetQuantizeNormal LaunchDirection);
 
     UFUNCTION(Client, Reliable)
     void Client_ResetThrowState();
@@ -48,6 +48,12 @@ protected:
 
     UFUNCTION()
     void OnRep_IsCharging();
+
+    UFUNCTION()
+    void ResetThrowState_Server();
+
+    UFUNCTION()
+    void OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
     void SetWeaponVisibility(bool bVisible);
 
@@ -76,7 +82,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|Config")
     float ThrowCooldown = 1.0f;
 
-    // State Properties
     UPROPERTY(ReplicatedUsing = OnRep_ThrowableCount, EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable|State")
     int32 CurrentThrowableCount = 3;
 
@@ -91,12 +96,14 @@ private:
     TObjectPtr<AHama> CharacterOwner;
 
     UPROPERTY()
-    TObjectPtr<APlayerController> OwnerController;
+    FVector CachedThrowStartLoc;
 
-    float LastThrowTime = 0.0f;
+    float LastThrowTime = -100.0f;
 
     UPROPERTY(ReplicatedUsing = OnRep_IsCharging)
     uint8 bIsCharging : 1;
+
+    FTimerHandle TimerHandle_ResetThrowState;
 
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
     FVector GetCameraAimDirection() const;

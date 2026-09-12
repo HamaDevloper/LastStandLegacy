@@ -9,6 +9,14 @@
 #include "Animation/AnimInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
+
+// NOTE: this file expects a new member on UThrowableComponent, declared in
+// ThrowableComponent.h alongside the other members (e.g. under CurrentThrowableCount):
+//     FVector CachedThrowStartLoc;
+// It caches the throw origin at charge-start instead of resampling the hand
+// socket at release, so a long hold can't drag the spawn point into an
+// unexpected pose (the "teleport" bug).
 
 UThrowableComponent::UThrowableComponent()
 {
@@ -23,6 +31,19 @@ void UThrowableComponent::BeginPlay()
 {
     Super::BeginPlay();
     CharacterOwner = Cast<AHama>(GetOwner());
+
+    if (ThrowMontage)
+    {
+        int32 SectionIndex = ThrowMontage->GetSectionIndex(ReleaseSectionName);
+        if (SectionIndex != INDEX_NONE)
+        {
+            ThrowCooldown = ThrowMontage->GetSectionLength(SectionIndex);
+        }
+        else
+        {
+            ThrowCooldown = ThrowMontage->GetPlayLength();
+        }
+    }
 }
 
 void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -85,10 +106,19 @@ FVector UThrowableComponent::GetCrosshairTargetPoint(const FVector& AimDir) cons
 
 void UThrowableComponent::StartThrowCharge()
 {
-    if (!CharacterOwner || CurrentThrowableCount <= 0 || bIsCharging || bIsThrowingInProcess) return;
+    if (CharacterOwner && CharacterOwner->IsSwappingWeapon()) return;
+    if (!CharacterOwner || !ThrowableClass || CurrentThrowableCount <= 0 || bIsCharging || bIsThrowingInProcess) return;
 
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     if (CurrentTime - LastThrowTime < ThrowCooldown) return;
+
+    if (CharacterOwner->GetMesh())
+    {
+        if (UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance())
+        {
+            if (AnimInstance->Montage_IsPlaying(ThrowMontage)) return;
+        }
+    }
 
     bIsCharging = true;
     bIsThrowingInProcess = true;
@@ -114,9 +144,15 @@ void UThrowableComponent::StartThrowCharge()
 void UThrowableComponent::Server_StartThrowCharge_Implementation()
 {
     const float CurrentTime = GetWorld()->GetTimeSeconds();
+    const float NetTolerance = 0.05f;
 
-    if (!CharacterOwner || CurrentThrowableCount <= 0 || (CurrentTime - LastThrowTime < ThrowCooldown))
+    if (!CharacterOwner || CharacterOwner->IsSwappingWeapon() || CurrentThrowableCount <= 0 ||
+        (CurrentTime - LastThrowTime < (ThrowCooldown - NetTolerance)) || bIsThrowingInProcess)
     {
+        if (!bIsThrowingInProcess)
+        {
+            ResetThrowState_Server();
+        }
         Client_ResetThrowState();
         return;
     }
@@ -125,6 +161,15 @@ void UThrowableComponent::Server_StartThrowCharge_Implementation()
     bIsThrowingInProcess = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
+
+    if (CharacterOwner->GetMesh() && CharacterOwner->GetMesh()->DoesSocketExist(HandSocketName))
+    {
+        CachedThrowStartLoc = CharacterOwner->GetMesh()->GetSocketLocation(HandSocketName);
+    }
+    else
+    {
+        CachedThrowStartLoc = CharacterOwner->GetPawnViewLocation();
+    }
 
     if (GetNetMode() == NM_ListenServer && !CharacterOwner->IsLocallyControlled())
     {
@@ -136,23 +181,24 @@ void UThrowableComponent::ReleaseThrow()
 {
     if (!CharacterOwner || !bIsCharging) return;
 
+    bIsCharging = false;
+
+    LastThrowTime = GetWorld()->GetTimeSeconds();
+
     if (ThrowMontage && CharacterOwner->GetMesh())
     {
         if (UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance())
         {
             AnimInstance->Montage_SetPlayRate(ThrowMontage, 1.0f);
             AnimInstance->Montage_JumpToSection(ReleaseSectionName, ThrowMontage);
+
+            FOnMontageEnded EndedDelegate;
+            EndedDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
+            AnimInstance->Montage_SetEndDelegate(EndedDelegate, ThrowMontage);
         }
     }
 
-    // 🛠️ تەنها ئاڕاستەی بەرەوپێشچوونی کامێرا (Normalized Vector) بنێرە
     FVector AimDir = GetCameraAimDirection();
-
-    if (!GetOwner()->HasAuthority())
-    {
-        bIsCharging = false;
-    }
-
     Server_ReleaseThrow(AimDir);
 }
 
@@ -160,8 +206,9 @@ void UThrowableComponent::Server_ReleaseThrow_Implementation(FVector_NetQuantize
 {
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (!CharacterOwner || !ThrowableClass || CurrentThrowableCount <= 0 || !bIsCharging || (CurrentTime - LastThrowTime < ThrowCooldown))
+    if (!CharacterOwner || !ThrowableClass || CurrentThrowableCount <= 0 || !bIsCharging)
     {
+        ResetThrowState_Server();
         Client_ResetThrowState();
         return;
     }
@@ -170,17 +217,28 @@ void UThrowableComponent::Server_ReleaseThrow_Implementation(FVector_NetQuantize
     bIsCharging = false;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
 
-    // 🛠️ 1. پشکنینی ئاڕاستەی تەواو لە سەرڤەر بەپێی Vector نێردراوەکە
+    if (GetNetMode() == NM_ListenServer && !CharacterOwner->IsLocallyControlled())
+    {
+        OnRep_IsCharging();
+    }
+
     FVector ValidatedAimDir = LaunchDirection.GetSafeNormal();
     FVector TargetPoint = GetCrosshairTargetPoint(ValidatedAimDir);
 
-    // 🛠️ 2. دۆزینەوەی شوێنی سەلامەت لەبەردەم کامێرا/Pawn
-    FVector StartLoc = CharacterOwner->GetPawnViewLocation();
-    FVector DesiredTarget = StartLoc + (ValidatedAimDir * 50.0f);
+    FVector StartLoc;
+    if (CharacterOwner->GetMesh() && CharacterOwner->GetMesh()->DoesSocketExist(HandSocketName))
+    {
+        StartLoc = CharacterOwner->GetMesh()->GetSocketLocation(HandSocketName);
+    }
+    else
+    {
+        StartLoc = CharacterOwner->GetPawnViewLocation() + (ValidatedAimDir * 40.0f);
+    }
+
+    FVector DesiredTarget = StartLoc + (ValidatedAimDir * 30.0f);
     FVector FinalSpawnLoc;
     GetSafeSpawnLocation(StartLoc, DesiredTarget, FinalSpawnLoc);
 
-    // 🛠️ 3. ئاڕاستەی دروستی فڕێدان بەبێ Double Rotation
     FVector TrueLaunchDir = (TargetPoint - FinalSpawnLoc).GetSafeNormal();
 
     CurrentThrowableCount--;
@@ -210,7 +268,22 @@ void UThrowableComponent::Server_ReleaseThrow_Implementation(FVector_NetQuantize
         UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
     }
 
+    float ReleaseAnimDuration = ThrowCooldown;
+    GetWorld()->GetTimerManager().SetTimer(
+        TimerHandle_ResetThrowState,
+        this,
+        &UThrowableComponent::ResetThrowState_Server,
+        ReleaseAnimDuration,
+        false
+    );
+}
+
+void UThrowableComponent::ResetThrowState_Server()
+{
+    bIsCharging = false;
     bIsThrowingInProcess = false;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsCharging, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsThrowingInProcess, this);
 
     SetWeaponVisibility(false);
@@ -233,6 +306,15 @@ void UThrowableComponent::Client_ResetThrowState_Implementation()
     }
 
     SetWeaponVisibility(false);
+}
+
+void UThrowableComponent::OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    if (Montage == ThrowMontage)
+    {
+        bIsThrowingInProcess = false;
+        SetWeaponVisibility(false);
+    }
 }
 
 void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const
@@ -259,7 +341,7 @@ void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FV
 
 void UThrowableComponent::OnRep_IsCharging()
 {
-    SetWeaponVisibility(!bIsCharging);
+    SetWeaponVisibility(bIsCharging);
 
     if (CharacterOwner && CharacterOwner->IsLocallyControlled()) return;
     if (!ThrowMontage || !CharacterOwner || !CharacterOwner->GetMesh()) return;

@@ -678,6 +678,24 @@ void AHama::AutoSwapToAvailableWeapon()
     }
 }
 
+bool AHama::IsSwappingWeapon() const
+{
+    if (PendingWeaponForSwap != nullptr)
+    {
+        return true;
+    }
+
+    if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+    {
+        if (SwapWeaponMontage && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void AHama::Input_SwapWeapon()
 {
     SwapWeapon(nullptr);
@@ -2327,6 +2345,23 @@ void AHama::Client_OnPlayerDowned_Implementation()
 
 void AHama::OnThrowPressed()
 {
+    if (IsSwappingWeapon())
+    {
+        return;
+    }
+
+    if (CurrentWeapon)
+    {
+        if(bIsFireButtonHold)
+        {
+            CurrentWeapon->StopFire();
+        }
+        if (CurrentWeapon->IsReloading())
+        {
+            CurrentWeapon->CancelReload();
+        }
+    }
+
     if (ThrowableComponent)
     {
         ThrowableComponent->StartThrowCharge();

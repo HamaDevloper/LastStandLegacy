@@ -389,6 +389,7 @@ public:
     bool IsMovingForward() const;
     bool IsSliding() const { return HamaComponent->IsSlide(); }
     bool IsDiving() const { return HamaComponent->IsDiving(); }
+    bool IsSwappingWeapon() const;
 
     protected:
         UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
@@ -575,7 +576,6 @@ public:
     protected:
         UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapons|Inventory")
         TArray<TObjectPtr<ABaseWeapon>> EquippedWeapons;
-
 public:
     bool SetCanInteract() const;
 };
