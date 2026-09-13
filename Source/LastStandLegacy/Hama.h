@@ -234,10 +234,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> MeleeAction;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Throwable")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Input")
     TObjectPtr<UInputAction> IA_ThrowGrenade;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Throwable")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Input")
     TObjectPtr<UInputAction> IA_ThrowMonkey;
 
     // -----------------------------------------------------------------------------

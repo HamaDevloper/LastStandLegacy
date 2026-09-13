@@ -20,12 +20,10 @@ AGrenade::AGrenade()
 
     bHasExploded = false;
 
-    // Collision Setup
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
     CollisionComp->InitSphereRadius(10.0f);
     CollisionComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 
-    // 🛑 ڕێگری لە کێشە دروستکردن لەگەڵ یاریزاندا کاتی فڕێدان
     CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
     RootComponent = CollisionComp;
 
@@ -64,7 +62,7 @@ void AGrenade::Explode()
     DrawDebugSphere(GetWorld(), GetActorLocation(), DamageRadius, 16, FColor::Red, false, 3.0f, 0, 1.5f);
 
     TArray<AActor*> IgnoredActors;
-    IgnoredActors.Add(this); // نارنجۆکەکە خۆی لادە
+    IgnoredActors.Add(this);
 
     APawn* ThrowerPawn = GetInstigator();
 

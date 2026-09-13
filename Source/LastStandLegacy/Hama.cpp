@@ -1570,9 +1570,10 @@ void AHama::SprintActionPressed()
 {
     if (!IsMovingForward()) return;
     if (!HamaComponent) return;
-    if (IsDrinkingPerk()) return;
+    if (!SetCanInteract()) return;
     if (IsSliding()) return;
     if (IsDiving()) return;
+    if (HamaComponent->GetStamina() <= 20.f) return;
     if (GetCharacterMovement()->IsFalling()) return;
     if (HamaComponent->IsAiming())   OnAim(false);
     if (bIsFireButtonHold && CurrentWeapon) CurrentWeapon->StopFire();
@@ -2354,6 +2355,7 @@ void AHama::Input_ThrowGrenadePressed()
 {
     if (ThrowableComponent)
     {
+        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Yellow, TEXT("Throw Grenade Pressed"));
         ThrowableComponent->StartGrenadeCharge();
     }
 }
@@ -2362,6 +2364,7 @@ void AHama::Input_ThrowGrenadeReleased()
 {
     if (ThrowableComponent)
     {
+        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Yellow, TEXT("Throw Grenade Released"));
         ThrowableComponent->ReleaseGrenadeThrow();
     }
 }

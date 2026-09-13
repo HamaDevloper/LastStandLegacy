@@ -183,8 +183,11 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 void UHamaComponent::DrainStamina()
 {
     if (!OwnerCharacter || !MoveComp) return;
-
-    if (MoveComp->IsFalling()) return;
+    if (MoveComp->IsFalling())
+    {
+        SetSprinting(false);
+        return;
+    }
 
     FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
     if (InputVector.SizeSquared() < 0.64f)
@@ -193,10 +196,10 @@ void UHamaComponent::DrainStamina()
         return;
     }
 
-    FVector ForwardVector = OwnerCharacter->GetActorForwardVector();
+    const FVector Forward2D = OwnerCharacter->GetActorForwardVector().GetSafeNormal2D();
     FVector NormalizedInput = InputVector.GetSafeNormal2D();
 
-    float ForwardDot = FVector::DotProduct(ForwardVector, NormalizedInput);
+    float ForwardDot = FVector::DotProduct(Forward2D, NormalizedInput);
 
     if (ForwardDot < 0.5f)
     {
@@ -204,6 +207,11 @@ void UHamaComponent::DrainStamina()
         return;
     }
 
+    if(IsDowned())
+    {
+        SetSprinting(false);
+        return;
+    }
     FVector CurrentVelocity = OwnerCharacter->GetVelocity();
     CurrentVelocity.Z = 0.f;
 
@@ -220,7 +228,7 @@ void UHamaComponent::DrainStamina()
         SetSprinting(false);
 
         GetWorld()->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
-
+        GetWorld()->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
         GetWorld()->GetTimerManager().SetTimer(
             StaminaRegenTimerHandle,
             this,

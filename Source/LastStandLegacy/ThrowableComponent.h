@@ -10,6 +10,14 @@ class UAnimMontage;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnThrowableCountChanged, int32, MonkeyCount, int32, GrenadeCount);
 
+UENUM(BlueprintType)
+enum class EThrowChargeState : uint8
+{
+    Idle,
+    Charging,
+    Released
+};
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class LASTSTANDLEGACY_API UThrowableComponent : public UActorComponent
 {
@@ -23,10 +31,6 @@ protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
-    // =========================================================================
-    // 🎯 DELEGATES & PUBLIC API
-    // =========================================================================
-
     UPROPERTY(BlueprintAssignable, Category = "Throwable|Events")
     FOnThrowableCountChanged OnThrowableCountChanged;
 
@@ -51,12 +55,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     void RefillGrenadesToMax();
 
-    // 🛠️ GETTERS FOR CHARACTER / WEAPON / INTERACTION CHECKS
     UFUNCTION(BlueprintCallable, Category = "Throwable")
-    bool IsThrowingInProcess() const { return bIsCharging || bIsThrowingInProcess; }
+    bool IsThrowingInProcess() const { return bIsThrowingLocal || ChargeState != EThrowChargeState::Idle; }
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
-    bool IsCharging() const { return bIsCharging; }
+    bool IsCharging() const { return ChargeState == EThrowChargeState::Charging; }
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     TSubclassOf<AActor> GetMonkeyClass() const { return MonkeyClass; }
@@ -67,11 +70,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     int32 GetCurrentMonkeyCount() const { return CurrentMonkeyCount; }
 
-protected:
-    // =========================================================================
-    // ⚙️ CONFIGURATION & PROPERTIES
-    // =========================================================================
+    void SpawnAndAttachHeldVisual();
+    void DestroyHeldVisual();
+    void Server_OnGrenadeCookExpired();
 
+protected:
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
     TSubclassOf<AActor> GrenadeClass;
 
@@ -91,6 +94,9 @@ protected:
     FName ReleaseSectionName = FName("Release");
 
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    FName ThrowableHandSocketName = TEXT("GrenadeHandSocket");
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
     float ThrowImpulseStrength = 1500.0f;
 
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
@@ -99,34 +105,35 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
     int32 MaxMonkeyCount = 3;
 
-    // =========================================================================
-    // 🌐 REPLICATED STATE
-    // =========================================================================
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    float MaxGrenadeCookTime = 3.5f;
 
-    UPROPERTY(ReplicatedUsing = OnRep_GrenadeCount)
+    UPROPERTY(EditDefaultsOnly, ReplicatedUsing = OnRep_GrenadeCount)
     int32 CurrentGrenadeCount;
 
-    UPROPERTY(ReplicatedUsing = OnRep_MonkeyCount)
+    UPROPERTY(EditDefaultsOnly, ReplicatedUsing = OnRep_MonkeyCount)
     int32 CurrentMonkeyCount;
 
-    UPROPERTY(ReplicatedUsing = OnRep_IsCharging)
-    bool bIsCharging;
+    UPROPERTY(ReplicatedUsing = OnRep_ChargeState)
+    EThrowChargeState ChargeState = EThrowChargeState::Idle;
 
-    bool bIsThrowingInProcess;
-    float LastThrowTime;
-    float ThrowCooldown;
+    UPROPERTY(Replicated)
+    bool bIsMonkeyThrow = false;
+    
+    bool bIsThrowingLocal = false;
+    float LastThrowTime = -100.0f;
+    float ThrowCooldown = 1.0f;
 
     FTimerHandle TimerHandle_ResetThrowState;
 
     UPROPERTY()
-    AHama* CharacterOwner;
+    TObjectPtr<AHama> CharacterOwner;
 
-    // =========================================================================
-    // 📡 NETWORKING & INTERNAL HELPER FUNCTIONS
-    // =========================================================================
+    UPROPERTY()
+    TObjectPtr<AActor> HeldThrowableVisualActor;
 
     UFUNCTION(Server, Reliable)
-    void Server_StartCharge();
+    void Server_StartCharge(bool bIsMonkey);
 
     UFUNCTION(Server, Reliable)
     void Server_ExecuteThrow(FVector_NetQuantizeNormal LaunchDirection, bool bIsMonkey);
@@ -141,18 +148,21 @@ protected:
     void OnRep_MonkeyCount();
 
     UFUNCTION()
-    void OnRep_IsCharging();
+    void OnRep_ChargeState();
 
     UFUNCTION()
     void OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
-    void Internal_StartCharge(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay);
+    void Internal_StartCharge(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey);
     void Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey);
 
     void ResetThrowState_Server();
     void SetWeaponHidden(bool bHidden);
+    void HandleChargeStateChanged();
 
     FVector GetCameraAimDirection() const;
     FVector GetCrosshairTargetPoint(const FVector& AimDir) const;
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
+
+    FTimerHandle TimerHandle_CookExplosion;
 };
