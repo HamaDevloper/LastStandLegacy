@@ -31,6 +31,8 @@ protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
     UPROPERTY(BlueprintAssignable, Category = "Throwable|Events")
     FOnThrowableCountChanged OnThrowableCountChanged;
 
@@ -82,10 +84,10 @@ protected:
     TSubclassOf<AActor> MonkeyClass;
 
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
-    UAnimMontage* GrenadeThrowMontage;
+    TObjectPtr<UAnimMontage> GrenadeThrowMontage;
 
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
-    UAnimMontage* MonkeyThrowMontage;
+    TObjectPtr<UAnimMontage> MonkeyThrowMontage;
 
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
     FName HoldSectionName = FName("Hold");
@@ -108,21 +110,28 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
     float MaxGrenadeCookTime = 3.5f;
 
-    UPROPERTY(EditDefaultsOnly, ReplicatedUsing = OnRep_GrenadeCount)
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    float ThrowCooldown = 1.0f;
+
+    // Runtime Dynamic States (Replicated)
+    UPROPERTY(ReplicatedUsing = OnRep_GrenadeCount, VisibleInstanceOnly, Category = "Throwable|State")
     int32 CurrentGrenadeCount;
 
-    UPROPERTY(EditDefaultsOnly, ReplicatedUsing = OnRep_MonkeyCount)
+    UPROPERTY(ReplicatedUsing = OnRep_MonkeyCount, VisibleInstanceOnly, Category = "Throwable|State")
     int32 CurrentMonkeyCount;
 
-    UPROPERTY(ReplicatedUsing = OnRep_ChargeState)
+    UPROPERTY(ReplicatedUsing = OnRep_ChargeState, VisibleInstanceOnly, Category = "Throwable|State")
     EThrowChargeState ChargeState = EThrowChargeState::Idle;
 
     UPROPERTY(Replicated)
     bool bIsMonkeyThrow = false;
-    
+
+    // Transient Local Variables
+    UPROPERTY(Transient)
     bool bIsThrowingLocal = false;
+
+    UPROPERTY(Transient)
     float LastThrowTime = -100.0f;
-    float ThrowCooldown = 1.0f;
 
     FTimerHandle TimerHandle_ResetThrowState;
 
@@ -138,9 +147,8 @@ protected:
     UFUNCTION(Server, Reliable)
     void Server_ExecuteThrow(FVector_NetQuantizeNormal LaunchDirection, bool bIsMonkey);
 
-    UFUNCTION(Client, Reliable)
-    void Client_ResetThrowState();
-
+    void ExecuteStartCharge_Server(bool bIsMonkey);
+    
     UFUNCTION()
     void OnRep_GrenadeCount();
 
@@ -165,4 +173,7 @@ protected:
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
 
     FTimerHandle TimerHandle_CookExplosion;
+
+private:
+    void Debug_RenderNetworkDesync();
 };
