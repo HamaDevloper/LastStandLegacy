@@ -9,6 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "Grenade.h"
 
 UThrowableComponent::UThrowableComponent()
 {
@@ -24,6 +25,7 @@ UThrowableComponent::UThrowableComponent()
     bIsMonkeyThrow = false;
     bIsThrowingLocal = false;
     LastThrowTime = -100.0f;
+    ServerCookStartTime = 0.0f;
 
     MaxGrenadeCount = 5;
     CurrentGrenadeCount = 3;
@@ -31,7 +33,6 @@ UThrowableComponent::UThrowableComponent()
     MaxMonkeyCount = 3;
     CurrentMonkeyCount = 0;
 
-    MaxGrenadeCookTime = 3.5f;
     ThrowableHandSocketName = TEXT("GrenadeHandSocket");
 }
 
@@ -161,6 +162,8 @@ void UThrowableComponent::ExecuteStartCharge_Server(bool bIsMonkey)
 
     if (!bIsMonkeyThrow)
     {
+        ServerCookStartTime = GetWorld()->GetTimeSeconds();
+
         GetWorld()->GetTimerManager().SetTimer(
             TimerHandle_CookExplosion,
             this,
@@ -214,6 +217,11 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 {
     const bool bActualIsMonkey = bIsMonkeyThrow;
 
+    if (!bActualIsMonkey && GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+    }
+
     TSubclassOf<AActor> TargetClass = bActualIsMonkey ? MonkeyClass : GrenadeClass;
     int32& TargetCount = bActualIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const float ActiveCooldown = bActualIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
@@ -255,12 +263,25 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     FRotator SpawnRotation = TrueLaunchDir.Rotation();
     FTransform SpawnTransform(SpawnRotation, FinalSpawnLoc);
 
+    float RemainingFuseTime = MaxGrenadeCookTime;
+    if (!bActualIsMonkey)
+    {
+        float ElapsedCookTime = CurrentTime - ServerCookStartTime;
+        RemainingFuseTime = FMath::Max(0.1f, MaxGrenadeCookTime - ElapsedCookTime);
+    }
+
     AActor* SpawnedThrowable = GetWorld()->SpawnActorDeferred<AActor>(
         TargetClass, SpawnTransform, CharacterOwner, CharacterOwner, ESpawnActorCollisionHandlingMethod::AlwaysSpawn
     );
 
     if (SpawnedThrowable)
     {
+
+        if (AGrenade* GrenadeActor = Cast<AGrenade>(SpawnedThrowable))
+        {
+            GrenadeActor->SetFuseDuration(RemainingFuseTime);
+        }
+
         if (UProjectileMovementComponent* ProjComp = SpawnedThrowable->FindComponentByClass<UProjectileMovementComponent>())
         {
             ProjComp->bInitialVelocityInLocalSpace = false;
@@ -297,17 +318,40 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 {
     if (!CharacterOwner || !CharacterOwner->HasAuthority()) return;
 
+    // 1. شوێنی تەقینەوەکە
     FVector ExpLocation = CharacterOwner->GetPawnViewLocation();
 
-    if (GrenadeClass)
-    {
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.Owner = CharacterOwner;
-        SpawnParams.Instigator = CharacterOwner;
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    // 2. دیباگ سپێر بۆ بینینی ناوچەی تەقینەوە لە دەستدا
+    DrawDebugSphere(GetWorld(), ExpLocation, 400.0f, 16, FColor::Red, false, 3.0f, 0, 1.5f);
 
-        GetWorld()->SpawnActor<AActor>(GrenadeClass, ExpLocation, FRotator::ZeroRotator, SpawnParams);
+    TArray<AActor*> IgnoredActors;
+
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        if (APlayerController* PC = It->Get())
+        {
+            if (APawn* PlayerPawn = PC->GetPawn())
+            {
+                if (PlayerPawn != CharacterOwner)
+                {
+                    IgnoredActors.Add(PlayerPawn);
+                }
+            }
+        }
     }
+
+    UGameplayStatics::ApplyRadialDamage(
+        this,
+        500.f,
+        ExpLocation,
+        400.0f,
+        UDamageType::StaticClass(),
+        IgnoredActors,
+        CharacterOwner,
+        CharacterOwner->GetController(),
+        true,
+        ECC_WorldStatic
+    );
 
     CurrentGrenadeCount = FMath::Max(0, CurrentGrenadeCount - 1);
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
@@ -315,7 +359,6 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 
     ResetThrowState_Server();
 }
-
 
 void UThrowableComponent::ResetThrowState_Server()
 {

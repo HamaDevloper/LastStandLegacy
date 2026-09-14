@@ -115,6 +115,8 @@ protected:
     UPROPERTY(Transient)
     float MonkeyThrowCooldown = 1.0f;
 
+
+
     UPROPERTY(ReplicatedUsing = OnRep_GrenadeCount, VisibleInstanceOnly, Category = "Throwable|State")
     int32 CurrentGrenadeCount;
 
@@ -133,6 +135,8 @@ protected:
 
     UPROPERTY(Transient)
     float LastThrowTime = -100.0f;
+
+    float ServerCookStartTime = 0.0f;
 
     FTimerHandle TimerHandle_ResetThrowState;
 

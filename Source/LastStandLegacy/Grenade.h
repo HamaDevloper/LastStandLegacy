@@ -36,7 +36,7 @@ protected:
     float FuseDuration = 3.5f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|Config")
-    float BaseDamage = 400.0f;
+    float BaseDamage = 500.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|Config")
     float DamageRadius = 500.0f;
@@ -56,4 +56,7 @@ protected:
 
     UFUNCTION(NetMulticast, Unreliable)
     void Multicast_PlayExplosionFX();
+
+public:
+    void SetFuseDuration(float NewDuration);
 };

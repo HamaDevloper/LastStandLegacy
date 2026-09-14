@@ -13,9 +13,9 @@ AMonkeyBomb::AMonkeyBomb()
     PrimaryActorTick.bCanEverTick = false;
 
     bReplicates = true;
-    SetReplicateMovement(true);
+    SetReplicateMovement(false);
 
-    SetNetUpdateFrequency(30.0f);
+    SetNetUpdateFrequency(15.f);
     SetMinNetUpdateFrequency(2.0f);
     SetNetCullDistanceSquared(FMath::Square(3000.0f));
 

@@ -12,10 +12,10 @@ AGrenade::AGrenade()
     PrimaryActorTick.bCanEverTick = false;
 
     bReplicates = true;
-    SetReplicateMovement(true);
+    SetReplicateMovement(false);
 
-    SetNetUpdateFrequency(30.0f);
-    SetMinNetUpdateFrequency(2.0f);
+    SetNetUpdateFrequency(15.f);
+    SetMinNetUpdateFrequency(2.f);
     SetNetCullDistanceSquared(FMath::Square(3000.0f));
 
     bHasExploded = false;
@@ -31,7 +31,6 @@ AGrenade::AGrenade()
     MeshComp->SetupAttachment(CollisionComp);
     MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    // Movement Setup
     ProjectileMovementComp = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovementComp"));
     ProjectileMovementComp->UpdatedComponent = CollisionComp;
     ProjectileMovementComp->InitialSpeed = 1800.0f;
@@ -40,6 +39,11 @@ AGrenade::AGrenade()
     ProjectileMovementComp->bShouldBounce = true;
     ProjectileMovementComp->Bounciness = 0.3f;
     ProjectileMovementComp->Friction = 0.5f;
+}
+
+void AGrenade::SetFuseDuration(float NewDuration)
+{
+    FuseDuration = FMath::Max(0.05f, NewDuration);
 }
 
 void AGrenade::BeginPlay()
