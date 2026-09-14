@@ -72,8 +72,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     int32 GetCurrentMonkeyCount() const { return CurrentMonkeyCount; }
 
-    void SpawnAndAttachHeldVisual();
-    void DestroyHeldVisual();
+    void ToggleHandThrowableVisibility(bool bVisible);
     void Server_OnGrenadeCookExpired();
 
 protected:
@@ -110,10 +109,12 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
     float MaxGrenadeCookTime = 3.5f;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
-    float ThrowCooldown = 1.0f;
+    UPROPERTY(Transient)
+    float GrenadeThrowCooldown = 1.0f;
 
-    // Runtime Dynamic States (Replicated)
+    UPROPERTY(Transient)
+    float MonkeyThrowCooldown = 1.0f;
+
     UPROPERTY(ReplicatedUsing = OnRep_GrenadeCount, VisibleInstanceOnly, Category = "Throwable|State")
     int32 CurrentGrenadeCount;
 

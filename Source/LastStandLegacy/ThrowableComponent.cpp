@@ -16,11 +16,14 @@ UThrowableComponent::UThrowableComponent()
     PrimaryComponentTick.bStartWithTickEnabled = true;
     SetIsReplicatedByDefault(true);
 
+    MaxGrenadeCookTime = 3.5f;
+    GrenadeThrowCooldown = 1.5f;
+    MonkeyThrowCooldown = 2.0f;
+
     ChargeState = EThrowChargeState::Idle;
     bIsMonkeyThrow = false;
     bIsThrowingLocal = false;
     LastThrowTime = -100.0f;
-    ThrowCooldown = 1.0f;
 
     MaxGrenadeCount = 5;
     CurrentGrenadeCount = 3;
@@ -42,41 +45,38 @@ void UThrowableComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 void UThrowableComponent::Debug_RenderNetworkDesync()
 {
 #if !UE_BUILD_SHIPPING
-    if (!GEngine) return;
+    if (!GEngine || !GetOwner() || !GetWorld()) return;
 
-    AActor* Owner = GetOwner();
-    if (!Owner) return;
-
-    const bool bIsServer = Owner->HasAuthority();
+    const bool bIsServer = GetOwner()->HasAuthority();
     const FString RoleName = bIsServer ? TEXT("SERVER") : TEXT("CLIENT");
-    
-    // Check Desync Condition: Client predicted throwing locally but server is idle
+
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    const float TimeSinceLastThrow = CurrentTime - LastThrowTime;
+    const float ActiveCooldown = bIsMonkeyThrow ? MonkeyThrowCooldown : GrenadeThrowCooldown;
+    const float RemainingCooldown = FMath::Max(0.0f, ActiveCooldown - TimeSinceLastThrow);
+    const bool bIsOnCooldown = RemainingCooldown > 0.0f;
+
     bool bDesyncDetected = false;
-    if (!bIsServer)
+    if (!bIsServer && bIsThrowingLocal && ChargeState == EThrowChargeState::Idle)
     {
-        if (bIsThrowingLocal && ChargeState == EThrowChargeState::Idle)
-        {
-            bDesyncDetected = true;
-        }
+        bDesyncDetected = true;
     }
 
-    FColor DisplayColor = bIsServer ? FColor::Green : FColor::Cyan;
-    if (bDesyncDetected)
-    {
-        DisplayColor = FColor::Red; // Red alert on screen when client/server state diverges
-    }
+    FColor DisplayColor = bDesyncDetected ? FColor::Red :
+        (bIsOnCooldown ? FColor::Yellow : (bIsServer ? FColor::Green : FColor::Cyan));
 
     FString DebugMsg = FString::Printf(
-        TEXT("[%s] Grenades: %d/%d | Monkeys: %d/%d | ChargeState: %d | LocalThrowing: %s %s"),
+        TEXT("[%s] Grenades: %d/%d | Monkeys: %d/%d | Cooldown: %.2fs | State: %d | LocalThrow: %s %s"),
         *RoleName,
         CurrentGrenadeCount, MaxGrenadeCount,
         CurrentMonkeyCount, MaxMonkeyCount,
+        RemainingCooldown,
         static_cast<int32>(ChargeState),
         bIsThrowingLocal ? TEXT("TRUE") : TEXT("FALSE"),
         bDesyncDetected ? TEXT(" | [DESYNC DETECTED!]") : TEXT("")
     );
 
-    int32 DebugKey = Owner->GetUniqueID() + (bIsServer ? 1000 : 2000);
+    int32 DebugKey = GetOwner()->GetUniqueID() + (bIsServer ? 1000 : 2000);
     GEngine->AddOnScreenDebugMessage(DebugKey, 0.0f, DisplayColor, DebugMsg);
 #endif
 }
@@ -84,12 +84,19 @@ void UThrowableComponent::Debug_RenderNetworkDesync()
 void UThrowableComponent::BeginPlay()
 {
     Super::BeginPlay();
+
     CharacterOwner = Cast<AHama>(GetOwner());
 
     if (GrenadeThrowMontage)
     {
         int32 SectionIndex = GrenadeThrowMontage->GetSectionIndex(ReleaseSectionName);
-        ThrowCooldown = (SectionIndex != INDEX_NONE) ? GrenadeThrowMontage->GetSectionLength(SectionIndex) : GrenadeThrowMontage->GetPlayLength();
+        GrenadeThrowCooldown = (SectionIndex != INDEX_NONE) ? GrenadeThrowMontage->GetSectionLength(SectionIndex) : GrenadeThrowMontage->GetPlayLength();
+    }
+
+    if (MonkeyThrowMontage)
+    {
+        int32 SectionIndex = MonkeyThrowMontage->GetSectionIndex(ReleaseSectionName);
+        MonkeyThrowCooldown = (SectionIndex != INDEX_NONE) ? MonkeyThrowMontage->GetSectionLength(SectionIndex) : MonkeyThrowMontage->GetPlayLength();
     }
 }
 
@@ -119,9 +126,10 @@ void UThrowableComponent::Internal_StartCharge(TSubclassOf<AActor> ThrowableClas
         return;
     }
 
+    const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (CurrentTime - LastThrowTime < ThrowCooldown)
+    if (CurrentTime - LastThrowTime < ActiveCooldown)
     {
         return;
     }
@@ -167,9 +175,10 @@ void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
 {
     const int32 TargetCount = bIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const TSubclassOf<AActor> TargetClass = bIsMonkey ? MonkeyClass : GrenadeClass;
+    const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (!CharacterOwner || !TargetClass || TargetCount <= 0 || (CurrentTime - LastThrowTime < (ThrowCooldown - 0.05f)) || ChargeState != EThrowChargeState::Idle)
+    if (!CharacterOwner || !TargetClass || TargetCount <= 0 || (CurrentTime - LastThrowTime < (ActiveCooldown - 0.05f)) || ChargeState != EThrowChargeState::Idle)
     {
         ResetThrowState_Server();
         return;
@@ -207,9 +216,10 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     TSubclassOf<AActor> TargetClass = bActualIsMonkey ? MonkeyClass : GrenadeClass;
     int32& TargetCount = bActualIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
+    const float ActiveCooldown = bActualIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
 
     const float CurrentTime = GetWorld()->GetTimeSeconds();
-    const bool bIsCooldownActive = (CurrentTime - LastThrowTime) < (ThrowCooldown - 0.05f);
+    const bool bIsCooldownActive = (CurrentTime - LastThrowTime) < (ActiveCooldown - 0.05f);
 
     const bool bValidState = (ChargeState == EThrowChargeState::Charging) ||
         (CharacterOwner && CharacterOwner->HasAuthority() && ChargeState == EThrowChargeState::Released);
@@ -218,14 +228,6 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     {
         ResetThrowState_Server();
         return;
-    }
-
-    // ١. دەرهێنانی کاتی باقیماوەی Cooking لەسەر سێرڤەر
-    float RemainingFuseTime = MaxGrenadeCookTime;
-    if (!bActualIsMonkey && GetWorld()->GetTimerManager().IsTimerActive(TimerHandle_CookExplosion))
-    {
-        RemainingFuseTime = GetWorld()->GetTimerManager().GetTimerRemaining(TimerHandle_CookExplosion);
-        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
     }
 
     LastThrowTime = CurrentTime;
@@ -266,9 +268,6 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
             ProjComp->Velocity = TrueLaunchDir * ThrowImpulseStrength;
         }
 
-        // ٢. لێردە دەتوانیت کاتی باقيماوە (RemainingFuseTime) بدەیت بە کلاسی نارنجۆکەکەت بەر لە تەواوبوونی Spawn:
-        // if (AGrenadeBase* Grenade = Cast<AGrenadeBase>(SpawnedThrowable)) { Grenade->InitializeFuse(RemainingFuseTime); }
-
         UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
 
         TargetCount--;
@@ -290,7 +289,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     }
 
     GetWorld()->GetTimerManager().SetTimer(
-        TimerHandle_ResetThrowState, this, &UThrowableComponent::ResetThrowState_Server, ThrowCooldown, false
+        TimerHandle_ResetThrowState, this, &UThrowableComponent::ResetThrowState_Server, ActiveCooldown, false
     );
 }
 
@@ -317,34 +316,6 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
     ResetThrowState_Server();
 }
 
-void UThrowableComponent::UnlockAndRefillMonkeyBomb(TSubclassOf<AActor> NewMonkeyClass, int32 Amount)
-{
-    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
-    if (NewMonkeyClass) MonkeyClass = NewMonkeyClass;
-
-    CurrentMonkeyCount = FMath::Clamp(Amount, 0, MaxMonkeyCount);
-    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
-    OnRep_MonkeyCount();
-}
-
-void UThrowableComponent::RefillMonkeyToMax()
-{
-    if (!GetOwner() || !GetOwner()->HasAuthority() || !MonkeyClass) return;
-    CurrentMonkeyCount = MaxMonkeyCount;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
-    OnRep_MonkeyCount();
-}
-
-void UThrowableComponent::RefillGrenadesToMax()
-{
-    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
-    CurrentGrenadeCount = MaxGrenadeCount;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
-    OnRep_GrenadeCount();
-}
-
-void UThrowableComponent::OnRep_GrenadeCount() { OnThrowableCountChanged.Broadcast(CurrentMonkeyCount, CurrentGrenadeCount); }
-void UThrowableComponent::OnRep_MonkeyCount() { OnThrowableCountChanged.Broadcast(CurrentMonkeyCount, CurrentGrenadeCount); }
 
 void UThrowableComponent::ResetThrowState_Server()
 {
@@ -361,14 +332,19 @@ void UThrowableComponent::ResetThrowState_Server()
 
 void UThrowableComponent::OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
-    bIsThrowingLocal = false;
     ChargeState = EThrowChargeState::Idle;
-    DestroyHeldVisual();
-    SetWeaponHidden(false);
+
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
+    }
+
+    HandleChargeStateChanged();
 }
 
 void UThrowableComponent::OnRep_ChargeState()
 {
+    if (CharacterOwner && CharacterOwner->IsLocallyControlled())   return;
     HandleChargeStateChanged();
 }
 
@@ -395,7 +371,7 @@ void UThrowableComponent::HandleChargeStateChanged()
         }
 
         SetWeaponHidden(true);
-        SpawnAndAttachHeldVisual();
+        ToggleHandThrowableVisibility(true);
         break;
     }
     case EThrowChargeState::Released:
@@ -406,7 +382,7 @@ void UThrowableComponent::HandleChargeStateChanged()
             AnimInstance->Montage_JumpToSection(ReleaseSectionName, MontageToPlay);
         }
         SetWeaponHidden(false);
-        DestroyHeldVisual();
+        ToggleHandThrowableVisibility(false);
         break;
     }
     case EThrowChargeState::Idle:
@@ -425,48 +401,29 @@ void UThrowableComponent::HandleChargeStateChanged()
         }
 
         SetWeaponHidden(false);
-        DestroyHeldVisual();
+        ToggleHandThrowableVisibility(false);
         break;
     }
     }
 }
 
-void UThrowableComponent::SpawnAndAttachHeldVisual()
+void UThrowableComponent::ToggleHandThrowableVisibility(bool bVisible)
 {
-    if (IsRunningDedicatedServer()) return;
+    if (IsRunningDedicatedServer() || !CharacterOwner) return;
 
-    DestroyHeldVisual();
-
-    TSubclassOf<AActor> TargetClass = bIsMonkeyThrow ? MonkeyClass : GrenadeClass;
-    if (!TargetClass || !CharacterOwner || !CharacterOwner->GetMesh()) return;
-
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.Owner = CharacterOwner;
-    SpawnParams.Instigator = CharacterOwner;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-    HeldThrowableVisualActor = GetWorld()->SpawnActor<AActor>(TargetClass, SpawnParams);
-    if (HeldThrowableVisualActor)
+    if (bIsMonkeyThrow)
     {
-        HeldThrowableVisualActor->SetReplicates(false);
-        HeldThrowableVisualActor->SetActorEnableCollision(false);
-
-        if (UProjectileMovementComponent* ProjComp = HeldThrowableVisualActor->FindComponentByClass<UProjectileMovementComponent>())
+        if (CharacterOwner->MonkeyHandMesh)
         {
-            ProjComp->Deactivate();
+            CharacterOwner->MonkeyHandMesh->SetVisibility(bVisible);
         }
-
-        FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
-        HeldThrowableVisualActor->AttachToComponent(CharacterOwner->GetMesh(), AttachRules, ThrowableHandSocketName);
     }
-}
-
-void UThrowableComponent::DestroyHeldVisual()
-{
-    if (IsValid(HeldThrowableVisualActor))
+    else
     {
-        HeldThrowableVisualActor->Destroy();
-        HeldThrowableVisualActor = nullptr;
+        if (CharacterOwner->GrenadeHandMesh)
+        {
+            CharacterOwner->GrenadeHandMesh->SetVisibility(bVisible);
+        }
     }
 }
 
@@ -543,3 +500,32 @@ void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FV
         OutSpawnLoc = TargetLoc;
     }
 }
+
+void UThrowableComponent::UnlockAndRefillMonkeyBomb(TSubclassOf<AActor> NewMonkeyClass, int32 Amount)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+    if (NewMonkeyClass) MonkeyClass = NewMonkeyClass;
+
+    CurrentMonkeyCount = FMath::Clamp(Amount, 0, MaxMonkeyCount);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
+    OnRep_MonkeyCount();
+}
+
+void UThrowableComponent::RefillMonkeyToMax()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !MonkeyClass) return;
+    CurrentMonkeyCount = MaxMonkeyCount;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
+    OnRep_MonkeyCount();
+}
+
+void UThrowableComponent::RefillGrenadesToMax()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+    CurrentGrenadeCount = MaxGrenadeCount;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
+    OnRep_GrenadeCount();
+}
+
+void UThrowableComponent::OnRep_GrenadeCount() { OnThrowableCountChanged.Broadcast(CurrentMonkeyCount, CurrentGrenadeCount); }
+void UThrowableComponent::OnRep_MonkeyCount() { OnThrowableCountChanged.Broadcast(CurrentMonkeyCount, CurrentGrenadeCount); }

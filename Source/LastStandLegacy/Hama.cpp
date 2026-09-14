@@ -69,6 +69,16 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 
     PerkBottleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PerkBottleMesh"));
     PerkBottleMesh->SetupAttachment(GetMesh(), FName("PerkBottleSocket"));
+
+    GrenadeHandMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GrenadeHandMesh"));
+    GrenadeHandMesh->SetupAttachment(GetMesh(), TEXT("GrenadeHandSocket"));
+    GrenadeHandMesh->SetVisibility(false);
+    GrenadeHandMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    MonkeyHandMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MonkeyHandMesh"));
+    MonkeyHandMesh->SetupAttachment(GetMesh(), TEXT("GrenadeHandSocket"));
+    MonkeyHandMesh->SetVisibility(false);
+    MonkeyHandMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 const float AHama::CrossHairTimer = 0.05f;

@@ -100,6 +100,13 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
     TObjectPtr<USphereComponent> InteractSphere;
 
+    // AHama.h
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UStaticMeshComponent> GrenadeHandMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
+    TObjectPtr<UStaticMeshComponent> MonkeyHandMesh;
+
 public:
     // -----------------------------------------------------------------------------
     // Weapons & Inventory
