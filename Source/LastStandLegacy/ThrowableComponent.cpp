@@ -10,6 +10,8 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Grenade.h"
+#include "LastStandLegacyGameState.h"
+#include "GameFramework/PlayerState.h"
 
 UThrowableComponent::UThrowableComponent()
 {
@@ -140,6 +142,17 @@ void UThrowableComponent::Internal_StartCharge(TSubclassOf<AActor> ThrowableClas
 
     if (!GetOwner()->HasAuthority())
     {
+        if (!bIsMonkey)
+        {
+            GetWorld()->GetTimerManager().SetTimer(
+                TimerHandle_CookExplosion,
+                this,
+                &UThrowableComponent::Multicast_OnGrenadeCookExpiredFX,
+                MaxGrenadeCookTime,
+                false
+            );
+        }
+
         ChargeState = EThrowChargeState::Charging;
         HandleChargeStateChanged();
         Server_StartCharge(bIsMonkey);
@@ -318,23 +331,32 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 {
     if (!CharacterOwner || !CharacterOwner->HasAuthority()) return;
 
-    // 1. شوێنی تەقینەوەکە
-    FVector ExpLocation = CharacterOwner->GetPawnViewLocation();
+    ChargeState = EThrowChargeState::Idle;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
 
-    // 2. دیباگ سپێر بۆ بینینی ناوچەی تەقینەوە لە دەستدا
+    HandleChargeStateChanged();
+
+    FVector ExpLocation = CharacterOwner->GetActorLocation();
+
     DrawDebugSphere(GetWorld(), ExpLocation, 400.0f, 16, FColor::Red, false, 3.0f, 0, 1.5f);
 
     TArray<AActor*> IgnoredActors;
 
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
-        if (APlayerController* PC = It->Get())
+        for (APlayerState* PS : GS->PlayerArray)
         {
-            if (APawn* PlayerPawn = PC->GetPawn())
+            if (!PS) continue;
+
+            if (APawn* PlayerPawn = PS->GetPawn())
             {
                 if (PlayerPawn != CharacterOwner)
                 {
                     IgnoredActors.Add(PlayerPawn);
+                }
+                else
+                {
+                    GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("OwnCharacter"));
                 }
             }
         }
@@ -342,7 +364,7 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 
     UGameplayStatics::ApplyRadialDamage(
         this,
-        500.f,
+        500.0f,
         ExpLocation,
         400.0f,
         UDamageType::StaticClass(),
@@ -357,7 +379,21 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
     OnRep_GrenadeCount();
 
+    Multicast_OnGrenadeCookExpiredFX();
     ResetThrowState_Server();
+}
+
+void UThrowableComponent::Multicast_OnGrenadeCookExpiredFX_Implementation()
+{
+    bIsThrowingLocal = false;
+
+    if (CharacterOwner && CharacterOwner->GetMesh())
+    {
+        if (UAnimInstance* AnimInst = CharacterOwner->GetMesh()->GetAnimInstance())
+        {
+            AnimInst->StopAllMontages(0.1f);
+        }
+    }
 }
 
 void UThrowableComponent::ResetThrowState_Server()

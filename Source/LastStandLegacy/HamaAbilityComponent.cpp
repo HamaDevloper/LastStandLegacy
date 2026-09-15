@@ -225,22 +225,17 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
 
     const FVector CenterLocation = CachedOwner->GetActorLocation();
     const float SphereRadiusSq = FMath::Square(SphereRadius);
-    bool bRevivedAnyPlayer = false;
 
     for (APlayerState* PS : GS->PlayerArray)
     {
         if (!PS) continue;
-
-        AHama* TargetHama = Cast<AHama>(PS->GetPawn());
-        if (!TargetHama || TargetHama == CachedOwner) continue;
-
-        UHealthComponent* TargetHealth = TargetHama->HealthComponent;
-        if (TargetHealth && TargetHealth->IsDowned())
+        APawn* TargetPawn = PS->GetPawn();
+        if (!TargetPawn || TargetPawn == CachedOwner) continue;
+        if (UHealthComponent* TargetHealth = TargetPawn->FindComponentByClass<UHealthComponent>())
         {
-            if (FVector::DistSquared(CenterLocation, TargetHama->GetActorLocation()) <= SphereRadiusSq)
+            if (TargetHealth->IsDowned() && FVector::DistSquared(CenterLocation, TargetPawn->GetActorLocation()) <= SphereRadiusSq)
             {
                 TargetHealth->Revive();
-                bRevivedAnyPlayer = true;
             }
         }
     }

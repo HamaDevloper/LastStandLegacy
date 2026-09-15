@@ -152,6 +152,9 @@ protected:
     UFUNCTION(Server, Reliable)
     void Server_ExecuteThrow(FVector_NetQuantizeNormal LaunchDirection, bool bIsMonkey);
 
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_OnGrenadeCookExpiredFX();
+
     void ExecuteStartCharge_Server(bool bIsMonkey);
     
     UFUNCTION()
