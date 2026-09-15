@@ -6,6 +6,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "DrawDebugHelpers.h"
 #include "TimerManager.h"
+#include "Engine/OverlapResult.h"
 
 AGrenade::AGrenade()
 {
@@ -70,21 +71,46 @@ void AGrenade::Explode()
 
     APawn* ThrowerPawn = GetInstigator();
 
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
-        if (APlayerController* PC = It->Get())
+        for (APlayerState* PS : GS->PlayerArray)
         {
-            if (APawn* PlayerPawn = PC->GetPawn())
+            if (PS && PS->GetPawn() && PS->GetPawn() != ThrowerPawn)
             {
-                if (PlayerPawn != ThrowerPawn)
-                {
-                    IgnoredActors.Add(PlayerPawn);
-                }
+                IgnoredActors.Add(PS->GetPawn());
             }
         }
     }
 
-    bool bAppliedDamage = UGameplayStatics::ApplyRadialDamage(
+    TArray<FOverlapResult> HitResults;
+    FCollisionShape Sphere = FCollisionShape::MakeSphere(DamageRadius);
+    FCollisionQueryParams QueryParams;
+    QueryParams.AddIgnoredActors(IgnoredActors);
+
+    GetWorld()->OverlapMultiByChannel(
+        HitResults,
+        GetActorLocation(),
+        FQuat::Identity,
+        ECC_Bullet,
+        Sphere,
+        QueryParams
+    );
+
+    int32 DamagedZombieCount = 0;
+    float TotalDamageDealt = 0.0f;
+
+    for (const FOverlapResult& Result : HitResults)
+    {
+        if (AActor* HitActor = Result.GetActor())
+        {
+            DamagedZombieCount++;
+            float Distance = FVector::Distance(GetActorLocation(), HitActor->GetActorLocation());
+            float DamagePercent = FMath::Clamp(1.0f - (Distance / DamageRadius), 0.0f, 1.0f);
+            TotalDamageDealt += BaseDamage * DamagePercent;
+        }
+    }
+
+    UGameplayStatics::ApplyRadialDamage(
         this,
         BaseDamage,
         GetActorLocation(),
@@ -93,15 +119,17 @@ void AGrenade::Explode()
         IgnoredActors,
         this,
         GetInstigatorController(),
-        true,
+        false,
         ECC_WorldStatic
     );
 
+#if !UE_BUILD_SHIPPING
     if (GEngine)
     {
-        FColor MsgColor = bAppliedDamage ? FColor::Green : FColor::Red;
-        GEngine->AddOnScreenDebugMessage(-1, 4.0f, MsgColor, FString::Printf(TEXT("[Grenade Exploded] Applied Damage: %s | BaseDamage: %.1f"), bAppliedDamage ? TEXT("TRUE") : TEXT("FALSE"), BaseDamage));
+        FString Message = FString::Printf(TEXT("Grenade Exploded! Hit: %d Zombies | Total Damage: %.1f"), DamagedZombieCount, TotalDamageDealt);
+        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, Message);
     }
+#endif
 
     Multicast_PlayExplosionFX();
 

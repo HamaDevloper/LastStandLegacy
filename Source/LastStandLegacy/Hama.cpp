@@ -2363,36 +2363,44 @@ void AHama::Client_OnPlayerDowned_Implementation()
 
 void AHama::Input_ThrowGrenadePressed()
 {
-    if (ThrowableComponent)
-    {
-        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Yellow, TEXT("Throw Grenade Pressed"));
-        ThrowableComponent->StartGrenadeCharge();
-    }
+    if (!ThrowableComponent) return;
+    if(ThrowableComponent->IsThrowingInProcess())  return;
+    if (IsDrinkingPerk()) return;
+    if (IsMeleeing()) return;
+    if (IsDiving()) return;
+       
+    ThrowableComponent->StartGrenadeCharge();
 }
 
 void AHama::Input_ThrowGrenadeReleased()
 {
-    if (ThrowableComponent)
-    {
-        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Yellow, TEXT("Throw Grenade Released"));
-        ThrowableComponent->ReleaseGrenadeThrow();
-    }
+    if (!ThrowableComponent) return;
+    if (IsDrinkingPerk()) return;
+    if (IsMeleeing()) return;
+    if (IsDiving()) return;
+    
+    ThrowableComponent->ReleaseGrenadeThrow();
 }
 
 void AHama::Input_ThrowMonkeyPressed()
 {
-    if (ThrowableComponent)
-    {
-        ThrowableComponent->StartMonkeyCharge();
-    }
+    if (!ThrowableComponent) return;
+    if (ThrowableComponent->IsThrowingInProcess())  return;
+    if (IsDrinkingPerk()) return;
+    if (IsMeleeing()) return;
+    if (IsDiving()) return;
+    
+    ThrowableComponent->StartMonkeyCharge();
 }
 
 void AHama::Input_ThrowMonkeyReleased()
 {
-    if (ThrowableComponent)
-    {
-        ThrowableComponent->ReleaseMonkeyThrow();
-    }
+    if (!ThrowableComponent) return;
+    if (IsDrinkingPerk()) return;
+    if (IsMeleeing()) return;
+    if (IsDiving()) return;
+    
+    ThrowableComponent->ReleaseMonkeyThrow();
 }
 
 bool AHama::SetCanInteract() const

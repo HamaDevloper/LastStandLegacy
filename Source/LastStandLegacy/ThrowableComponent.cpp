@@ -12,6 +12,7 @@
 #include "Grenade.h"
 #include "LastStandLegacyGameState.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/OverlapResult.h"
 
 UThrowableComponent::UThrowableComponent()
 {
@@ -208,11 +209,9 @@ void UThrowableComponent::ReleaseMonkeyThrow() { Internal_ReleaseThrow(MonkeyCla
 
 void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey)
 {
-    if (!CharacterOwner || ChargeState != EThrowChargeState::Charging)
-    {
-        return;
-    }
-
+    if (!CharacterOwner || ChargeState != EThrowChargeState::Charging)  return;
+    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+    
     ChargeState = EThrowChargeState::Released;
     HandleChargeStateChanged();
 
@@ -336,44 +335,82 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 
     HandleChargeStateChanged();
 
-    FVector ExpLocation = CharacterOwner->GetActorLocation();
+    FVector ExpLocation = CharacterOwner->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
+    const float ExplosionRadius = 400.0f;
+    const float BaseDamage = 500.0f;
 
-    DrawDebugSphere(GetWorld(), ExpLocation, 400.0f, 16, FColor::Red, false, 3.0f, 0, 1.5f);
+    UGameplayStatics::ApplyDamage(
+        CharacterOwner,
+        BaseDamage,
+        CharacterOwner->GetController(),
+        CharacterOwner,
+        UDamageType::StaticClass()
+    );
 
     TArray<AActor*> IgnoredActors;
-
     if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
         for (APlayerState* PS : GS->PlayerArray)
         {
-            if (!PS) continue;
-
-            if (APawn* PlayerPawn = PS->GetPawn())
+            if (PS && PS->GetPawn())
             {
-                if (PlayerPawn != CharacterOwner)
-                {
-                    IgnoredActors.Add(PlayerPawn);
-                }
-                else
-                {
-                    GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("OwnCharacter"));
-                }
+                IgnoredActors.Add(PS->GetPawn());
             }
+        }
+    }
+    else
+    {
+        IgnoredActors.Add(CharacterOwner);
+    }
+
+    TArray<FOverlapResult> HitResults;
+    FCollisionShape Sphere = FCollisionShape::MakeSphere(ExplosionRadius);
+    FCollisionQueryParams QueryParams;
+    QueryParams.AddIgnoredActors(IgnoredActors);
+
+    GetWorld()->OverlapMultiByChannel(
+        HitResults,
+        ExpLocation,
+        FQuat::Identity,
+        ECC_Bullet,
+        Sphere,
+        QueryParams
+    );
+
+    int32 DamagedZombieCount = 0;
+    float TotalDamageDealt = 0.0f;
+
+    for (const FOverlapResult& Result : HitResults)
+    {
+        if (AActor* HitActor = Result.GetActor())
+        {
+            DamagedZombieCount++;
+            float Distance = FVector::Distance(ExpLocation, HitActor->GetActorLocation());
+            float DamagePercent = FMath::Clamp(1.0f - (Distance / ExplosionRadius), 0.0f, 1.0f);
+            TotalDamageDealt += BaseDamage * DamagePercent;
         }
     }
 
     UGameplayStatics::ApplyRadialDamage(
         this,
-        500.0f,
+        BaseDamage,
         ExpLocation,
-        400.0f,
+        ExplosionRadius,
         UDamageType::StaticClass(),
         IgnoredActors,
         CharacterOwner,
         CharacterOwner->GetController(),
-        true,
+        false,
         ECC_WorldStatic
     );
+
+#if !UE_BUILD_SHIPPING
+    if (GEngine)
+    {
+        FString Message = FString::Printf(TEXT("Grenade Exploded! Hit: %d Zombies | Total Damage: %.1f"), DamagedZombieCount, TotalDamageDealt);
+        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, Message);
+    }
+#endif
 
     CurrentGrenadeCount = FMath::Max(0, CurrentGrenadeCount - 1);
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
@@ -423,7 +460,6 @@ void UThrowableComponent::OnThrowMontageEnded(UAnimMontage* Montage, bool bInter
 
 void UThrowableComponent::OnRep_ChargeState()
 {
-    if (CharacterOwner && CharacterOwner->IsLocallyControlled())   return;
     HandleChargeStateChanged();
 }
 
@@ -440,13 +476,16 @@ void UThrowableComponent::HandleChargeStateChanged()
     {
         if (AnimInstance && MontageToPlay)
         {
-            AnimInstance->Montage_Play(MontageToPlay);
-            AnimInstance->Montage_JumpToSection(HoldSectionName, MontageToPlay);
-            AnimInstance->Montage_SetPlayRate(MontageToPlay, 0.0f);
+            if (!AnimInstance->Montage_IsPlaying(MontageToPlay))
+            {
+                AnimInstance->Montage_Play(MontageToPlay);
+                AnimInstance->Montage_JumpToSection(HoldSectionName, MontageToPlay);
+                AnimInstance->Montage_SetPlayRate(MontageToPlay, 0.0f);
 
-            FOnMontageEnded EndedDelegate;
-            EndedDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
-            AnimInstance->Montage_SetEndDelegate(EndedDelegate, MontageToPlay);
+                FOnMontageEnded EndedDelegate;
+                EndedDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
+                AnimInstance->Montage_SetEndDelegate(EndedDelegate, MontageToPlay);
+            }
         }
 
         SetWeaponHidden(true);
@@ -457,6 +496,10 @@ void UThrowableComponent::HandleChargeStateChanged()
     {
         if (AnimInstance && MontageToPlay)
         {
+            if (!AnimInstance->Montage_IsPlaying(MontageToPlay))
+            {
+                AnimInstance->Montage_Play(MontageToPlay);
+            }
             AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
             AnimInstance->Montage_JumpToSection(ReleaseSectionName, MontageToPlay);
         }
