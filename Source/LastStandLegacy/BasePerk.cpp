@@ -43,6 +43,7 @@ bool ABasePerk::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
     if (!InteractingPlayer->SetCanInteract()) return false;
+    if(InteractingPlayer->HasPerkID(PerkID)) return false;
 
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     if (!GS) return false;

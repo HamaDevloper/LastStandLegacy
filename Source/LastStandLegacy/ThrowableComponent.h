@@ -184,4 +184,5 @@ protected:
 
 private:
     void Debug_RenderNetworkDesync();
+    void PlayThrowMontageWithDelegate(UAnimMontage* MontageToPlay, FName SectionName = NAME_None);
 };

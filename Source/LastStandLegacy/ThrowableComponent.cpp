@@ -102,6 +102,11 @@ void UThrowableComponent::BeginPlay()
         int32 SectionIndex = MonkeyThrowMontage->GetSectionIndex(ReleaseSectionName);
         MonkeyThrowCooldown = (SectionIndex != INDEX_NONE) ? MonkeyThrowMontage->GetSectionLength(SectionIndex) : MonkeyThrowMontage->GetPlayLength();
     }
+
+    if (CharacterOwner && CharacterOwner->IsLocallyControlled())
+    {
+        OnThrowableCountChanged.Broadcast(CurrentMonkeyCount, CurrentGrenadeCount);
+    }
 }
 
 void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -125,15 +130,10 @@ void UThrowableComponent::StartMonkeyCharge() { Internal_StartCharge(MonkeyClass
 
 void UThrowableComponent::Internal_StartCharge(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey)
 {
-    if (!CharacterOwner || !ThrowableClass || CurrentCount <= 0 || IsCharging() || IsThrowingInProcess())
-    {
-        return;
-    }
-
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (CurrentTime - LastThrowTime < ActiveCooldown)
+    if (!CharacterOwner || !ThrowableClass || CurrentCount <= 0 || bIsThrowingLocal || (CurrentTime - LastThrowTime < ActiveCooldown))
     {
         return;
     }
@@ -209,9 +209,11 @@ void UThrowableComponent::ReleaseMonkeyThrow() { Internal_ReleaseThrow(MonkeyCla
 
 void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey)
 {
-    if (!CharacterOwner || ChargeState != EThrowChargeState::Charging)  return;
+    if (!CharacterOwner || bIsMonkey != bIsMonkeyThrow) return;
+    if (ChargeState != EThrowChargeState::Charging && !bIsThrowingLocal) return;
+
     if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
-    
+
     ChargeState = EThrowChargeState::Released;
     HandleChargeStateChanged();
 
@@ -227,6 +229,12 @@ void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableCla
 
 void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantizeNormal LaunchDirection, bool bIsMonkey)
 {
+    if (bIsMonkey != bIsMonkeyThrow)
+    {
+        ResetThrowState_Server();
+        return;
+    }
+
     const bool bActualIsMonkey = bIsMonkeyThrow;
 
     if (!bActualIsMonkey && GetWorld())
@@ -241,8 +249,10 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     const bool bIsCooldownActive = (CurrentTime - LastThrowTime) < (ActiveCooldown - 0.05f);
 
+    // ڕێگەدان بە فڕێدان تەنانەت ئەگەر State هێشتا Idle بێت بەهۆی Fast Click / Latency Race Condition
     const bool bValidState = (ChargeState == EThrowChargeState::Charging) ||
-        (CharacterOwner && CharacterOwner->HasAuthority() && ChargeState == EThrowChargeState::Released);
+        (ChargeState == EThrowChargeState::Idle) ||
+        (ChargeState == EThrowChargeState::Released);
 
     if (!CharacterOwner || !TargetClass || TargetCount <= 0 || !bValidState || bIsCooldownActive)
     {
@@ -254,7 +264,11 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     ChargeState = EThrowChargeState::Released;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
-    HandleChargeStateChanged();
+
+    if (CharacterOwner && !CharacterOwner->IsLocallyControlled())
+    {
+        HandleChargeStateChanged();
+    }
 
     FVector ServerAimDir = CharacterOwner->GetBaseAimRotation().Vector();
     FVector ValidatedAimDir = LaunchDirection.GetSafeNormal();
@@ -288,7 +302,6 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     if (SpawnedThrowable)
     {
-
         if (AGrenade* GrenadeActor = Cast<AGrenade>(SpawnedThrowable))
         {
             GrenadeActor->SetFuseDuration(RemainingFuseTime);
@@ -440,6 +453,7 @@ void UThrowableComponent::ResetThrowState_Server()
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_ResetThrowState);
     }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
@@ -448,18 +462,30 @@ void UThrowableComponent::ResetThrowState_Server()
 
 void UThrowableComponent::OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
-    ChargeState = EThrowChargeState::Idle;
-
     if (GetOwner() && GetOwner()->HasAuthority())
     {
-        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
+        ResetThrowState_Server();
     }
-
-    HandleChargeStateChanged();
+    else if (CharacterOwner && CharacterOwner->IsLocallyControlled())
+    {
+        bIsThrowingLocal = false;
+        ChargeState = EThrowChargeState::Idle;
+        HandleChargeStateChanged();
+    }
 }
 
 void UThrowableComponent::OnRep_ChargeState()
 {
+    if (CharacterOwner && CharacterOwner->IsLocallyControlled())
+    {
+        if (ChargeState == EThrowChargeState::Idle)
+        {
+            bIsThrowingLocal = false;
+            HandleChargeStateChanged();
+        }
+        return;
+    }
+
     HandleChargeStateChanged();
 }
 
@@ -474,19 +500,7 @@ void UThrowableComponent::HandleChargeStateChanged()
     {
     case EThrowChargeState::Charging:
     {
-        if (AnimInstance && MontageToPlay)
-        {
-            if (!AnimInstance->Montage_IsPlaying(MontageToPlay))
-            {
-                AnimInstance->Montage_Play(MontageToPlay);
-                AnimInstance->Montage_JumpToSection(HoldSectionName, MontageToPlay);
-                AnimInstance->Montage_SetPlayRate(MontageToPlay, 0.0f);
-
-                FOnMontageEnded EndedDelegate;
-                EndedDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
-                AnimInstance->Montage_SetEndDelegate(EndedDelegate, MontageToPlay);
-            }
-        }
+        PlayThrowMontageWithDelegate(MontageToPlay, NAME_None);
 
         SetWeaponHidden(true);
         ToggleHandThrowableVisibility(true);
@@ -494,16 +508,8 @@ void UThrowableComponent::HandleChargeStateChanged()
     }
     case EThrowChargeState::Released:
     {
-        if (AnimInstance && MontageToPlay)
-        {
-            if (!AnimInstance->Montage_IsPlaying(MontageToPlay))
-            {
-                AnimInstance->Montage_Play(MontageToPlay);
-            }
-            AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
-            AnimInstance->Montage_JumpToSection(ReleaseSectionName, MontageToPlay);
-        }
-        SetWeaponHidden(false);
+        PlayThrowMontageWithDelegate(MontageToPlay, ReleaseSectionName);
+
         ToggleHandThrowableVisibility(false);
         break;
     }
@@ -519,7 +525,7 @@ void UThrowableComponent::HandleChargeStateChanged()
 
         if (AnimInstance && MontageToPlay && AnimInstance->Montage_IsPlaying(MontageToPlay))
         {
-            AnimInstance->Montage_Stop(0.1f, MontageToPlay);
+            AnimInstance->Montage_Stop(0.2f, MontageToPlay);
         }
 
         SetWeaponHidden(false);
@@ -527,6 +533,36 @@ void UThrowableComponent::HandleChargeStateChanged()
         break;
     }
     }
+}
+
+void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPlay, FName SectionName)
+{
+    if (!CharacterOwner || !CharacterOwner->GetMesh() || !MontageToPlay) return;
+
+    UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
+    if (!AnimInstance) return;
+
+    // ۱. لێدانی مۆنتاژ یان ڕۆشتن بۆ Sectionی دیاریکراو
+    if (SectionName != NAME_None)
+    {
+        if (!AnimInstance->Montage_IsPlaying(MontageToPlay))
+        {
+            AnimInstance->Montage_Play(MontageToPlay, 1.0f);
+        }
+        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+        AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
+    }
+    else
+    {
+        if (!AnimInstance->Montage_IsPlaying(MontageToPlay))
+        {
+            AnimInstance->Montage_Play(MontageToPlay, 1.0f);
+        }
+    }
+
+    FOnMontageEnded EndDelegate;
+    EndDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
+    AnimInstance->Montage_SetEndDelegate(EndDelegate, MontageToPlay);
 }
 
 void UThrowableComponent::ToggleHandThrowableVisibility(bool bVisible)
