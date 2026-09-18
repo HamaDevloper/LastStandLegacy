@@ -542,21 +542,21 @@ void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPl
     UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
     if (!AnimInstance) return;
 
-    // ۱. لێدانی مۆنتاژ یان ڕۆشتن بۆ Sectionی دیاریکراو
-    if (SectionName != NAME_None)
+    // ئەگەر Montage پێشتر لە کارکردندا بوو (واتا لە ناو Holdدا بوویت)
+    if (AnimInstance->Montage_IsPlaying(MontageToPlay))
     {
-        if (!AnimInstance->Montage_IsPlaying(MontageToPlay))
+        if (SectionName != NAME_None)
         {
-            AnimInstance->Montage_Play(MontageToPlay, 1.0f);
+            AnimInstance->Montage_SetNextSection(FName("Hold"), SectionName, MontageToPlay);
         }
-        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
-        AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
     }
     else
     {
-        if (!AnimInstance->Montage_IsPlaying(MontageToPlay))
+        AnimInstance->Montage_Play(MontageToPlay, 1.0f);
+
+        if (SectionName != NAME_None)
         {
-            AnimInstance->Montage_Play(MontageToPlay, 1.0f);
+            AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
         }
     }
 

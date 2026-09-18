@@ -723,11 +723,6 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
     if (!SetCanInteract()) return;
     if (PendingWeaponForSwap != nullptr) return;
 
-    if(IsSprinting())
-    {
-        StopSprint();
-    }
-
     if (bIsDeathMachineActive)
     {
         if (HasAuthority())  RemoveDeathMachine();
@@ -769,6 +764,11 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
     if (CurrentWeapon->IsReloading())
     {
         CurrentWeapon->CancelReload();
+    }
+
+    if (IsSprinting())
+    {
+        StopSprint();
     }
 
     if (AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
@@ -1192,8 +1192,10 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(MeleeAction, ETriggerEvent::Started, this, &AHama::MeleeActionPressed);
         EnhancedInput->BindAction(IA_ThrowGrenade, ETriggerEvent::Started, this, &AHama::Input_ThrowGrenadePressed);
         EnhancedInput->BindAction(IA_ThrowGrenade, ETriggerEvent::Completed, this, &AHama::Input_ThrowGrenadeReleased);
+        EnhancedInput->BindAction(IA_ThrowGrenade, ETriggerEvent::Canceled, this, &AHama::Input_ThrowGrenadeReleased);
         EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Started, this, &AHama::Input_ThrowMonkeyPressed);
         EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Completed, this, &AHama::Input_ThrowMonkeyReleased);
+        EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Canceled, this, &AHama::Input_ThrowMonkeyReleased);
     }
 }
 
@@ -2368,6 +2370,7 @@ void AHama::Input_ThrowGrenadePressed()
     if (IsDrinkingPerk()) return;
     if (IsMeleeing()) return;
     if (IsDiving()) return;
+    if (IsDowned() || bIsDead) return;
        
     ThrowableComponent->StartGrenadeCharge();
 }
@@ -2378,6 +2381,7 @@ void AHama::Input_ThrowGrenadeReleased()
     if (IsDrinkingPerk()) return;
     if (IsMeleeing()) return;
     if (IsDiving()) return;
+    if (IsDowned() || bIsDead) return;
     
     ThrowableComponent->ReleaseGrenadeThrow();
 }
@@ -2389,6 +2393,7 @@ void AHama::Input_ThrowMonkeyPressed()
     if (IsDrinkingPerk()) return;
     if (IsMeleeing()) return;
     if (IsDiving()) return;
+    if (IsDowned() || bIsDead) return;
     
     ThrowableComponent->StartMonkeyCharge();
 }
@@ -2399,6 +2404,7 @@ void AHama::Input_ThrowMonkeyReleased()
     if (IsDrinkingPerk()) return;
     if (IsMeleeing()) return;
     if (IsDiving()) return;
+    if (IsDowned() || bIsDead) return;
     
     ThrowableComponent->ReleaseMonkeyThrow();
 }
