@@ -132,6 +132,8 @@ void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, CurrentMonkeyCount, RepParams);
 }
 
+
+
 void UThrowableComponent::StartGrenadeCharge() { Internal_StartCharge(GrenadeClass, CurrentGrenadeCount, GrenadeThrowMontage, false); }
 void UThrowableComponent::StartMonkeyCharge() { Internal_StartCharge(MonkeyClass, CurrentMonkeyCount, MonkeyThrowMontage, true); }
 
@@ -197,27 +199,39 @@ void UThrowableComponent::ExecuteStartCharge_Server(bool bIsMonkey)
 
 void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
 {
+    if (!CharacterOwner) return;
+
+    // ئەگەر یاریزان لە دۆخێکدا بوو کە نەیتوانی فڕێ بدات، کلاینت ئاگادار بکەرەوە بۆ دەرهێنانی لە قوفڵ
+    if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
+        CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
+    {
+        Client_RejectThrow();
+        return;
+    }
+
     const int32 TargetCount = bIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const TSubclassOf<AActor> TargetClass = bIsMonkey ? MonkeyClass : GrenadeClass;
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
     float PlayerPingSeconds = 0.03f;
-    if (CharacterOwner && CharacterOwner->GetPlayerState())
+    if (CharacterOwner->GetPlayerState())
     {
         PlayerPingSeconds = FMath::Max(0.02f, CharacterOwner->GetPlayerState()->GetPingInMilliseconds() * 0.001f);
     }
     const float DynamicMargin = FMath::Clamp(PlayerPingSeconds + 0.02f, 0.03f, 0.15f);
     const bool bCooldownPassed = (CurrentTime - LastThrowTime) >= (ActiveCooldown - DynamicMargin);
 
-    if (!CharacterOwner || !TargetClass || TargetCount <= 0 || !bCooldownPassed || ChargeState != EThrowChargeState::Idle)
+    if (!TargetClass || TargetCount <= 0 || !bCooldownPassed || ChargeState != EThrowChargeState::Idle)
     {
         ResetThrowState_Server();
+        Client_RejectThrow();
         return;
     }
 
     ExecuteStartCharge_Server(bIsMonkey);
 }
+
 
 void UThrowableComponent::ReleaseGrenadeThrow() { Internal_ReleaseThrow(GrenadeClass, CurrentGrenadeCount, GrenadeThrowMontage, false); }
 void UThrowableComponent::ReleaseMonkeyThrow() { Internal_ReleaseThrow(MonkeyClass, CurrentMonkeyCount, MonkeyThrowMontage, true); }
@@ -244,9 +258,20 @@ void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableCla
 
 void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantizeNormal LaunchDirection, bool bIsMonkey)
 {
+    if (!CharacterOwner) return;
+
+    if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
+        CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
+    {
+        ResetThrowState_Server();
+        Client_RejectThrow();
+        return;
+    }
+
     if (bIsMonkey != bIsMonkeyThrow)
     {
         ResetThrowState_Server();
+        Client_RejectThrow();
         return;
     }
 
@@ -322,19 +347,22 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     if (SpawnedThrowable)
     {
-        if (AGrenade* GrenadeActor = Cast<AGrenade>(SpawnedThrowable))
+        AGrenade* GrenadeActor = Cast<AGrenade>(SpawnedThrowable);
+        if (GrenadeActor)
         {
             GrenadeActor->SetFuseDuration(RemainingFuseTime);
         }
-        if (UProjectileMovementComponent* ProjComp = SpawnedThrowable->FindComponentByClass<UProjectileMovementComponent>())
-        {
-            ProjComp->bInitialVelocityInLocalSpace = false;
-            ProjComp->InitialSpeed = ThrowImpulseStrength;
-            ProjComp->MaxSpeed = FMath::Max(ProjComp->MaxSpeed, ThrowImpulseStrength);
-            ProjComp->Velocity = TrueLaunchDir * ThrowImpulseStrength;
-        }
 
         UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
+
+        if (GrenadeActor)
+        {
+            GrenadeActor->InitVelocity(TrueLaunchDir * ThrowImpulseStrength);
+        }
+        else if (AMonkeyBomb* MonkeyActor = Cast<AMonkeyBomb>(SpawnedThrowable))
+        {
+            MonkeyActor->InitVelocity(TrueLaunchDir * ThrowImpulseStrength);
+        }
 
         TargetCount--;
         if (bActualIsMonkey)
@@ -478,6 +506,13 @@ void UThrowableComponent::ResetThrowState_Server()
     }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
+    HandleChargeStateChanged();
+}
+
+void UThrowableComponent::Client_RejectThrow_Implementation()
+{
+    bIsThrowingLocal = false;
+    ChargeState = EThrowChargeState::Idle;
     HandleChargeStateChanged();
 }
 

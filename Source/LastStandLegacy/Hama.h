@@ -529,12 +529,11 @@ public:
 
         float LastServerMeleeTime = 0.f;
 
-        bool IsMeleeing() const;
-
         void ApplyMeleeDamageInternal(AActor* HitActor, const FVector& HitLocation);
 
     public:
         void PerformMeleeHitDetection();
+        bool IsMeleeing() const;
 
     public:
         UFUNCTION(Server, Reliable)

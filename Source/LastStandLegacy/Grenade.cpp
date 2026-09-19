@@ -6,15 +6,20 @@
 #include "DrawDebugHelpers.h"
 #include "TimerManager.h"
 #include "Engine/OverlapResult.h"
+#include "Net/UnrealNetwork.h"
+#include "Net/Core/PushModel/PushModel.h"
+#include "LastStandLegacyGameState.h"
+#include "GameFramework/PlayerState.h"
 
 AGrenade::AGrenade()
 {
     PrimaryActorTick.bCanEverTick = false;
 
     bReplicates = true;
-    SetReplicateMovement(true);
+    SetReplicateMovement(false);
 
     SetNetUpdateFrequency(30.f);
+    SetMinNetUpdateFrequency(10.0f);
     SetNetCullDistanceSquared(FMath::Square(3000.0f));
 
     bHasExploded = false;
@@ -32,17 +37,43 @@ AGrenade::AGrenade()
 
     ProjectileMovementComp = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovementComp"));
     ProjectileMovementComp->UpdatedComponent = CollisionComp;
-    ProjectileMovementComp->InitialSpeed = 1800.0f;
-    ProjectileMovementComp->MaxSpeed = 8000.0f;
+
+    ProjectileMovementComp->InitialSpeed = 0.0f; // ١. سفر کردنی InitialSpeed تا لە BeginPlayدا ئاڕاستەی خۆکار دروست نەکات
+    ProjectileMovementComp->MaxSpeed = 10000.0f; // ٢. بەرزکردنەوەی MaxSpeed تا ئاسانکاری بۆ Velocityی بەهێز بکات
+    ProjectileMovementComp->bInitialVelocityInLocalSpace = false; // ٣. لاپۆشکردنی فیزیکی لۆکاڵی Socket
+    ProjectileMovementComp->Velocity = FVector::ZeroVector;
+
     ProjectileMovementComp->bRotationFollowsVelocity = true;
     ProjectileMovementComp->bShouldBounce = true;
     ProjectileMovementComp->Bounciness = 0.2f;
-    ProjectileMovementComp->Friction = 0.6f;
+    ProjectileMovementComp->Friction = 0.7f;
 }
 
 void AGrenade::SetFuseDuration(float NewDuration)
 {
     FuseDuration = FMath::Max(0.05f, NewDuration);
+}
+
+void AGrenade::InitVelocity(const FVector& InVelocity)
+{
+    if (HasAuthority())
+    {
+        InitialVelocity = InVelocity;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, InitialVelocity, this);
+
+        if (ProjectileMovementComp)
+        {
+            ProjectileMovementComp->Velocity = InVelocity;
+        }
+    }
+}
+
+void AGrenade::OnRep_InitialVelocity()
+{
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->Velocity = InitialVelocity;
+    }
 }
 
 void AGrenade::BeginPlay()
@@ -53,6 +84,14 @@ void AGrenade::BeginPlay()
     {
         GetWorldTimerManager().SetTimer(FuseTimerHandle, this, &AGrenade::Explode, FuseDuration, false);
     }
+}
+
+void AGrenade::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+    DOREPLIFETIME_WITH_PARAMS(AGrenade, InitialVelocity, Params);
 }
 
 void AGrenade::Explode()
@@ -68,16 +107,19 @@ void AGrenade::Explode()
     DrawDebugSphere(GetWorld(), ServerExplosionLocation, DamageRadius, 16, FColor::Red, false, 3.0f, 0, 1.5f);
 #endif
 
+    APawn* ThrowerPawn = GetInstigator();
     TArray<AActor*> IgnoredActors;
     IgnoredActors.Add(this);
 
 
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    if(ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
-        if (APlayerController* PC = It->Get())
+        for (APlayerState* PS : GS->PlayerArray)
         {
-            if (APawn* PlayerPawn = PC->GetPawn())
+            if (!PS) continue;
+            if (APawn* PlayerPawn = PS->GetPawn())
             {
+                if (PlayerPawn != ThrowerPawn)
                 IgnoredActors.Add(PlayerPawn);
             }
         }

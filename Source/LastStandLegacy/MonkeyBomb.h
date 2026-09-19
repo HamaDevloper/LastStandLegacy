@@ -68,6 +68,9 @@ protected:
 
     uint8 bHasExploded : 1;
 
+    UPROPERTY(ReplicatedUsing = OnRep_InitialVelocity)
+    FVector_NetQuantize InitialVelocity;
+
     FTimerHandle FuseTimerHandle;
 
     UFUNCTION()
@@ -79,6 +82,12 @@ protected:
     void ActivateAttraction();
     void Explode();
 
+    UFUNCTION()
+    void OnRep_InitialVelocity();
+
     UFUNCTION(NetMulticast, Unreliable)
     void Multicast_PlayExplosionFX(FVector_NetQuantize ExplosionLocation);
+
+public:
+    void InitVelocity(const FVector& InVelocity);
 };

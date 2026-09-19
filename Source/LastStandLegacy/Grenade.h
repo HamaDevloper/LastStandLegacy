@@ -21,6 +21,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -51,13 +52,20 @@ protected:
 
     uint8 bHasExploded : 1;
 
+    UPROPERTY(ReplicatedUsing = OnRep_InitialVelocity)
+    FVector_NetQuantize InitialVelocity;
+
     FTimerHandle FuseTimerHandle;
 
     void Explode();
-
+   
     UFUNCTION(NetMulticast, Unreliable)
     void Multicast_PlayExplosionFX(FVector_NetQuantize ExplosionLocation);
 
+    UFUNCTION()
+    void OnRep_InitialVelocity();
+
 public:
     void SetFuseDuration(float NewDuration);
+    void InitVelocity(const FVector& InVelocity);
 };

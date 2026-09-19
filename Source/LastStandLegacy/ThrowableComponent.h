@@ -166,6 +166,9 @@ protected:
     UFUNCTION()
     void OnRep_ChargeState();
 
+    UFUNCTION(Client, Reliable)
+    void Client_RejectThrow();
+
     UFUNCTION()
     void OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 

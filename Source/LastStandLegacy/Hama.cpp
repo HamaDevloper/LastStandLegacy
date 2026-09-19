@@ -663,14 +663,6 @@ void AHama::RemoveCurrentWeapon()
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-    {
-        if (URecoilComponent* RecoilComp = PC->FindComponentByClass<URecoilComponent>())
-        {
-            RecoilComp->ResetRecoil();
-        }
-    }
-
     if (CurrentWeapon)
     {
         CurrentWeapon->SetActorHiddenInGame(false);
@@ -925,14 +917,6 @@ void AHama::CompleteWeaponSwap()
 
     CurrentWeapon = PendingWeaponForSwap;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
-
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-    {
-        if (URecoilComponent* RecoilComp = PC->FindComponentByClass<URecoilComponent>())
-        {
-            RecoilComp->ResetRecoil();
-        }
-    }
 
     CurrentWeapon->SetActorHiddenInGame(false);
     CurrentWeapon->SetActorEnableCollision(true);
