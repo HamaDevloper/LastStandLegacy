@@ -1,7 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Engine/NetSerialization.h" // ١. زیاکراوە بۆ پشتبەستن بە FVector_NetQuantize
 #include "MonkeyBomb.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
@@ -75,12 +76,9 @@ protected:
     UFUNCTION()
     void OnProjectileStopped(const FHitResult& ImpactResult);
 
-    UFUNCTION()
-    void OnBounce(const FHitResult& ImpactResult, const FVector& ImpactVelocity);
-
     void ActivateAttraction();
     void Explode();
 
     UFUNCTION(NetMulticast, Unreliable)
-    void Multicast_PlayExplosionFX();
+    void Multicast_PlayExplosionFX(FVector_NetQuantize ExplosionLocation);
 };

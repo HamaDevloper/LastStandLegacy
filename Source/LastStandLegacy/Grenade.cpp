@@ -3,7 +3,6 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "Kismet/KismetSystemLibrary.h"
 #include "DrawDebugHelpers.h"
 #include "TimerManager.h"
 #include "Engine/OverlapResult.h"
@@ -13,10 +12,9 @@ AGrenade::AGrenade()
     PrimaryActorTick.bCanEverTick = false;
 
     bReplicates = true;
-    SetReplicateMovement(false);
+    SetReplicateMovement(true);
 
-    SetNetUpdateFrequency(15.f);
-    SetMinNetUpdateFrequency(2.f);
+    SetNetUpdateFrequency(30.f);
     SetNetCullDistanceSquared(FMath::Square(3000.0f));
 
     bHasExploded = false;
@@ -24,8 +22,8 @@ AGrenade::AGrenade()
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
     CollisionComp->InitSphereRadius(10.0f);
     CollisionComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-
     CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+
     RootComponent = CollisionComp;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
@@ -38,8 +36,8 @@ AGrenade::AGrenade()
     ProjectileMovementComp->MaxSpeed = 8000.0f;
     ProjectileMovementComp->bRotationFollowsVelocity = true;
     ProjectileMovementComp->bShouldBounce = true;
-    ProjectileMovementComp->Bounciness = 0.3f;
-    ProjectileMovementComp->Friction = 0.5f;
+    ProjectileMovementComp->Bounciness = 0.2f;
+    ProjectileMovementComp->Friction = 0.6f;
 }
 
 void AGrenade::SetFuseDuration(float NewDuration)
@@ -64,20 +62,23 @@ void AGrenade::Explode()
     bHasExploded = true;
     GetWorldTimerManager().ClearTimer(FuseTimerHandle);
 
-    DrawDebugSphere(GetWorld(), GetActorLocation(), DamageRadius, 16, FColor::Red, false, 3.0f, 0, 1.5f);
+    const FVector ServerExplosionLocation = GetActorLocation() + FVector(0.0f, 0.0f, 10.0f);
+
+#if !UE_BUILD_SHIPPING
+    DrawDebugSphere(GetWorld(), ServerExplosionLocation, DamageRadius, 16, FColor::Red, false, 3.0f, 0, 1.5f);
+#endif
 
     TArray<AActor*> IgnoredActors;
     IgnoredActors.Add(this);
 
-    APawn* ThrowerPawn = GetInstigator();
 
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
     {
-        for (APlayerState* PS : GS->PlayerArray)
+        if (APlayerController* PC = It->Get())
         {
-            if (PS && PS->GetPawn() && PS->GetPawn() != ThrowerPawn)
+            if (APawn* PlayerPawn = PC->GetPawn())
             {
-                IgnoredActors.Add(PS->GetPawn());
+                IgnoredActors.Add(PlayerPawn);
             }
         }
     }
@@ -89,9 +90,9 @@ void AGrenade::Explode()
 
     GetWorld()->OverlapMultiByChannel(
         HitResults,
-        GetActorLocation(),
+        ServerExplosionLocation,
         FQuat::Identity,
-        ECC_Bullet,
+        ECC_Pawn,
         Sphere,
         QueryParams
     );
@@ -104,7 +105,7 @@ void AGrenade::Explode()
         if (AActor* HitActor = Result.GetActor())
         {
             DamagedZombieCount++;
-            float Distance = FVector::Distance(GetActorLocation(), HitActor->GetActorLocation());
+            float Distance = FVector::Distance(ServerExplosionLocation, HitActor->GetActorLocation());
             float DamagePercent = FMath::Clamp(1.0f - (Distance / DamageRadius), 0.0f, 1.0f);
             TotalDamageDealt += BaseDamage * DamagePercent;
         }
@@ -113,7 +114,7 @@ void AGrenade::Explode()
     UGameplayStatics::ApplyRadialDamage(
         this,
         BaseDamage,
-        GetActorLocation(),
+        ServerExplosionLocation,
         DamageRadius,
         UDamageType::StaticClass(),
         IgnoredActors,
@@ -131,20 +132,20 @@ void AGrenade::Explode()
     }
 #endif
 
-    Multicast_PlayExplosionFX();
+    Multicast_PlayExplosionFX(ServerExplosionLocation);
 
     Destroy();
 }
 
-void AGrenade::Multicast_PlayExplosionFX_Implementation()
+void AGrenade::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize ExplosionLocation)
 {
     if (ExplosionSound)
     {
-        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, GetActorLocation());
+        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, ExplosionLocation);
     }
 
     if (ExplosionVFX && GetWorld())
     {
-        UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ExplosionVFX, GetActorLocation());
+        UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ExplosionVFX, ExplosionLocation);
     }
 }

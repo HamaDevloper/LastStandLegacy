@@ -3,6 +3,7 @@
 #include "Net/Core/PushModel/PushModel.h"
 #include "Hama.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
@@ -11,13 +12,19 @@
 #include "TimerManager.h"
 #include "Grenade.h"
 #include "LastStandLegacyGameState.h"
-#include "GameFramework/PlayerState.h"
 #include "Engine/OverlapResult.h"
 
 UThrowableComponent::UThrowableComponent()
 {
+    // ناچالاککردنی Tick لە Shipping Build بۆ ڕێگری لە بەفیڕۆچوونی CPU
+#if UE_BUILD_SHIPPING
+    PrimaryComponentTick.bCanEverTick = false;
+    PrimaryComponentTick.bStartWithTickEnabled = false;
+#else
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.bStartWithTickEnabled = true;
+#endif
+
     SetIsReplicatedByDefault(true);
 
     MaxGrenadeCookTime = 3.5f;
@@ -43,7 +50,9 @@ void UThrowableComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+#if !UE_BUILD_SHIPPING
     Debug_RenderNetworkDesync();
+#endif
 }
 
 void UThrowableComponent::Debug_RenderNetworkDesync()
@@ -93,14 +102,12 @@ void UThrowableComponent::BeginPlay()
 
     if (GrenadeThrowMontage)
     {
-        int32 SectionIndex = GrenadeThrowMontage->GetSectionIndex(ReleaseSectionName);
-        GrenadeThrowCooldown = (SectionIndex != INDEX_NONE) ? GrenadeThrowMontage->GetSectionLength(SectionIndex) : GrenadeThrowMontage->GetPlayLength();
+        GrenadeThrowCooldown = GrenadeThrowMontage->GetPlayLength();
     }
 
     if (MonkeyThrowMontage)
     {
-        int32 SectionIndex = MonkeyThrowMontage->GetSectionIndex(ReleaseSectionName);
-        MonkeyThrowCooldown = (SectionIndex != INDEX_NONE) ? MonkeyThrowMontage->GetSectionLength(SectionIndex) : MonkeyThrowMontage->GetPlayLength();
+        MonkeyThrowCooldown = MonkeyThrowMontage->GetPlayLength();
     }
 
     if (CharacterOwner && CharacterOwner->IsLocallyControlled())
@@ -195,7 +202,15 @@ void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (!CharacterOwner || !TargetClass || TargetCount <= 0 || (CurrentTime - LastThrowTime < (ActiveCooldown - 0.05f)) || ChargeState != EThrowChargeState::Idle)
+    float PlayerPingSeconds = 0.03f;
+    if (CharacterOwner && CharacterOwner->GetPlayerState())
+    {
+        PlayerPingSeconds = FMath::Max(0.02f, CharacterOwner->GetPlayerState()->GetPingInMilliseconds() * 0.001f);
+    }
+    const float DynamicMargin = FMath::Clamp(PlayerPingSeconds + 0.02f, 0.03f, 0.15f);
+    const bool bCooldownPassed = (CurrentTime - LastThrowTime) >= (ActiveCooldown - DynamicMargin);
+
+    if (!CharacterOwner || !TargetClass || TargetCount <= 0 || !bCooldownPassed || ChargeState != EThrowChargeState::Idle)
     {
         ResetThrowState_Server();
         return;
@@ -247,9 +262,14 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     const float ActiveCooldown = bActualIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
 
     const float CurrentTime = GetWorld()->GetTimeSeconds();
-    const bool bIsCooldownActive = (CurrentTime - LastThrowTime) < (ActiveCooldown - 0.05f);
 
-    // ڕێگەدان بە فڕێدان تەنانەت ئەگەر State هێشتا Idle بێت بەهۆی Fast Click / Latency Race Condition
+    float PlayerPingSeconds = 0.03f;
+    if (CharacterOwner && CharacterOwner->GetPlayerState())
+    {
+        PlayerPingSeconds = FMath::Max(0.02f, CharacterOwner->GetPlayerState()->GetPingInMilliseconds() * 0.001f);
+    }
+    const float DynamicMargin = FMath::Clamp(PlayerPingSeconds + 0.02f, 0.03f, 0.15f);
+    const bool bIsCooldownActive = (CurrentTime - LastThrowTime) < (ActiveCooldown - DynamicMargin);
     const bool bValidState = (ChargeState == EThrowChargeState::Charging) ||
         (ChargeState == EThrowChargeState::Idle) ||
         (ChargeState == EThrowChargeState::Released);
@@ -306,10 +326,10 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
         {
             GrenadeActor->SetFuseDuration(RemainingFuseTime);
         }
-
         if (UProjectileMovementComponent* ProjComp = SpawnedThrowable->FindComponentByClass<UProjectileMovementComponent>())
         {
             ProjComp->bInitialVelocityInLocalSpace = false;
+            ProjComp->InitialSpeed = ThrowImpulseStrength;
             ProjComp->MaxSpeed = FMath::Max(ProjComp->MaxSpeed, ThrowImpulseStrength);
             ProjComp->Velocity = TrueLaunchDir * ThrowImpulseStrength;
         }
@@ -334,8 +354,9 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
         return;
     }
 
+    const float ResetDelay = FMath::Max(0.2f, ActiveCooldown - 0.1f);
     GetWorld()->GetTimerManager().SetTimer(
-        TimerHandle_ResetThrowState, this, &UThrowableComponent::ResetThrowState_Server, ActiveCooldown, false
+        TimerHandle_ResetThrowState, this, &UThrowableComponent::ResetThrowState_Server, ResetDelay, false
     );
 }
 
@@ -542,7 +563,6 @@ void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPl
     UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
     if (!AnimInstance) return;
 
-    // ئەگەر Montage پێشتر لە کارکردندا بوو (واتا لە ناو Holdدا بوویت)
     if (AnimInstance->Montage_IsPlaying(MontageToPlay))
     {
         if (SectionName != NAME_None)

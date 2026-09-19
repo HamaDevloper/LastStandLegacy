@@ -1,7 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Engine/NetSerialization.h" // ١. زیاکراوە بۆ FVector_NetQuantize
 #include "Grenade.generated.h"
 
 class USphereComponent;
@@ -55,7 +56,7 @@ protected:
     void Explode();
 
     UFUNCTION(NetMulticast, Unreliable)
-    void Multicast_PlayExplosionFX();
+    void Multicast_PlayExplosionFX(FVector_NetQuantize ExplosionLocation);
 
 public:
     void SetFuseDuration(float NewDuration);
