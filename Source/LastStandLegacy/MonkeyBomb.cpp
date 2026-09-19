@@ -18,9 +18,9 @@ AMonkeyBomb::AMonkeyBomb()
     bReplicates = true;
     SetReplicateMovement(false);
 
-    SetNetUpdateFrequency(30.f);
-    SetMinNetUpdateFrequency(10.0f);
-    SetNetCullDistanceSquared(FMath::Square(3000.0f));
+    SetNetUpdateFrequency(10.f);
+    SetMinNetUpdateFrequency(2.0f);
+    SetNetCullDistanceSquared(FMath::Square(3500.0f));
 
     bAttractionActivated = false;
     bHasExploded = false;
@@ -51,8 +51,8 @@ AMonkeyBomb::AMonkeyBomb()
 
     ProjectileMovementComp->bRotationFollowsVelocity = true;
     ProjectileMovementComp->bShouldBounce = true;
-    ProjectileMovementComp->Bounciness = 0.1f;
-    ProjectileMovementComp->Friction = 0.9f;
+    ProjectileMovementComp->Bounciness = 0.15f;
+    ProjectileMovementComp->Friction = 0.7f;
 }
 
 void AMonkeyBomb::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -62,8 +62,8 @@ void AMonkeyBomb::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
 
-    DOREPLIFETIME_WITH_PARAMS(AMonkeyBomb, bAttractionActivated, Params);
-    DOREPLIFETIME_WITH_PARAMS(AMonkeyBomb, InitialVelocity, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, bAttractionActivated, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, InitialVelocity, Params);
 }
 
 void AMonkeyBomb::InitVelocity(const FVector& InVelocity)
@@ -155,15 +155,15 @@ void AMonkeyBomb::Explode()
         Director->UnregisterAttractor(this);
     }
 
-#if !UE_BUILD_SHIPPING
-    DrawDebugSphere(GetWorld(), ServerExplosionLocation, DamageRadius, 16, FColor::Red, false, 5.0f, 0, 2.0f);
-#endif
+    ALastStandLegacyGameState* GameState = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
-    APawn* InstigatorPawn = GetInstigator();
     TArray<AActor*> IgnoredActors;
+    IgnoredActors.Reserve(GameState ? GameState->PlayerArray.Num() + 1 : 3);
     IgnoredActors.Add(this);
 
-    if(ALastStandLegacyGameState* GameState = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    APawn* InstigatorPawn = GetInstigator();
+
+    if (GameState)
     {
         for (APlayerState* PS : GameState->PlayerArray)
         {
@@ -178,33 +178,7 @@ void AMonkeyBomb::Explode()
         }
     }
 
-    TArray<FOverlapResult> HitResults;
-    FCollisionShape Sphere = FCollisionShape::MakeSphere(DamageRadius);
-    FCollisionQueryParams QueryParams;
-    QueryParams.AddIgnoredActors(IgnoredActors);
-
-    GetWorld()->OverlapMultiByChannel(
-        HitResults,
-        ServerExplosionLocation,
-        FQuat::Identity,
-        ECC_Pawn,
-        Sphere,
-        QueryParams
-    );
-
-#if !UE_BUILD_SHIPPING
-    if (HitResults.Num() > 0)
-    {
-        for (const FOverlapResult& Res : HitResults)
-        {
-            if (AActor* HitActor = Res.GetActor())
-            {
-                if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Orange, FString::Printf(TEXT("[MonkeyBomb Damage] Hit Target: %s"), *HitActor->GetName()));
-            }
-        }
-    }
-#endif
-
+  
     UGameplayStatics::ApplyRadialDamage(
         this,
         BaseDamage,
@@ -218,9 +192,12 @@ void AMonkeyBomb::Explode()
         ECC_WorldStatic
     );
 
+
     Multicast_PlayExplosionFX(ServerExplosionLocation);
 
-    Destroy();
+    SetActorHiddenInGame(true);
+    SetActorEnableCollision(false);
+    SetLifeSpan(0.2f);
 }
 
 void AMonkeyBomb::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize ExplosionLocation)

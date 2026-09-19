@@ -98,7 +98,10 @@ protected:
     FName ThrowableHandSocketName = TEXT("GrenadeHandSocket");
 
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
-    float ThrowImpulseStrength = 1500.0f;
+    float GrenadeThrowImpulseStrength = 1500.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
+    float MonkeyThrowImpulseStrength = 1500.0f;
 
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
     int32 MaxGrenadeCount = 5;
@@ -169,6 +172,8 @@ protected:
     UFUNCTION(Client, Reliable)
     void Client_RejectThrow();
 
+    void Local_OnGrenadeCookExpired();
+
     UFUNCTION()
     void OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
@@ -179,8 +184,7 @@ protected:
     void SetWeaponHidden(bool bHidden);
     void HandleChargeStateChanged();
 
-    FVector GetCameraAimDirection() const;
-    FVector GetCrosshairTargetPoint(const FVector& AimDir) const;
+    FVector GetCrosshairTargetPoint(FVector& OutAimDir) const;
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
 
     FTimerHandle TimerHandle_CookExplosion;

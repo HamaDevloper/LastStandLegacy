@@ -18,9 +18,9 @@ AGrenade::AGrenade()
     bReplicates = true;
     SetReplicateMovement(false);
 
-    SetNetUpdateFrequency(30.f);
-    SetMinNetUpdateFrequency(10.0f);
-    SetNetCullDistanceSquared(FMath::Square(3000.0f));
+    SetNetUpdateFrequency(10.0f);
+    SetMinNetUpdateFrequency(2.0f);
+    SetNetCullDistanceSquared(FMath::Square(3500.0f));
 
     bHasExploded = false;
 
@@ -45,8 +45,8 @@ AGrenade::AGrenade()
 
     ProjectileMovementComp->bRotationFollowsVelocity = true;
     ProjectileMovementComp->bShouldBounce = true;
-    ProjectileMovementComp->Bounciness = 0.2f;
-    ProjectileMovementComp->Friction = 0.7f;
+    ProjectileMovementComp->Bounciness = 0.3f;
+    ProjectileMovementComp->Friction = 0.6f;
 }
 
 void AGrenade::SetFuseDuration(float NewDuration)
@@ -91,7 +91,7 @@ void AGrenade::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetime
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
-    DOREPLIFETIME_WITH_PARAMS(AGrenade, InitialVelocity, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, InitialVelocity, Params);
 }
 
 void AGrenade::Explode()
@@ -103,16 +103,15 @@ void AGrenade::Explode()
 
     const FVector ServerExplosionLocation = GetActorLocation() + FVector(0.0f, 0.0f, 10.0f);
 
-#if !UE_BUILD_SHIPPING
-    DrawDebugSphere(GetWorld(), ServerExplosionLocation, DamageRadius, 16, FColor::Red, false, 3.0f, 0, 1.5f);
-#endif
-
     APawn* ThrowerPawn = GetInstigator();
+
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+
     TArray<AActor*> IgnoredActors;
+    IgnoredActors.Reserve(GS? GS->PlayerArray.Num() + 1 : 3);
     IgnoredActors.Add(this);
 
-
-    if(ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    if (GS)
     {
         for (APlayerState* PS : GS->PlayerArray)
         {
@@ -120,36 +119,10 @@ void AGrenade::Explode()
             if (APawn* PlayerPawn = PS->GetPawn())
             {
                 if (PlayerPawn != ThrowerPawn)
-                IgnoredActors.Add(PlayerPawn);
+                {
+                    IgnoredActors.Add(PlayerPawn);
+                }
             }
-        }
-    }
-
-    TArray<FOverlapResult> HitResults;
-    FCollisionShape Sphere = FCollisionShape::MakeSphere(DamageRadius);
-    FCollisionQueryParams QueryParams;
-    QueryParams.AddIgnoredActors(IgnoredActors);
-
-    GetWorld()->OverlapMultiByChannel(
-        HitResults,
-        ServerExplosionLocation,
-        FQuat::Identity,
-        ECC_Pawn,
-        Sphere,
-        QueryParams
-    );
-
-    int32 DamagedZombieCount = 0;
-    float TotalDamageDealt = 0.0f;
-
-    for (const FOverlapResult& Result : HitResults)
-    {
-        if (AActor* HitActor = Result.GetActor())
-        {
-            DamagedZombieCount++;
-            float Distance = FVector::Distance(ServerExplosionLocation, HitActor->GetActorLocation());
-            float DamagePercent = FMath::Clamp(1.0f - (Distance / DamageRadius), 0.0f, 1.0f);
-            TotalDamageDealt += BaseDamage * DamagePercent;
         }
     }
 
@@ -166,17 +139,11 @@ void AGrenade::Explode()
         ECC_WorldStatic
     );
 
-#if !UE_BUILD_SHIPPING
-    if (GEngine)
-    {
-        FString Message = FString::Printf(TEXT("Grenade Exploded! Hit: %d Zombies | Total Damage: %.1f"), DamagedZombieCount, TotalDamageDealt);
-        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, Message);
-    }
-#endif
-
     Multicast_PlayExplosionFX(ServerExplosionLocation);
 
-    Destroy();
+    SetActorHiddenInGame(true);
+    SetActorEnableCollision(false);
+    SetLifeSpan(0.2f);
 }
 
 void AGrenade::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize ExplosionLocation)

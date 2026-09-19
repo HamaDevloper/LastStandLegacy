@@ -16,7 +16,7 @@
 
 UThrowableComponent::UThrowableComponent()
 {
-    // ناچالاککردنی Tick لە Shipping Build بۆ ڕێگری لە بەفیڕۆچوونی CPU
+
 #if UE_BUILD_SHIPPING
     PrimaryComponentTick.bCanEverTick = false;
     PrimaryComponentTick.bStartWithTickEnabled = false;
@@ -123,13 +123,13 @@ void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     FDoRepLifetimeParams RepParams;
     RepParams.bIsPushBased = true;
 
-    RepParams.Condition = COND_None;
-    DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, ChargeState, RepParams);
-    DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, bIsMonkeyThrow, RepParams);
+    RepParams.Condition = COND_SkipOwner;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UThrowableComponent, ChargeState, RepParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UThrowableComponent, bIsMonkeyThrow, RepParams);
 
     RepParams.Condition = COND_OwnerOnly;
-    DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, CurrentGrenadeCount, RepParams);
-    DOREPLIFETIME_WITH_PARAMS(UThrowableComponent, CurrentMonkeyCount, RepParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UThrowableComponent, CurrentGrenadeCount, RepParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UThrowableComponent, CurrentMonkeyCount, RepParams);
 }
 
 
@@ -157,7 +157,7 @@ void UThrowableComponent::Internal_StartCharge(TSubclassOf<AActor> ThrowableClas
             GetWorld()->GetTimerManager().SetTimer(
                 TimerHandle_CookExplosion,
                 this,
-                &UThrowableComponent::Multicast_OnGrenadeCookExpiredFX,
+                &UThrowableComponent::Local_OnGrenadeCookExpired,
                 MaxGrenadeCookTime,
                 false
             );
@@ -201,7 +201,12 @@ void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
 {
     if (!CharacterOwner) return;
 
-    // ئەگەر یاریزان لە دۆخێکدا بوو کە نەیتوانی فڕێ بدات، کلاینت ئاگادار بکەرەوە بۆ دەرهێنانی لە قوفڵ
+    if (ChargeState != EThrowChargeState::Idle)
+    {
+        Client_RejectThrow();
+        return;
+    }
+
     if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
         CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
     {
@@ -246,7 +251,8 @@ void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableCla
     ChargeState = EThrowChargeState::Released;
     HandleChargeStateChanged();
 
-    FVector AimDir = GetCameraAimDirection();
+    FVector AimDir;
+    FVector TargetPoint = GetCrosshairTargetPoint(AimDir);
 
     Server_ExecuteThrow(AimDir, bIsMonkey);
 
@@ -357,11 +363,11 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
         if (GrenadeActor)
         {
-            GrenadeActor->InitVelocity(TrueLaunchDir * ThrowImpulseStrength);
+            GrenadeActor->InitVelocity(TrueLaunchDir * GrenadeThrowImpulseStrength);
         }
         else if (AMonkeyBomb* MonkeyActor = Cast<AMonkeyBomb>(SpawnedThrowable))
         {
-            MonkeyActor->InitVelocity(TrueLaunchDir * ThrowImpulseStrength);
+            MonkeyActor->InitVelocity(TrueLaunchDir * MonkeyThrowImpulseStrength);
         }
 
         TargetCount--;
@@ -394,10 +400,9 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 
     ChargeState = EThrowChargeState::Idle;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
-
     HandleChargeStateChanged();
 
-    FVector ExpLocation = CharacterOwner->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
+    const FVector ExpLocation = CharacterOwner->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
     const float ExplosionRadius = 400.0f;
     const float BaseDamage = 500.0f;
 
@@ -409,47 +414,24 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
         UDamageType::StaticClass()
     );
 
+    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+
     TArray<AActor*> IgnoredActors;
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    IgnoredActors.Reserve(GS ? GS->PlayerArray.Num() + 1 : 1);
+    IgnoredActors.Add(CharacterOwner);
+
+    if (GS)
     {
         for (APlayerState* PS : GS->PlayerArray)
         {
-            if (PS && PS->GetPawn())
+            if (!PS) continue;
+            if (APawn* PlayerPawn = PS->GetPawn())
             {
-                IgnoredActors.Add(PS->GetPawn());
+                if (PlayerPawn != CharacterOwner)
+                {
+                    IgnoredActors.Add(PlayerPawn);
+                }
             }
-        }
-    }
-    else
-    {
-        IgnoredActors.Add(CharacterOwner);
-    }
-
-    TArray<FOverlapResult> HitResults;
-    FCollisionShape Sphere = FCollisionShape::MakeSphere(ExplosionRadius);
-    FCollisionQueryParams QueryParams;
-    QueryParams.AddIgnoredActors(IgnoredActors);
-
-    GetWorld()->OverlapMultiByChannel(
-        HitResults,
-        ExpLocation,
-        FQuat::Identity,
-        ECC_Bullet,
-        Sphere,
-        QueryParams
-    );
-
-    int32 DamagedZombieCount = 0;
-    float TotalDamageDealt = 0.0f;
-
-    for (const FOverlapResult& Result : HitResults)
-    {
-        if (AActor* HitActor = Result.GetActor())
-        {
-            DamagedZombieCount++;
-            float Distance = FVector::Distance(ExpLocation, HitActor->GetActorLocation());
-            float DamagePercent = FMath::Clamp(1.0f - (Distance / ExplosionRadius), 0.0f, 1.0f);
-            TotalDamageDealt += BaseDamage * DamagePercent;
         }
     }
 
@@ -466,17 +448,13 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
         ECC_WorldStatic
     );
 
-#if !UE_BUILD_SHIPPING
-    if (GEngine)
-    {
-        FString Message = FString::Printf(TEXT("Grenade Exploded! Hit: %d Zombies | Total Damage: %.1f"), DamagedZombieCount, TotalDamageDealt);
-        GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, Message);
-    }
-#endif
-
     CurrentGrenadeCount = FMath::Max(0, CurrentGrenadeCount - 1);
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
-    OnRep_GrenadeCount();
+
+    if (CharacterOwner->IsLocallyControlled())
+    {
+        OnRep_GrenadeCount();
+    }
 
     Multicast_OnGrenadeCookExpiredFX();
     ResetThrowState_Server();
@@ -484,15 +462,20 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 
 void UThrowableComponent::Multicast_OnGrenadeCookExpiredFX_Implementation()
 {
-    bIsThrowingLocal = false;
+    Local_OnGrenadeCookExpired();
+}
 
-    if (CharacterOwner && CharacterOwner->GetMesh())
+void UThrowableComponent::Local_OnGrenadeCookExpired()
+{
+    bIsThrowingLocal = false;
+    ChargeState = EThrowChargeState::Idle;
+
+    if (GetWorld())
     {
-        if (UAnimInstance* AnimInst = CharacterOwner->GetMesh()->GetAnimInstance())
-        {
-            AnimInst->StopAllMontages(0.1f);
-        }
+        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
     }
+
+    HandleChargeStateChanged();
 }
 
 void UThrowableComponent::ResetThrowState_Server()
@@ -648,28 +631,18 @@ void UThrowableComponent::SetWeaponHidden(bool bHidden)
     }
 }
 
-FVector UThrowableComponent::GetCameraAimDirection() const
+FVector UThrowableComponent::GetCrosshairTargetPoint(FVector& OutAimDir) const
 {
-    if (!CharacterOwner) return FVector::ForwardVector;
-
-    if (APlayerController* PC = Cast<APlayerController>(CharacterOwner->GetController()))
+    if (!CharacterOwner)
     {
-        FVector CameraLoc;
-        FRotator CameraRot;
-        PC->GetPlayerViewPoint(CameraLoc, CameraRot);
-        return CameraRot.Vector();
+        OutAimDir = FVector::ForwardVector;
+        return FVector::ZeroVector;
     }
-
-    return CharacterOwner->GetBaseAimRotation().Vector();
-}
-
-FVector UThrowableComponent::GetCrosshairTargetPoint(const FVector& AimDir) const
-{
-    if (!CharacterOwner) return FVector::ZeroVector;
 
     FVector CameraLoc;
     FRotator CameraRot;
 
+    // وەرگرتنی شوێن و سووڕانەوەی کامێرا لە یەک کاتدا
     if (APlayerController* PC = Cast<APlayerController>(CharacterOwner->GetController()))
     {
         PC->GetPlayerViewPoint(CameraLoc, CameraRot);
@@ -677,10 +650,15 @@ FVector UThrowableComponent::GetCrosshairTargetPoint(const FVector& AimDir) cons
     else
     {
         CameraLoc = CharacterOwner->GetPawnViewLocation();
+        CameraRot = CharacterOwner->GetBaseAimRotation();
     }
 
-    FVector TraceEnd = CameraLoc + (AimDir * 10000.0f);
+    // دیاری کردنی Direct Vector
+    OutAimDir = CameraRot.Vector();
+
+    const FVector TraceEnd = CameraLoc + (OutAimDir * 10000.0f);
     FHitResult Hit;
+
     FCollisionQueryParams TraceParams;
     TraceParams.AddIgnoredActor(CharacterOwner);
 
