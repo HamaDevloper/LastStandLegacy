@@ -18,11 +18,10 @@ class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
     GENERATED_BODY()
 
 public:
-    UFUNCTION(BlueprintCallable, Category = "UI|Initialization")
     void BindCharacter(AHama* InHama);
-
     void BindPlayerState(AHamaPlayerState* InPlayerState);
     void BindGameState(ALastStandLegacyGameState* InGameState);
+    void UnbindAllEvents();
 
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
@@ -81,6 +80,31 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI | Perks")
     int32 MaxPerkSlots = 8;
 
+
+protected:
+    // --- Throwable UI Widgets (CoD Zombies Style) ---
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UHorizontalBox> GrenadeContainer;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UHorizontalBox> MonkeyContainer;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI | Throwables")
+    TObjectPtr<UTexture2D> GrenadeIconTexture;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI | Throwables")
+    TObjectPtr<UTexture2D> MonkeyIconTexture;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI | Throwables")
+    FVector2D ThrowableIconSize = FVector2D(32.0f, 32.0f);
+
+private:
+    UPROPERTY()
+    TArray<TObjectPtr<UImage>> GrenadeImagePool;
+
+    UPROPERTY()
+    TArray<TObjectPtr<UImage>> MonkeyImagePool;
+
 public:
     // --- Event Handlers ---
     UFUNCTION()
@@ -105,10 +129,17 @@ public:
     void ShowPowerMessage(EPowerUpType PowerUpType);
 
     UFUNCTION()
+    void UpdatePingDisplay();
+
+    UFUNCTION()
     void OnPowerUpAnimFinished();
 
     UFUNCTION()
     void HandlePerksUpdate(const TArray<FName>& CurrentPerks);
+
+    UFUNCTION()
+    void HandleThrowableCountUpdate(int32 NewMonkeyCount, int32 NewGrenadeCount);
+    void EnsureThrowablePoolSize(UHorizontalBox* Container, TArray<TObjectPtr<UImage>>& Pool, UTexture2D* IconTexture, int32 TargetSize);
 
 private:
     UPROPERTY()
@@ -119,11 +150,6 @@ private:
 
     UPROPERTY()
     TObjectPtr<ALastStandLegacyGameState> CachedGameState;
-
-    UFUNCTION()
-    void UpdatePingDisplay();
-
-    void UnbindAllEvents();
 
     FTimerHandle PingUpdateTimer;
 };

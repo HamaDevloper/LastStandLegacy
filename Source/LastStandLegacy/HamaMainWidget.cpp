@@ -29,6 +29,12 @@ void UHamaMainWidget::NativeConstruct()
         PowerUpAnimDelegate.BindDynamic(this, &UHamaMainWidget::OnPowerUpAnimFinished);
     }
 
+    if (GrenadeContainer) GrenadeContainer->ClearChildren();
+    if (MonkeyContainer) MonkeyContainer->ClearChildren();
+
+    // ---------------------------------------------------------
+    // Perk Pool Initialization (ئەمەیان لە UI بڕەکەی جێگیرە)
+    // ---------------------------------------------------------
     if (PerkContainer && PerkImagePool.Num() == 0)
     {
         PerkContainer->ClearChildren();
@@ -60,6 +66,11 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
 
     if (CachedHamaChar)
     {
+        if (UThrowableComponent* OldThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
+        {
+            OldThrowableComp->OnThrowableCountChanged.Unbind();
+        }
+
         CachedHamaChar->OnAmmoUpdateEvent.Unbind();
         CachedHamaChar->OnInteractUpdateEvent.Unbind();
         CachedHamaChar->OnCrosshairUpdateEvent.Unbind();
@@ -72,6 +83,16 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
     CachedHamaChar->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
     CachedHamaChar->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);
     CachedHamaChar->OnPerksChangedEvent.BindUObject(this, &UHamaMainWidget::HandlePerksUpdate);
+
+    if (UThrowableComponent* ThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
+    {
+        ThrowableComp->OnThrowableCountChanged.BindUObject(this, &UHamaMainWidget::HandleThrowableCountUpdate);
+
+        EnsureThrowablePoolSize(GrenadeContainer, GrenadeImagePool, GrenadeIconTexture, ThrowableComp->GetMaxGrenadeCount());
+        EnsureThrowablePoolSize(MonkeyContainer, MonkeyImagePool, MonkeyIconTexture, ThrowableComp->GetMaxMonkeyCount());
+
+        HandleThrowableCountUpdate(ThrowableComp->GetCurrentMonkeyCount(), ThrowableComp->GetCurrentGrenadeCount());
+    }
 
     HandlePerksUpdate(CachedHamaChar->GetOwnedPerks());
 
@@ -135,7 +156,6 @@ void UHamaMainWidget::HandlePointsUpdate(int32 NewPoints)
     {
         static const FText PointsFormatPattern = LOCTEXT("PointsFormat", "${ 0}");
         const FText FormattedNumber = FText::AsNumber(NewPoints, &NoGroupingOptions);
-
         Points->SetText(FText::Format(PointsFormatPattern, FormattedNumber));
     }
 }
@@ -330,10 +350,73 @@ void UHamaMainWidget::HandlePerksUpdate(const TArray<FName>& CurrentPerks)
     }
 }
 
+void UHamaMainWidget::EnsureThrowablePoolSize(UHorizontalBox* Container, TArray<TObjectPtr<UImage>>& Pool, UTexture2D* IconTexture, int32 TargetSize)
+{
+    if (!Container || TargetSize <= 0) return;
+
+    while (Pool.Num() < TargetSize)
+    {
+        UImage* NewImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+        if (!NewImage) break;
+
+        NewImage->SetVisibility(ESlateVisibility::Collapsed);
+
+        if (IconTexture)
+        {
+            FSlateBrush Brush;
+            Brush.SetResourceObject(IconTexture);
+            Brush.ImageSize = ThrowableIconSize;
+            NewImage->SetBrush(Brush);
+        }
+
+        if (UHorizontalBoxSlot* NewSlot = Container->AddChildToHorizontalBox(NewImage))
+        {
+            NewSlot->SetPadding(FMargin(2.0f, 0.0f, 2.0f, 0.0f));
+            NewSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+            NewSlot->SetVerticalAlignment(EVerticalAlignment::VAlign_Center);
+        }
+
+        Pool.Add(NewImage);
+    }
+}
+
+
+void UHamaMainWidget::HandleThrowableCountUpdate(int32 MonkeyCount, int32 GrenadeCount)
+{
+    // -------------------------------------------------------------------------
+    // 1. Grenade Icons Display
+    // -------------------------------------------------------------------------
+    for (int32 i = 0; i < GrenadeImagePool.Num(); ++i)
+    {
+        if (UImage* GrenadeImg = GrenadeImagePool[i])
+        {
+            const bool bShouldShow = (i < GrenadeCount);
+            GrenadeImg->SetVisibility(bShouldShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Monkey Bomb Icons Display
+    // -------------------------------------------------------------------------
+    for (int32 i = 0; i < MonkeyImagePool.Num(); ++i)
+    {
+        if (UImage* MonkeyImg = MonkeyImagePool[i])
+        {
+            const bool bShouldShow = (i < MonkeyCount);
+            MonkeyImg->SetVisibility(bShouldShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        }
+    }
+}
+
 void UHamaMainWidget::UnbindAllEvents()
 {
     if (CachedHamaChar)
     {
+        if (UThrowableComponent* ThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
+        {
+            ThrowableComp->OnThrowableCountChanged.Unbind();
+        }
+
         CachedHamaChar->OnAmmoUpdateEvent.Unbind();
         CachedHamaChar->OnInteractUpdateEvent.Unbind();
         CachedHamaChar->OnCrosshairUpdateEvent.Unbind();

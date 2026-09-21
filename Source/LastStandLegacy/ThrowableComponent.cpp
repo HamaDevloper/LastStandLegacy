@@ -112,7 +112,7 @@ void UThrowableComponent::BeginPlay()
 
     if (CharacterOwner && CharacterOwner->IsLocallyControlled())
     {
-        OnThrowableCountChanged.Broadcast(CurrentMonkeyCount, CurrentGrenadeCount);
+        OnThrowableCountChanged.ExecuteIfBound(CurrentMonkeyCount, CurrentGrenadeCount);
     }
 }
 
@@ -289,7 +289,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     }
 
     TSubclassOf<AActor> TargetClass = bActualIsMonkey ? MonkeyClass : GrenadeClass;
-    int32& TargetCount = bActualIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
+    uint8& TargetCount = bActualIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const float ActiveCooldown = bActualIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
 
     const float CurrentTime = GetWorld()->GetTimeSeconds();
@@ -718,5 +718,12 @@ void UThrowableComponent::RefillGrenadesToMax()
     OnRep_GrenadeCount();
 }
 
-void UThrowableComponent::OnRep_GrenadeCount() { OnThrowableCountChanged.Broadcast(CurrentMonkeyCount, CurrentGrenadeCount); }
-void UThrowableComponent::OnRep_MonkeyCount() { OnThrowableCountChanged.Broadcast(CurrentMonkeyCount, CurrentGrenadeCount); }
+void UThrowableComponent::OnRep_GrenadeCount()
+{
+    OnThrowableCountChanged.ExecuteIfBound(CurrentMonkeyCount, CurrentGrenadeCount);
+}
+
+void UThrowableComponent::OnRep_MonkeyCount()
+{
+    OnThrowableCountChanged.ExecuteIfBound(CurrentMonkeyCount, CurrentGrenadeCount);
+}

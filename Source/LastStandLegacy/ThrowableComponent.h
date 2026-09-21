@@ -8,7 +8,7 @@
 class AHama;
 class UAnimMontage;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnThrowableCountChanged, int32, MonkeyCount, int32, GrenadeCount);
+DECLARE_DELEGATE_TwoParams(FOnThrowableCountChanged, int32 /*MonkeyCount*/, int32 /*GrenadeCount*/);
 
 UENUM(BlueprintType)
 enum class EThrowChargeState : uint8
@@ -33,7 +33,6 @@ protected:
 public:
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-    UPROPERTY(BlueprintAssignable, Category = "Throwable|Events")
     FOnThrowableCountChanged OnThrowableCountChanged;
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
@@ -74,6 +73,9 @@ public:
 
     void ToggleHandThrowableVisibility(bool bVisible);
     void Server_OnGrenadeCookExpired();
+
+    int32 GetMaxGrenadeCount() const { return MaxGrenadeCount; }
+    int32 GetMaxMonkeyCount() const { return MaxMonkeyCount; }
 
 protected:
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
@@ -118,13 +120,11 @@ protected:
     UPROPERTY(Transient)
     float MonkeyThrowCooldown = 1.0f;
 
-
-
     UPROPERTY(ReplicatedUsing = OnRep_GrenadeCount, VisibleInstanceOnly, Category = "Throwable|State")
-    int32 CurrentGrenadeCount;
+    uint8 CurrentGrenadeCount;
 
     UPROPERTY(ReplicatedUsing = OnRep_MonkeyCount, VisibleInstanceOnly, Category = "Throwable|State")
-    int32 CurrentMonkeyCount;
+    uint8 CurrentMonkeyCount;
 
     UPROPERTY(ReplicatedUsing = OnRep_ChargeState, VisibleInstanceOnly, Category = "Throwable|State")
     EThrowChargeState ChargeState = EThrowChargeState::Idle;
@@ -132,7 +132,6 @@ protected:
     UPROPERTY(Replicated)
     bool bIsMonkeyThrow = false;
 
-    // Transient Local Variables
     UPROPERTY(Transient)
     bool bIsThrowingLocal = false;
 
