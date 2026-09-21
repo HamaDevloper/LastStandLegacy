@@ -142,7 +142,7 @@ void UThrowableComponent::Internal_StartCharge(TSubclassOf<AActor> ThrowableClas
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (!CharacterOwner || !ThrowableClass || CurrentCount <= 0 || bIsThrowingLocal || (CurrentTime - LastThrowTime < ActiveCooldown))
+    if (!CharacterOwner || !ThrowableClass || CurrentCount <= 0 || bIsThrowingLocal || ChargeState != EThrowChargeState::Idle || (CurrentTime - LastThrowTime < ActiveCooldown))
     {
         return;
     }
@@ -243,8 +243,10 @@ void UThrowableComponent::ReleaseMonkeyThrow() { Internal_ReleaseThrow(MonkeyCla
 
 void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey)
 {
-    if (!CharacterOwner || bIsMonkey != bIsMonkeyThrow) return;
-    if (ChargeState != EThrowChargeState::Charging && !bIsThrowingLocal) return;
+    if (!CharacterOwner || bIsMonkey != bIsMonkeyThrow || ChargeState != EThrowChargeState::Charging)
+    {
+        return;
+    }
 
     if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
 
@@ -539,7 +541,7 @@ void UThrowableComponent::HandleChargeStateChanged()
     {
     case EThrowChargeState::Charging:
     {
-        PlayThrowMontageWithDelegate(MontageToPlay, NAME_None);
+        PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
 
         SetWeaponHidden(true);
         ToggleHandThrowableVisibility(true);
@@ -581,21 +583,16 @@ void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPl
     UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
     if (!AnimInstance) return;
 
-    if (AnimInstance->Montage_IsPlaying(MontageToPlay))
-    {
-        if (SectionName != NAME_None)
-        {
-            AnimInstance->Montage_SetNextSection(FName("Hold"), SectionName, MontageToPlay);
-        }
-    }
-    else
+    const bool bIsPlaying = AnimInstance->Montage_IsPlaying(MontageToPlay);
+
+    if (!bIsPlaying)
     {
         AnimInstance->Montage_Play(MontageToPlay, 1.0f);
+    }
 
-        if (SectionName != NAME_None)
-        {
-            AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
-        }
+    if (SectionName != NAME_None)
+    {
+        AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
     }
 
     FOnMontageEnded EndDelegate;

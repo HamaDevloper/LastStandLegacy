@@ -386,24 +386,26 @@ void UHamaMainWidget::HandleThrowableCountUpdate(int32 MonkeyCount, int32 Grenad
     // -------------------------------------------------------------------------
     // 1. Grenade Icons Display
     // -------------------------------------------------------------------------
-    for (int32 i = 0; i < GrenadeImagePool.Num(); ++i)
+    const int32 TotalGrenades = GrenadeImagePool.Num();
+    for (int32 i = 0; i < TotalGrenades; ++i)
     {
         if (UImage* GrenadeImg = GrenadeImagePool[i])
         {
-            const bool bShouldShow = (i < GrenadeCount);
-            GrenadeImg->SetVisibility(bShouldShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+            const bool bShouldShow = (i >= (TotalGrenades - GrenadeCount));
+            GrenadeImg->SetVisibility(bShouldShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
         }
     }
 
     // -------------------------------------------------------------------------
     // 2. Monkey Bomb Icons Display
     // -------------------------------------------------------------------------
-    for (int32 i = 0; i < MonkeyImagePool.Num(); ++i)
+    const int32 TotalMonkeys = MonkeyImagePool.Num();
+    for (int32 i = 0; i < TotalMonkeys; ++i)
     {
         if (UImage* MonkeyImg = MonkeyImagePool[i])
         {
-            const bool bShouldShow = (i < MonkeyCount);
-            MonkeyImg->SetVisibility(bShouldShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+            const bool bShouldShow = (i >= (TotalMonkeys - MonkeyCount));
+            MonkeyImg->SetVisibility(bShouldShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
         }
     }
 }
