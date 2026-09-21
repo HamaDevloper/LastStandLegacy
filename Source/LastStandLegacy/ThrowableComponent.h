@@ -152,7 +152,7 @@ protected:
     void Server_StartCharge(bool bIsMonkey);
 
     UFUNCTION(Server, Reliable)
-    void Server_ExecuteThrow(FVector_NetQuantizeNormal LaunchDirection, bool bIsMonkey);
+    void Server_ExecuteThrow(FVector_NetQuantize ClientViewLoc, FVector_NetQuantizeNormal ClientAimDir, bool bIsMonkey);
 
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_OnGrenadeCookExpiredFX();
@@ -176,14 +176,14 @@ protected:
     UFUNCTION()
     void OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
-    void Internal_StartCharge(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey);
-    void Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey);
+    void Internal_StartCharge(bool bIsMonkey);
+    void Internal_ReleaseThrow(bool bIsMonkey);
 
     void ResetThrowState_Server();
     void SetWeaponHidden(bool bHidden);
     void HandleChargeStateChanged();
 
-    FVector GetCrosshairTargetPoint(FVector& OutAimDir) const;
+    FVector TraceCrosshairTarget(const FVector& ViewLoc, const FVector& AimDir) const;
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
 
     FTimerHandle TimerHandle_CookExplosion;

@@ -134,15 +134,22 @@ void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 
 
-void UThrowableComponent::StartGrenadeCharge() { Internal_StartCharge(GrenadeClass, CurrentGrenadeCount, GrenadeThrowMontage, false); }
-void UThrowableComponent::StartMonkeyCharge() { Internal_StartCharge(MonkeyClass, CurrentMonkeyCount, MonkeyThrowMontage, true); }
+void UThrowableComponent::StartGrenadeCharge() { Internal_StartCharge(false); }
+void UThrowableComponent::StartMonkeyCharge() { Internal_StartCharge(true); }
 
-void UThrowableComponent::Internal_StartCharge(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey)
+void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
 {
+
+    if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
+        CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
+    {
+        return;
+    }
+
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (!CharacterOwner || !ThrowableClass || CurrentCount <= 0 || bIsThrowingLocal || ChargeState != EThrowChargeState::Idle || (CurrentTime - LastThrowTime < ActiveCooldown))
+    if (!CharacterOwner || bIsThrowingLocal || ChargeState != EThrowChargeState::Idle || (CurrentTime - LastThrowTime < ActiveCooldown))
     {
         return;
     }
@@ -175,18 +182,32 @@ void UThrowableComponent::Internal_StartCharge(TSubclassOf<AActor> ThrowableClas
 
 void UThrowableComponent::ExecuteStartCharge_Server(bool bIsMonkey)
 {
-    ChargeState = EThrowChargeState::Charging;
-    bIsMonkeyThrow = bIsMonkey;
+    if (!CharacterOwner) return;
 
-    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsMonkeyThrow, this);
+    if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
+        CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
+    {
+        ResetThrowState_Server();
+        Client_RejectThrow();
+        return;
+    }
+
+    const uint8 CurrentCount = bIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
+    if (CurrentCount <= 0 || ChargeState != EThrowChargeState::Idle)
+    {
+        ResetThrowState_Server();
+        Client_RejectThrow();
+        return;
+    }
+
+    bIsMonkeyThrow = bIsMonkey;
+    ChargeState = EThrowChargeState::Charging;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
 
-    HandleChargeStateChanged();
+    ServerCookStartTime = GetWorld()->GetTimeSeconds();
 
-    if (!bIsMonkeyThrow)
+    if (!bIsMonkey && GetWorld())
     {
-        ServerCookStartTime = GetWorld()->GetTimeSeconds();
-
         GetWorld()->GetTimerManager().SetTimer(
             TimerHandle_CookExplosion,
             this,
@@ -194,6 +215,11 @@ void UThrowableComponent::ExecuteStartCharge_Server(bool bIsMonkey)
             MaxGrenadeCookTime,
             false
         );
+    }
+
+    if (!CharacterOwner->IsLocallyControlled())
+    {
+        HandleChargeStateChanged();
     }
 }
 
@@ -238,10 +264,10 @@ void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
 }
 
 
-void UThrowableComponent::ReleaseGrenadeThrow() { Internal_ReleaseThrow(GrenadeClass, CurrentGrenadeCount, GrenadeThrowMontage, false); }
-void UThrowableComponent::ReleaseMonkeyThrow() { Internal_ReleaseThrow(MonkeyClass, CurrentMonkeyCount, MonkeyThrowMontage, true); }
+void UThrowableComponent::ReleaseGrenadeThrow() { Internal_ReleaseThrow(false); }
+void UThrowableComponent::ReleaseMonkeyThrow() { Internal_ReleaseThrow(true); }
 
-void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableClass, int32 CurrentCount, UAnimMontage* MontageToPlay, bool bIsMonkey)
+void UThrowableComponent::Internal_ReleaseThrow(bool bIsMonkey)
 {
     if (!CharacterOwner || bIsMonkey != bIsMonkeyThrow || ChargeState != EThrowChargeState::Charging)
     {
@@ -253,10 +279,22 @@ void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableCla
     ChargeState = EThrowChargeState::Released;
     HandleChargeStateChanged();
 
-    FVector AimDir;
-    FVector TargetPoint = GetCrosshairTargetPoint(AimDir);
+    FVector ClientViewLoc;
+    FRotator ClientViewRot;
 
-    Server_ExecuteThrow(AimDir, bIsMonkey);
+    if (APlayerController* PC = Cast<APlayerController>(CharacterOwner->GetController()))
+    {
+        PC->GetPlayerViewPoint(ClientViewLoc, ClientViewRot);
+    }
+    else
+    {
+        ClientViewLoc = CharacterOwner->GetPawnViewLocation();
+        ClientViewRot = CharacterOwner->GetBaseAimRotation();
+    }
+
+    FVector ClientAimDir = ClientViewRot.Vector();
+
+    Server_ExecuteThrow(ClientViewLoc, ClientAimDir, bIsMonkey);
 
     if (!GetOwner()->HasAuthority())
     {
@@ -264,7 +302,7 @@ void UThrowableComponent::Internal_ReleaseThrow(TSubclassOf<AActor> ThrowableCla
     }
 }
 
-void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantizeNormal LaunchDirection, bool bIsMonkey)
+void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize ClientViewLoc, FVector_NetQuantizeNormal ClientAimDir, bool bIsMonkey)
 {
     if (!CharacterOwner) return;
 
@@ -284,33 +322,30 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     }
 
     const bool bActualIsMonkey = bIsMonkeyThrow;
-
-    if (!bActualIsMonkey && GetWorld())
-    {
-        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
-    }
-
     TSubclassOf<AActor> TargetClass = bActualIsMonkey ? MonkeyClass : GrenadeClass;
     uint8& TargetCount = bActualIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const float ActiveCooldown = bActualIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
-
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
     float PlayerPingSeconds = 0.03f;
-    if (CharacterOwner && CharacterOwner->GetPlayerState())
+    if (CharacterOwner->GetPlayerState())
     {
         PlayerPingSeconds = FMath::Max(0.02f, CharacterOwner->GetPlayerState()->GetPingInMilliseconds() * 0.001f);
     }
     const float DynamicMargin = FMath::Clamp(PlayerPingSeconds + 0.02f, 0.03f, 0.15f);
     const bool bIsCooldownActive = (CurrentTime - LastThrowTime) < (ActiveCooldown - DynamicMargin);
-    const bool bValidState = (ChargeState == EThrowChargeState::Charging) ||
-        (ChargeState == EThrowChargeState::Idle) ||
-        (ChargeState == EThrowChargeState::Released);
+    const bool bValidState = (ChargeState == EThrowChargeState::Charging);
 
-    if (!CharacterOwner || !TargetClass || TargetCount <= 0 || !bValidState || bIsCooldownActive)
+    if (!TargetClass || TargetCount <= 0 || !bValidState || bIsCooldownActive)
     {
         ResetThrowState_Server();
+        Client_RejectThrow();
         return;
+    }
+
+    if (!bActualIsMonkey && GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
     }
 
     LastThrowTime = CurrentTime;
@@ -318,25 +353,32 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
 
-    if (CharacterOwner && !CharacterOwner->IsLocallyControlled())
+    if (!CharacterOwner->IsLocallyControlled())
     {
         HandleChargeStateChanged();
     }
 
-    FVector ServerAimDir = CharacterOwner->GetBaseAimRotation().Vector();
-    FVector ValidatedAimDir = LaunchDirection.GetSafeNormal();
+    const FVector ServerEyeLoc = CharacterOwner->GetPawnViewLocation();
 
-    if (FVector::DotProduct(ValidatedAimDir, ServerAimDir) < 0.7f)
+    FVector ValidatedViewLoc = ClientViewLoc;
+    if (FVector::DistSquared(ClientViewLoc, ServerEyeLoc) > FMath::Square(200.0f))
+    {
+        ValidatedViewLoc = ServerEyeLoc;
+    }
+
+    FVector ServerAimDir = CharacterOwner->GetBaseAimRotation().Vector();
+    FVector ValidatedAimDir = ClientAimDir.GetSafeNormal();
+
+    if (ValidatedAimDir.IsNearlyZero() || FVector::DotProduct(ValidatedAimDir, ServerAimDir) < 0.7f)
     {
         ValidatedAimDir = ServerAimDir;
     }
 
-    FVector TargetPoint = GetCrosshairTargetPoint(ValidatedAimDir);
-    FVector PawnViewLoc = CharacterOwner->GetPawnViewLocation();
-    FVector StartLoc = PawnViewLoc + (ValidatedAimDir * 40.0f);
+    FVector TargetPoint = TraceCrosshairTarget(ValidatedViewLoc, ValidatedAimDir);
+    FVector StartLoc = ServerEyeLoc + (ValidatedAimDir * 40.0f);
 
     FVector FinalSpawnLoc;
-    GetSafeSpawnLocation(PawnViewLoc, StartLoc, FinalSpawnLoc);
+    GetSafeSpawnLocation(ServerEyeLoc, StartLoc, FinalSpawnLoc);
     FVector TrueLaunchDir = (TargetPoint - FinalSpawnLoc).GetSafeNormal();
 
     FRotator SpawnRotation = TrueLaunchDir.Rotation();
@@ -355,21 +397,20 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     if (SpawnedThrowable)
     {
-        AGrenade* GrenadeActor = Cast<AGrenade>(SpawnedThrowable);
-        if (GrenadeActor)
+        if (AGrenade* GrenadeActor = Cast<AGrenade>(SpawnedThrowable))
         {
             GrenadeActor->SetFuseDuration(RemainingFuseTime);
-        }
-
-        UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
-
-        if (GrenadeActor)
-        {
+            UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
             GrenadeActor->InitVelocity(TrueLaunchDir * GrenadeThrowImpulseStrength);
         }
         else if (AMonkeyBomb* MonkeyActor = Cast<AMonkeyBomb>(SpawnedThrowable))
         {
+            UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
             MonkeyActor->InitVelocity(TrueLaunchDir * MonkeyThrowImpulseStrength);
+        }
+        else
+        {
+            UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
         }
 
         TargetCount--;
@@ -387,6 +428,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     else
     {
         ResetThrowState_Server();
+        Client_RejectThrow();
         return;
     }
 
@@ -460,6 +502,7 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 
     Multicast_OnGrenadeCookExpiredFX();
     ResetThrowState_Server();
+    Client_RejectThrow();
 }
 
 void UThrowableComponent::Multicast_OnGrenadeCookExpiredFX_Implementation()
@@ -496,6 +539,12 @@ void UThrowableComponent::ResetThrowState_Server()
 
 void UThrowableComponent::Client_RejectThrow_Implementation()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+        World->GetTimerManager().ClearTimer(TimerHandle_ResetThrowState);
+    }
+
     bIsThrowingLocal = false;
     ChargeState = EThrowChargeState::Idle;
     HandleChargeStateChanged();
@@ -600,66 +649,20 @@ void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPl
     AnimInstance->Montage_SetEndDelegate(EndDelegate, MontageToPlay);
 }
 
-void UThrowableComponent::ToggleHandThrowableVisibility(bool bVisible)
+FVector UThrowableComponent::TraceCrosshairTarget(const FVector& ViewLoc, const FVector& AimDir) const
 {
-    if (IsRunningDedicatedServer() || !CharacterOwner) return;
-
-    if (bIsMonkeyThrow)
+    if (!GetWorld() || !CharacterOwner)
     {
-        if (CharacterOwner->MonkeyHandMesh)
-        {
-            CharacterOwner->MonkeyHandMesh->SetVisibility(bVisible);
-        }
-    }
-    else
-    {
-        if (CharacterOwner->GrenadeHandMesh)
-        {
-            CharacterOwner->GrenadeHandMesh->SetVisibility(bVisible);
-        }
-    }
-}
-
-void UThrowableComponent::SetWeaponHidden(bool bHidden)
-{
-    if (IsValid(CharacterOwner) && IsValid(CharacterOwner->CurrentWeapon))
-    {
-        CharacterOwner->CurrentWeapon->SetActorHiddenInGame(bHidden);
-    }
-}
-
-FVector UThrowableComponent::GetCrosshairTargetPoint(FVector& OutAimDir) const
-{
-    if (!CharacterOwner)
-    {
-        OutAimDir = FVector::ForwardVector;
-        return FVector::ZeroVector;
+        return ViewLoc + (AimDir * 10000.0f);
     }
 
-    FVector CameraLoc;
-    FRotator CameraRot;
-
-    // وەرگرتنی شوێن و سووڕانەوەی کامێرا لە یەک کاتدا
-    if (APlayerController* PC = Cast<APlayerController>(CharacterOwner->GetController()))
-    {
-        PC->GetPlayerViewPoint(CameraLoc, CameraRot);
-    }
-    else
-    {
-        CameraLoc = CharacterOwner->GetPawnViewLocation();
-        CameraRot = CharacterOwner->GetBaseAimRotation();
-    }
-
-    // دیاری کردنی Direct Vector
-    OutAimDir = CameraRot.Vector();
-
-    const FVector TraceEnd = CameraLoc + (OutAimDir * 10000.0f);
+    const FVector TraceEnd = ViewLoc + (AimDir * 10000.0f);
     FHitResult Hit;
 
     FCollisionQueryParams TraceParams;
     TraceParams.AddIgnoredActor(CharacterOwner);
 
-    if (GetWorld() && GetWorld()->LineTraceSingleByChannel(Hit, CameraLoc, TraceEnd, ECC_WorldStatic, TraceParams))
+    if (GetWorld()->LineTraceSingleByChannel(Hit, ViewLoc, TraceEnd, ECC_WorldStatic, TraceParams))
     {
         return Hit.ImpactPoint;
     }
@@ -686,6 +689,34 @@ void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FV
     else
     {
         OutSpawnLoc = TargetLoc;
+    }
+}
+
+void UThrowableComponent::ToggleHandThrowableVisibility(bool bVisible)
+{
+    if (IsRunningDedicatedServer() || !CharacterOwner) return;
+
+    if (bIsMonkeyThrow)
+    {
+        if (CharacterOwner->MonkeyHandMesh)
+        {
+            CharacterOwner->MonkeyHandMesh->SetVisibility(bVisible);
+        }
+    }
+    else
+    {
+        if (CharacterOwner->GrenadeHandMesh)
+        {
+            CharacterOwner->GrenadeHandMesh->SetVisibility(bVisible);
+        }
+    }
+}
+
+void UThrowableComponent::SetWeaponHidden(bool bHidden)
+{
+    if (IsValid(CharacterOwner) && IsValid(CharacterOwner->CurrentWeapon))
+    {
+        CharacterOwner->CurrentWeapon->SetActorHiddenInGame(bHidden);
     }
 }
 
