@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerState.h"
 #include "LastStandLegacyGameState.h"
 #include "ZombieDirectorSubsystem.h"
+#include "ThrowableComponent.h"
 
 UHealthComponent::UHealthComponent()
 {
@@ -141,6 +142,11 @@ void UHealthComponent::DownPlayer()
 
         if (OwnerCharacter)
         {
+            if (UThrowableComponent* ThrowableComp = OwnerCharacter->FindComponentByClass<UThrowableComponent>())
+            {
+                ThrowableComp->HandleOwnerDowned();
+            }
+
             OwnerCharacter->HandleDeath();
         }
 

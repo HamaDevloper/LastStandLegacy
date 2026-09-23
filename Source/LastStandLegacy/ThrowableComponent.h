@@ -77,6 +77,8 @@ public:
     int32 GetMaxGrenadeCount() const { return MaxGrenadeCount; }
     int32 GetMaxMonkeyCount() const { return MaxMonkeyCount; }
 
+    void HandleOwnerDowned();
+
 protected:
     UPROPERTY(EditDefaultsOnly, Category = "Throwable|Config")
     TSubclassOf<AActor> GrenadeClass;
@@ -187,8 +189,11 @@ protected:
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
 
     FTimerHandle TimerHandle_CookExplosion;
+    FTimerHandle TimerHandle_LocalCookExplosion;
 
 private:
     void Debug_RenderNetworkDesync();
     void PlayThrowMontageWithDelegate(UAnimMontage* MontageToPlay, FName SectionName = NAME_None);
+    uint8 PendingGrenadeThrows = 0;
+    uint8 PendingMonkeyThrows = 0;
 };

@@ -11,12 +11,14 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Grenade.h"
+#include "MonkeyBomb.h"
 #include "LastStandLegacyGameState.h"
 #include "Engine/OverlapResult.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogThrowableSystem, Log, All);
+
 UThrowableComponent::UThrowableComponent()
 {
-
 #if UE_BUILD_SHIPPING
     PrimaryComponentTick.bCanEverTick = false;
     PrimaryComponentTick.bStartWithTickEnabled = false;
@@ -62,31 +64,83 @@ void UThrowableComponent::Debug_RenderNetworkDesync()
 
     const bool bIsServer = GetOwner()->HasAuthority();
     const FString RoleName = bIsServer ? TEXT("SERVER") : TEXT("CLIENT");
-
     const float CurrentTime = GetWorld()->GetTimeSeconds();
+
     const float TimeSinceLastThrow = CurrentTime - LastThrowTime;
     const float ActiveCooldown = bIsMonkeyThrow ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float RemainingCooldown = FMath::Max(0.0f, ActiveCooldown - TimeSinceLastThrow);
     const bool bIsOnCooldown = RemainingCooldown > 0.0f;
 
-    bool bDesyncDetected = false;
+    TArray<FString> DesyncReasons;
+
     if (!bIsServer && bIsThrowingLocal && ChargeState == EThrowChargeState::Idle)
     {
-        bDesyncDetected = true;
+        DesyncReasons.Add(TEXT("LocalThrow Active while State is IDLE"));
     }
 
-    FColor DisplayColor = bDesyncDetected ? FColor::Red :
-        (bIsOnCooldown ? FColor::Yellow : (bIsServer ? FColor::Green : FColor::Cyan));
+    if (!bIsServer && (PendingGrenadeThrows > MaxGrenadeCount || PendingMonkeyThrows > MaxMonkeyCount))
+    {
+        DesyncReasons.Add(TEXT("Pending Throws Overflow/Stuck"));
+    }
+
+    if (CharacterOwner)
+    {
+        const bool bHandMeshVisible = bIsMonkeyThrow ?
+            (CharacterOwner->MonkeyHandMesh && CharacterOwner->MonkeyHandMesh->IsVisible()) :
+            (CharacterOwner->GrenadeHandMesh && CharacterOwner->GrenadeHandMesh->IsVisible());
+
+        const bool bWeaponHidden = IsValid(CharacterOwner->CurrentWeapon) && CharacterOwner->CurrentWeapon->IsHidden();
+
+        if (ChargeState == EThrowChargeState::Idle && (bHandMeshVisible || bWeaponHidden))
+        {
+            DesyncReasons.Add(TEXT("Visual Mismatch (Weapon hidden or Hand Mesh visible in IDLE)"));
+        }
+        else if (ChargeState == EThrowChargeState::Charging && (!bHandMeshVisible || !bWeaponHidden))
+        {
+            DesyncReasons.Add(TEXT("Visual Mismatch (Weapon visible or Hand Mesh hidden in CHARGING)"));
+        }
+    }
+
+    if (!bIsServer)
+    {
+        const bool bLocalTimerActive = GetWorld()->GetTimerManager().IsTimerActive(TimerHandle_LocalCookExplosion);
+        if (bLocalTimerActive && ChargeState != EThrowChargeState::Charging)
+        {
+            DesyncReasons.Add(TEXT("Local Cook Timer active outside CHARGING state"));
+        }
+    }
+
+    const bool bDesyncDetected = DesyncReasons.Num() > 0;
+
+    FColor DisplayColor = FColor::Green;
+    if (bDesyncDetected)
+    {
+        DisplayColor = FColor::Red;
+    }
+    else if (bIsOnCooldown)
+    {
+        DisplayColor = FColor::Yellow;
+    }
+    else if (!bIsServer)
+    {
+        DisplayColor = FColor::Cyan;
+    }
+
+    FString DesyncDetailsStr = TEXT("");
+    if (bDesyncDetected)
+    {
+        DesyncDetailsStr = FString::Printf(TEXT(" | [DESYNC: %s]"), *FString::Join(DesyncReasons, TEXT(", ")));
+    }
 
     FString DebugMsg = FString::Printf(
-        TEXT("[%s] Grenades: %d/%d | Monkeys: %d/%d | Cooldown: %.2fs | State: %d | LocalThrow: %s %s"),
+        TEXT("[%s] Grenades: %d (Pending: %d) | Monkeys: %d (Pending: %d) | Cooldown: %.2fs | State: %d | LocalThrow: %s%s"),
         *RoleName,
-        CurrentGrenadeCount, MaxGrenadeCount,
-        CurrentMonkeyCount, MaxMonkeyCount,
+        CurrentGrenadeCount, PendingGrenadeThrows,
+        CurrentMonkeyCount, PendingMonkeyThrows,
         RemainingCooldown,
         static_cast<int32>(ChargeState),
         bIsThrowingLocal ? TEXT("TRUE") : TEXT("FALSE"),
-        bDesyncDetected ? TEXT(" | [DESYNC DETECTED!]") : TEXT("")
+        *DesyncDetailsStr
     );
 
     int32 DebugKey = GetOwner()->GetUniqueID() + (bIsServer ? 1000 : 2000);
@@ -132,13 +186,33 @@ void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     DOREPLIFETIME_WITH_PARAMS_FAST(UThrowableComponent, CurrentMonkeyCount, RepParams);
 }
 
-
-
 void UThrowableComponent::StartGrenadeCharge() { Internal_StartCharge(false); }
 void UThrowableComponent::StartMonkeyCharge() { Internal_StartCharge(true); }
 
 void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
 {
+    if (!CharacterOwner || !GetWorld())
+    {
+        UE_LOG(LogThrowableSystem, Warning, TEXT("[StartCharge FAILED] CharacterOwner or World is NULL!"));
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("StartCharge Fail: Invalid Owner/World"));
+        return;
+    }
+
+    const uint8 ServerCount = bIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
+    const uint8 PendingCount = bIsMonkey ? PendingMonkeyThrows : PendingGrenadeThrows;
+    const int32 EffectiveCount = FMath::Max(0, static_cast<int32>(ServerCount) - PendingCount);
+
+    const TSubclassOf<AActor> TargetClass = bIsMonkey ? MonkeyClass : GrenadeClass;
+
+    if (EffectiveCount <= 0)
+    {
+        return;
+    }
+
+    if (!TargetClass)
+    {
+        return;
+    }
 
     if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
         CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
@@ -149,8 +223,20 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (!CharacterOwner || bIsThrowingLocal || ChargeState != EThrowChargeState::Idle || (CurrentTime - LastThrowTime < ActiveCooldown))
+    if (bIsThrowingLocal)
     {
+        return;
+    }
+
+    if (ChargeState != EThrowChargeState::Idle)
+    {
+        return;
+    }
+
+    if (CurrentTime - LastThrowTime < ActiveCooldown)
+    {
+        const float Remaining = ActiveCooldown - (CurrentTime - LastThrowTime);
+        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, FString::Printf(TEXT("StartCharge Fail: Cooldown (%.1fs)"), Remaining));
         return;
     }
 
@@ -162,7 +248,7 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
         if (!bIsMonkey)
         {
             GetWorld()->GetTimerManager().SetTimer(
-                TimerHandle_CookExplosion,
+                TimerHandle_LocalCookExplosion,
                 this,
                 &UThrowableComponent::Local_OnGrenadeCookExpired,
                 MaxGrenadeCookTime,
@@ -217,10 +303,7 @@ void UThrowableComponent::ExecuteStartCharge_Server(bool bIsMonkey)
         );
     }
 
-    if (!CharacterOwner->IsLocallyControlled())
-    {
-        HandleChargeStateChanged();
-    }
+    HandleChargeStateChanged();
 }
 
 void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
@@ -263,21 +346,30 @@ void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
     ExecuteStartCharge_Server(bIsMonkey);
 }
 
-
 void UThrowableComponent::ReleaseGrenadeThrow() { Internal_ReleaseThrow(false); }
 void UThrowableComponent::ReleaseMonkeyThrow() { Internal_ReleaseThrow(true); }
 
 void UThrowableComponent::Internal_ReleaseThrow(bool bIsMonkey)
 {
-    if (!CharacterOwner || bIsMonkey != bIsMonkeyThrow || ChargeState != EThrowChargeState::Charging)
+    if (!CharacterOwner)
     {
         return;
     }
 
-    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+    if (bIsMonkey != bIsMonkeyThrow)
+    {
+        return;
+    }
 
-    ChargeState = EThrowChargeState::Released;
-    HandleChargeStateChanged();
+    if (ChargeState != EThrowChargeState::Charging)
+    {
+        return;
+    }
+
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_LocalCookExplosion);
+    }
 
     FVector ClientViewLoc;
     FRotator ClientViewRot;
@@ -294,11 +386,21 @@ void UThrowableComponent::Internal_ReleaseThrow(bool bIsMonkey)
 
     FVector ClientAimDir = ClientViewRot.Vector();
 
-    Server_ExecuteThrow(ClientViewLoc, ClientAimDir, bIsMonkey);
-
+  
     if (!GetOwner()->HasAuthority())
     {
+        if (bIsMonkey) { PendingMonkeyThrows++; }
+        else { PendingGrenadeThrows++; }
+
+        ChargeState = EThrowChargeState::Released;
+        HandleChargeStateChanged();
+
+        Server_ExecuteThrow(ClientViewLoc, ClientAimDir, bIsMonkey);
         LastThrowTime = GetWorld()->GetTimeSeconds();
+    }
+    else
+    {
+        Server_ExecuteThrow(ClientViewLoc, ClientAimDir, bIsMonkey);
     }
 }
 
@@ -336,7 +438,28 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     const bool bIsCooldownActive = (CurrentTime - LastThrowTime) < (ActiveCooldown - DynamicMargin);
     const bool bValidState = (ChargeState == EThrowChargeState::Charging);
 
-    if (!TargetClass || TargetCount <= 0 || !bValidState || bIsCooldownActive)
+    if (!TargetClass)
+    {
+        ResetThrowState_Server();
+        Client_RejectThrow();
+        return;
+    }
+
+    if (TargetCount <= 0)
+    {
+        ResetThrowState_Server();
+        Client_RejectThrow();
+        return;
+    }
+
+    if (!bValidState)
+    {
+        ResetThrowState_Server();
+        Client_RejectThrow();
+        return;
+    }
+
+    if (bIsCooldownActive)
     {
         ResetThrowState_Server();
         Client_RejectThrow();
@@ -353,10 +476,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
 
-    if (!CharacterOwner->IsLocallyControlled())
-    {
-        HandleChargeStateChanged();
-    }
+    HandleChargeStateChanged();
 
     const FVector ServerEyeLoc = CharacterOwner->GetPawnViewLocation();
 
@@ -371,6 +491,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     if (ValidatedAimDir.IsNearlyZero() || FVector::DotProduct(ValidatedAimDir, ServerAimDir) < 0.7f)
     {
+        GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("[Server ExecuteThrow] Invalid AimDir from Client! Using Server AimDir instead."));
         ValidatedAimDir = ServerAimDir;
     }
 
@@ -417,12 +538,20 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
         if (bActualIsMonkey)
         {
             MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
-            OnRep_MonkeyCount();
+
+            if (CharacterOwner && CharacterOwner->IsLocallyControlled())
+            {
+                OnRep_MonkeyCount();
+            }
         }
         else
         {
             MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
-            OnRep_GrenadeCount();
+
+            if (CharacterOwner && CharacterOwner->IsLocallyControlled())
+            {
+                OnRep_GrenadeCount();
+            }
         }
     }
     else
@@ -541,9 +670,12 @@ void UThrowableComponent::Client_RejectThrow_Implementation()
 {
     if (UWorld* World = GetWorld())
     {
-        World->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+        World->GetTimerManager().ClearTimer(TimerHandle_LocalCookExplosion);
         World->GetTimerManager().ClearTimer(TimerHandle_ResetThrowState);
     }
+
+    PendingGrenadeThrows = 0;
+    PendingMonkeyThrows = 0;
 
     bIsThrowingLocal = false;
     ChargeState = EThrowChargeState::Idle;
@@ -571,9 +703,11 @@ void UThrowableComponent::OnRep_ChargeState()
         if (ChargeState == EThrowChargeState::Idle)
         {
             bIsThrowingLocal = false;
-            HandleChargeStateChanged();
+            if (UWorld* World = GetWorld())
+            {
+                World->GetTimerManager().ClearTimer(TimerHandle_LocalCookExplosion);
+            }
         }
-        return;
     }
 
     HandleChargeStateChanged();
@@ -581,30 +715,7 @@ void UThrowableComponent::OnRep_ChargeState()
 
 void UThrowableComponent::HandleChargeStateChanged()
 {
-    UAnimMontage* MontageToPlay = bIsMonkeyThrow ? MonkeyThrowMontage : GrenadeThrowMontage;
-    if (!CharacterOwner || !CharacterOwner->GetMesh()) return;
-
-    UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
-
-    switch (ChargeState)
-    {
-    case EThrowChargeState::Charging:
-    {
-        PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
-
-        SetWeaponHidden(true);
-        ToggleHandThrowableVisibility(true);
-        break;
-    }
-    case EThrowChargeState::Released:
-    {
-        PlayThrowMontageWithDelegate(MontageToPlay, ReleaseSectionName);
-
-        ToggleHandThrowableVisibility(false);
-        break;
-    }
-    case EThrowChargeState::Idle:
-    default:
+    if (ChargeState == EThrowChargeState::Idle)
     {
         bIsThrowingLocal = false;
 
@@ -612,7 +723,31 @@ void UThrowableComponent::HandleChargeStateChanged()
         {
             GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
         }
+    }
 
+    if (!CharacterOwner || !CharacterOwner->GetMesh()) return;
+
+    UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
+    UAnimMontage* MontageToPlay = bIsMonkeyThrow ? MonkeyThrowMontage : GrenadeThrowMontage;
+
+    switch (ChargeState)
+    {
+    case EThrowChargeState::Charging:
+    {
+        PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
+        SetWeaponHidden(true);
+        ToggleHandThrowableVisibility(true);
+        break;
+    }
+    case EThrowChargeState::Released:
+    {
+        PlayThrowMontageWithDelegate(MontageToPlay, ReleaseSectionName);
+        ToggleHandThrowableVisibility(false);
+        break;
+    }
+    case EThrowChargeState::Idle:
+    default:
+    {
         if (AnimInstance && MontageToPlay && AnimInstance->Montage_IsPlaying(MontageToPlay))
         {
             AnimInstance->Montage_Stop(0.2f, MontageToPlay);
@@ -662,7 +797,7 @@ FVector UThrowableComponent::TraceCrosshairTarget(const FVector& ViewLoc, const 
     FCollisionQueryParams TraceParams;
     TraceParams.AddIgnoredActor(CharacterOwner);
 
-    if (GetWorld()->LineTraceSingleByChannel(Hit, ViewLoc, TraceEnd, ECC_WorldStatic, TraceParams))
+    if (GetWorld()->LineTraceSingleByChannel(Hit, ViewLoc, TraceEnd, ECC_Visibility, TraceParams))
     {
         return Hit.ImpactPoint;
     }
@@ -748,10 +883,95 @@ void UThrowableComponent::RefillGrenadesToMax()
 
 void UThrowableComponent::OnRep_GrenadeCount()
 {
+    PendingGrenadeThrows = FMath::Max(0, PendingGrenadeThrows - 1);
     OnThrowableCountChanged.ExecuteIfBound(CurrentMonkeyCount, CurrentGrenadeCount);
 }
 
 void UThrowableComponent::OnRep_MonkeyCount()
 {
+    PendingMonkeyThrows = FMath::Max(0, PendingMonkeyThrows - 1);
     OnThrowableCountChanged.ExecuteIfBound(CurrentMonkeyCount, CurrentGrenadeCount);
+}
+
+void UThrowableComponent::HandleOwnerDowned()
+{
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor || !OwnerActor->HasAuthority()) return;
+
+    if (ChargeState == EThrowChargeState::Charging)
+    {
+        UWorld* World = GetWorld();
+        if (World && CharacterOwner)
+        {
+            const float CurrentTime = World->GetTimeSeconds();
+            const bool bActualIsMonkey = bIsMonkeyThrow;
+            TSubclassOf<AActor> TargetClass = bActualIsMonkey ? MonkeyClass : GrenadeClass;
+            uint8& TargetCount = bActualIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
+
+            if (TargetClass && TargetCount > 0)
+            {
+                if (!bActualIsMonkey)
+                {
+                    World->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+                }
+
+                const float ElapsedCookTime = CurrentTime - ServerCookStartTime;
+                const float RemainingFuseTime = bActualIsMonkey ? MaxGrenadeCookTime : FMath::Max(0.1f, MaxGrenadeCookTime - ElapsedCookTime);
+
+                FVector DropLocation = CharacterOwner->GetActorLocation() + FVector(0.0f, 0.0f, 20.0f);
+                FTransform DropTransform(CharacterOwner->GetActorRotation(), DropLocation);
+
+                AActor* DroppedThrowable = World->SpawnActorDeferred<AActor>(
+                    TargetClass, DropTransform, CharacterOwner, CharacterOwner, ESpawnActorCollisionHandlingMethod::AlwaysSpawn
+                );
+
+                if (DroppedThrowable)
+                {
+                    if (AGrenade* GrenadeActor = Cast<AGrenade>(DroppedThrowable))
+                    {
+                        GrenadeActor->SetFuseDuration(RemainingFuseTime);
+                        UGameplayStatics::FinishSpawningActor(DroppedThrowable, DropTransform);
+                        GrenadeActor->InitVelocity(FVector(FMath::RandRange(-80.0f, 80.0f), FMath::RandRange(-80.0f, 80.0f), 50.0f));
+                    }
+                    else if (AMonkeyBomb* MonkeyActor = Cast<AMonkeyBomb>(DroppedThrowable))
+                    {
+                        UGameplayStatics::FinishSpawningActor(DroppedThrowable, DropTransform);
+                        MonkeyActor->InitVelocity(FVector(0.0f, 0.0f, 30.0f));
+                    }
+                    else
+                    {
+                        UGameplayStatics::FinishSpawningActor(DroppedThrowable, DropTransform);
+                    }
+
+                    TargetCount--;
+                    if (bActualIsMonkey)
+                    {
+                        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
+                    }
+                    else
+                    {
+                        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
+                    }
+                }
+            }
+        }
+    }
+
+    ResetThrowState_Server();
+
+    if (CharacterOwner)
+    {
+        if (CharacterOwner->IsLocallyControlled())
+        {
+            bIsThrowingLocal = false;
+            if (UWorld* World = GetWorld())
+            {
+                World->GetTimerManager().ClearTimer(TimerHandle_LocalCookExplosion);
+            }
+        }
+        else
+        {
+            Client_RejectThrow();
+        }
+    }
 }
