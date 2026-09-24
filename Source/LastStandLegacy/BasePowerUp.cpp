@@ -60,9 +60,16 @@ void ABasePowerUp::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* O
 
     ActivatePowerUp(Player);
 
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    if (bIsGlobal)
     {
-        GS->Multicast_AnnouncePowerUp(PowerUpType);
+        if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+        {
+            GS->Multicast_AnnouncePowerUp(PowerUpType);
+        }
+    }
+    else
+    {
+        Player->Client_AnnouncePersonalPowerUp(PowerUpType);
     }
 
     Destroy();

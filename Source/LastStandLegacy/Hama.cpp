@@ -2407,3 +2407,11 @@ bool AHama::SetCanInteract() const
    
    return true;
 }
+
+void AHama::Client_AnnouncePersonalPowerUp_Implementation(EPowerUpType PowerUpType)
+{
+    if (OnPersonalPowerUpAcquiredDelegate.IsBound())
+    {
+        OnPersonalPowerUpAcquiredDelegate.ExecuteIfBound(PowerUpType);
+    }
+}

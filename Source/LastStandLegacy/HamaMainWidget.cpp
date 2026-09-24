@@ -75,6 +75,7 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
         CachedHamaChar->OnInteractUpdateEvent.Unbind();
         CachedHamaChar->OnCrosshairUpdateEvent.Unbind();
         CachedHamaChar->OnPerksChangedEvent.Unbind();
+        CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.Unbind();
     }
 
     CachedHamaChar = InHama;
@@ -83,6 +84,7 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
     CachedHamaChar->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
     CachedHamaChar->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);
     CachedHamaChar->OnPerksChangedEvent.BindUObject(this, &UHamaMainWidget::HandlePerksUpdate);
+    CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.BindUObject(this, &UHamaMainWidget::ShowPowerMessage);
 
     if (UThrowableComponent* ThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
     {

@@ -22,6 +22,7 @@ DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
 DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FString&);
 DECLARE_DELEGATE_OneParam(FOnCrosshairUpdateDelegate, bool);
 DECLARE_DELEGATE_OneParam(FOnPerksChangedSignature, const TArray<FName>& /*CurrentPerks*/);
+DECLARE_DELEGATE_OneParam(FOnPersonalPowerUpAcquired, EPowerUpType);
 
 USTRUCT(BlueprintType)
 struct FRoleVisualData
@@ -143,6 +144,10 @@ public:
     FOnInteractUpdateDelegate OnInteractUpdateEvent;
     FOnCrosshairUpdateDelegate OnCrosshairUpdateEvent;
     FOnPerksChangedSignature OnPerksChangedEvent;
+    FOnPersonalPowerUpAcquired OnPersonalPowerUpAcquiredDelegate;
+
+    UFUNCTION(Client, Reliable)
+    void Client_AnnouncePersonalPowerUp(EPowerUpType PowerUpType);
 
 public:
     UPROPERTY(Transient)

@@ -34,6 +34,9 @@ protected:
 
     virtual void ActivatePowerUp(AHama* Player);
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PowerUp Settings")
+    bool bIsGlobal = true;
+
 private:
     bool bIsConsumed = false;
 };
