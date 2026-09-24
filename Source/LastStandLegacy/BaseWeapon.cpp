@@ -677,6 +677,12 @@ UAnimMontage* ABaseWeapon::GetReloadMontage() const
 
 // ------------------- RELOAD REFACTOR -------------------
 
+bool ABaseWeapon::IsEquipped() const
+{
+    if (!OwnerCharacter) return false;
+    return OwnerCharacter->GetCurrentWeapon() == this;
+}
+
 void ABaseWeapon::RefillAmmo()
 {
     if (!HasAuthority()) return;
@@ -686,39 +692,38 @@ void ABaseWeapon::RefillAmmo()
     ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
 
-    if (OwnerCharacter->IsLocallyControlled())
+    const bool bEquipped = IsEquipped();
+
+    if (bEquipped && OwnerCharacter->IsLocallyControlled())
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
-    }
 
-    if (bWasEmpty)
-    {
-        if (OwnerCharacter->IsLocallyControlled())
+        if (bWasEmpty && CurrentAmmo <= 0)
         {
             if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("LocalReloadStarded"));
             Reload();
         }
     }
 
-    Client_ForceReload(ReserveAmmo, bWasEmpty);
+    if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
+    {
+        Client_OnAmmoRefilled(bWasEmpty, bEquipped , ReserveAmmo);
+    }
 }
 
-void ABaseWeapon::Client_ForceReload_Implementation(int32 NewReserveAmmo, bool bCanReload)
+void ABaseWeapon::Client_OnAmmoRefilled_Implementation(bool bWasEmpty, bool bIsCurrentWeapon , int32 NewReserveAmmo)
 {
+    if (!OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
+    if (!bIsCurrentWeapon || !IsEquipped()) return;
+
     ReserveAmmo = NewReserveAmmo;
 
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("InsideClient"));
-    if (OwnerCharacter->IsLocallyControlled())
-    {
-        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 
-        if (bCanReload)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("ClientReloadStarted"));
-            if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
-            Reload();
-        }
+    if (bWasEmpty && CurrentAmmo <= 0)
+    {
+        if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+        Reload();
     }
 }
 

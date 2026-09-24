@@ -86,6 +86,9 @@ bool ABasePerk::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return false;
+
     return true;
 }
 
@@ -97,7 +100,7 @@ void ABasePerk::Interact(AHama* InteractingPlayer)
     if (!GS) return;
 
     float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > FMath::Square(300.f)) return;
+    if (DistSq > FMath::Square(250.0f)) return;
 
     const bool bIsSoloQuickRevive = (PerkID == FName("QuickRevive") && GS->bIsSoloMatch);
     if (!bIsSoloQuickRevive && !GS->bIsPowerOn) return;

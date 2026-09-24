@@ -79,6 +79,9 @@ bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
+    float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
+    if(DistanceSq > FMath::Square(250.f))   return false;
+
     if (InteractingPlayer->bIsFireButtonHold && InteractingPlayer->CurrentWeapon)
     {
         InteractingPlayer->CurrentWeapon->StopFire();
@@ -93,7 +96,8 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
     if (!CanInteract(InteractingPlayer)) return;
     if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass)) return;
 
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Interacting with Wall Weapon Buy: %s"), *WeaponName));
+    float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
+    if (DistanceSq > FMath::Square(250.f))   return;
 
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS) return;

@@ -52,13 +52,8 @@ void ABasePowerUp::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* O
     AHama* Player = Cast<AHama>(OtherActor);
     if (!Player || Player->IsDowned() || Player->bIsDead) return;
 
-    const float DistSq = FVector::DistSquared(Player->GetActorLocation(), GetActorLocation());
-    const float MaxAllowedDistanceSq = FMath::Square(250.0f);
-
-    if (DistSq > MaxAllowedDistanceSq)
-    {
-        return;
-    }
+    float DistSq = FVector::DistSquared(GetActorLocation(), Player->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return;
 
     bIsConsumed = true;
     CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);

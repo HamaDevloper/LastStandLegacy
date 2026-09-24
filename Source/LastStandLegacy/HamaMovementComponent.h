@@ -11,12 +11,14 @@ class LASTSTANDLEGACY_API UHamaMovementComponent : public UCharacterMovementComp
 
 public:
     UHamaMovementComponent();
+
     virtual void BeginPlay() override;
     virtual float GetMaxSpeed() const override;
     virtual void UpdateFromCompressedFlags(uint8 Flags) override;
     virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
     virtual FVector ScaleInputAcceleration(const FVector& InputAcceleration) const override;
 
+    // Movement Flags
     uint8 bSprinting : 1;
     uint8 bAiming : 1;
     uint8 bDiving : 1;
@@ -25,24 +27,31 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
     float SprintSpeed = 800.f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
     float AimSpeed = 150.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
+    float AimCrouchSpeed = 100.f; // خێرایی تێکەڵاوی Aim + Crouch
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
     float DownSpeed = 50.f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
     float SlideSpeed = 650.f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Movement | Dive")
     float DiveImpulseHorizontal = 900.f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Movement | Dive")
     float DiveImpulseVertical = 350.f;
 
-    float DefaultGroundFriction;
-    float DefaultBrakingDecelerationWalking;
+    float DefaultGroundFriction = 8.0f;
+    float DefaultBrakingDecelerationWalking = 2048.0f;
 
 private:
     bool bWasSliding = false;
     bool bWasDiving = false;
-    bool bWasSprinting = false;
 
     TWeakObjectPtr<class UHamaComponent> CachedHamaComp;
     UHamaComponent* GetHamaComp();
@@ -54,8 +63,6 @@ private:
         uint8 bSavedWantsToAim : 1;
         uint8 bSavedWantsToDive : 1;
         uint8 bSavedWantsToSlide : 1;
-        uint8 bSavedWasSliding : 1;
-        uint8 bSavedWasDiving : 1;
 
         virtual void Clear() override;
         virtual uint8 GetCompressedFlags() const override;

@@ -62,18 +62,29 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 void UHamaComponent::SetDowned(bool NewValue)
 {
     if (bIsDowned == NewValue) return;
-    bIsDowned = NewValue;
 
-    if (OwnerCharacter && OwnerCharacter->HasAuthority())
+    if (GetOwner() && GetOwner()->HasAuthority())
     {
+        bIsDowned = NewValue;
         MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDowned, this);
-    }
 
-    if (MoveComp) MoveComp->bDowned = bIsDowned;
+        if (MoveComp)
+        {
+            MoveComp->bDowned = bIsDowned;
+        }
 
-    if (bIsDowned)
-    {
-        OwnerCharacter->Server_CancelRevive();
+        if (bIsDowned && OwnerCharacter)
+        {
+            OwnerCharacter->Server_CancelRevive();
+        }
+
+        if (bIsDowned)
+        {
+            SetSprinting(false);
+            SetAiming(false);
+            StopSlide();
+            StopDive();
+        }
     }
 }
 
@@ -157,6 +168,11 @@ void UHamaComponent::StopSprinting()
 void UHamaComponent::SetSprinting(bool bNewSprinting)
 {
     if (bIsSprinting == bNewSprinting) return;
+
+    if (bNewSprinting && bIsAiming)
+    {
+        SetAiming(false);
+    }
 
     GetWorld()->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
     GetWorld()->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
@@ -344,10 +360,19 @@ void UHamaComponent::OnRep_Slide()
 
 void UHamaComponent::OnRep_Down()
 {
-    if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
+    if (!OwnerCharacter) return;
+
     if (MoveComp)
     {
         MoveComp->bDowned = bIsDowned;
+
+        if (bIsDowned)
+        {
+            MoveComp->bSprinting = false;
+            MoveComp->bAiming = false;
+            MoveComp->bSlide = false;
+            MoveComp->bDiving = false;
+        }
     }
 }
 

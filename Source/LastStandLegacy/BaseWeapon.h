@@ -218,7 +218,7 @@ public:
     void ServerReload();
 
     UFUNCTION(Client, Reliable)
-    void Client_ForceReload(int32 NewReserveAmmo, bool bCanReload);
+    void Client_OnAmmoRefilled(bool bWasEmpty, bool bIsCurrentWeapon , int32 NewReserveAmmo);
 
     void CancelReload();
 
@@ -280,6 +280,7 @@ public:
     int32 GetReserveAmmo() const { return ReserveAmmo; }
     int32 GetMaxClipAmmo() const { return MaxAmmoInClip; }
     FName GetWeaponRowName() const { return WeaponRowName; }
+    bool IsEquipped() const;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
     TSubclassOf<ABaseWeapon> CachedUpgradedClass;

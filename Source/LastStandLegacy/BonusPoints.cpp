@@ -1,6 +1,7 @@
 #include "BonusPoints.h"
 #include "Hama.h"
 #include "HamaPlayerState.h"
+#include "LastStandLegacyGameState.h"
 
 ABonusPoints::ABonusPoints()
 {
@@ -8,13 +9,14 @@ ABonusPoints::ABonusPoints()
 
 void ABonusPoints::ActivatePowerUp(AHama* Player)
 {
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    if(ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
-        if (APlayerController* PC = It->Get())
+        for (APlayerState* PlayerState : GS->PlayerArray)
         {
-            if (AHamaPlayerState* PS = PC->GetPlayerState<AHamaPlayerState>())
+            if (!PlayerState) continue;
+            if (AHamaPlayerState* HamaPS = Cast<AHamaPlayerState>(PlayerState))
             {
-                PS->AddPoints(AddPoints);
+                HamaPS->AddPoints(AddPoints);
             }
         }
     }

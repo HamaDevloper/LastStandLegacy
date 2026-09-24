@@ -63,12 +63,18 @@ bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return false;
+
     return true;
 }
 
 void ABaseDoor::Interact(AHama* InteractingPlayer)
 {
     if (!HasAuthority() || !CanInteract(InteractingPlayer)) return;
+    
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return;
 
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (PS && PS->GetPoints() >= DoorPrice)

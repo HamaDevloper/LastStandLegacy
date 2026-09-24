@@ -48,7 +48,7 @@ void ABasePowerSwitch::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 bool ABasePowerSwitch::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || bIsSwitchedOn) return false;
-    if (InteractingPlayer->IsDowned() || InteractingPlayer->bIsDeathMachineActive || InteractingPlayer->IsDrinkingPerk()) return false;
+    if (!InteractingPlayer->SetCanInteract()) return false;
 
     return true;
 }
@@ -61,12 +61,18 @@ bool ABasePowerSwitch::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return false;
+
     return true;
 }
 
 void ABasePowerSwitch::Interact(AHama* InteractingPlayer)
 {
     if (!HasAuthority() || !CanInteract(InteractingPlayer)) return;
+
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return;
 
     bIsSwitchedOn = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABasePowerSwitch, bIsSwitchedOn, this);

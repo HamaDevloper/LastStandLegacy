@@ -62,7 +62,6 @@ void AHamaPlayerState::SetPoints(int32 NewPoints)
         Points = FMath::Clamp(NewPoints, 0, MaxPointToEarn);
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
 
-        Client_OnPointGained(Points);
         OnRep_Points();
     }
 }
@@ -74,7 +73,6 @@ void AHamaPlayerState::AddPoints(int32 Amount)
         Points = FMath::Clamp(Points += Amount, 0, MaxPointToEarn);
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
 
-        Client_OnPointGained(Points);
         OnRep_Points();
     }
 }
@@ -85,14 +83,9 @@ void AHamaPlayerState::RemovePoints(int32 Amount)
     {
         Points = FMath::Max(0, Points - Amount);
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
-        Client_OnPointGained(Points);
+        
         OnRep_Points();
     }
-}
-
-void AHamaPlayerState::Client_OnPointGained_Implementation(int32 NewPoints)
-{
-    OnPointsChanged.ExecuteIfBound(NewPoints);
 }
 
 void AHamaPlayerState::AddKills(int32 Amount)
@@ -101,14 +94,9 @@ void AHamaPlayerState::AddKills(int32 Amount)
     {
         Kills += Amount;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Kills, this);
-        Client_OnKillGained(Kills);
+ 
         OnRep_Kills();
     }
-}
-
-void AHamaPlayerState::Client_OnKillGained_Implementation(int32 NewKill)
-{
-    OnKillsChanged.ExecuteIfBound(NewKill);
 }
 
 void AHamaPlayerState::OnRep_Points()

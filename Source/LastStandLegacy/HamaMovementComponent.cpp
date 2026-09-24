@@ -43,10 +43,15 @@ UHamaComponent* UHamaMovementComponent::GetHamaComp()
 float UHamaMovementComponent::GetMaxSpeed() const
 {
     if (bDowned) return DownSpeed;
-    if (IsCrouching()) return MaxWalkSpeedCrouched;
     if (bSlide) return SlideSpeed;
-    if (bAiming) return AimSpeed;
+
+    if (bAiming)
+    {
+        return IsCrouching() ? AimCrouchSpeed : AimSpeed;
+    }
+
     if (bSprinting) return SprintSpeed;
+    if (IsCrouching()) return MaxWalkSpeedCrouched;
 
     return Super::GetMaxSpeed();
 }
@@ -99,17 +104,6 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         CurrentFloor.Clear();
     }
 
-    if (bSprinting)
-    {
-        if (UHamaComponent* HamaComp = GetHamaComp())
-        {
-            if (HamaComp->GetStamina() <= 0.f)
-            {
-                bSprinting = false;
-            }
-        }
-    }
-
     if (bSlide)
     {
         GroundFriction = 0.5f;
@@ -121,20 +115,8 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         BrakingDecelerationWalking = DefaultBrakingDecelerationWalking;
     }
 
-    if (CharacterOwner && CharacterOwner->HasAuthority())
-    {
-        if (bWasSliding != bSlide || bWasDiving != bDiving || bWasSprinting != bSprinting)
-        {
-            if (UHamaComponent* HamaComp = GetHamaComp())
-            {
-                HamaComp->SyncStatesFromCMC(bSlide, bDiving, bSprinting);
-            }
-        }
-    }
-
     bWasSliding = bSlide;
     bWasDiving = bDiving;
-    bWasSprinting = bSprinting;
 }
 
 void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
@@ -147,7 +129,6 @@ void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
     bSlide = (Flags & FSavedMove_Character::FLAG_Custom_3) != 0;
 }
 
-// ================= SAVED MOVE =================
 void UHamaMovementComponent::FSavedMove_Hama::Clear()
 {
     FSavedMove_Character::Clear();
@@ -156,8 +137,6 @@ void UHamaMovementComponent::FSavedMove_Hama::Clear()
     bSavedWantsToAim = false;
     bSavedWantsToDive = false;
     bSavedWantsToSlide = false;
-    bSavedWasSliding = false;
-    bSavedWasDiving = false;
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT, FVector const& Accel, FNetworkPredictionData_Client_Character& Data)
@@ -171,8 +150,6 @@ void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT
     bSavedWantsToSprint = Comp->bSprinting;
     bSavedWantsToDive = Comp->bDiving;
     bSavedWantsToSlide = Comp->bSlide;
-    bSavedWasSliding = Comp->bWasSliding;
-    bSavedWasDiving = Comp->bWasDiving;
 }
 
 void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
@@ -186,8 +163,6 @@ void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
     Comp->bAiming = bSavedWantsToAim;
     Comp->bDiving = bSavedWantsToDive;
     Comp->bSlide = bSavedWantsToSlide;
-    Comp->bWasSliding = bSavedWasSliding;
-    Comp->bWasDiving = bSavedWasDiving;
 }
 
 bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* C, float MaxDelta) const
@@ -214,7 +189,6 @@ uint8 UHamaMovementComponent::FSavedMove_Hama::GetCompressedFlags() const
     return Result;
 }
 
-// ================= PREDICTION DATA =================
 UHamaMovementComponent::FNetworkPredictionData_Client_Hama::FNetworkPredictionData_Client_Hama(const UCharacterMovementComponent& MoveComponent)
     : FNetworkPredictionData_Client_Character(MoveComponent)
 {

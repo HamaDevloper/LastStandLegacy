@@ -1,5 +1,6 @@
 #include "MaxAmmo.h"
 #include "Hama.h"
+#include "LastStandLegacyGameState.h"
 
 AMaxAmmo::AMaxAmmo()
 {
@@ -9,13 +10,14 @@ void AMaxAmmo::ActivatePowerUp(AHama* Player)
 {
     if (!HasAuthority()) return;
 
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
-        if (APlayerController* PC = It->Get())
+        for (APlayerState* PlayerState : GS->PlayerArray)
         {
-            if (AHama* PlayerPawn = Cast<AHama>(PC->GetPawn()))
+            if (!PlayerState) continue;
+            if(AHama* Hama = Cast<AHama>(PlayerState->GetPawn()))
             {
-                PlayerPawn->RefillAllWeapons();
+                Hama->RefillAllWeapons();
             }
         }
     }
