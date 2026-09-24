@@ -8,6 +8,7 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Blueprint/WidgetTree.h"
+#include "Animation/WidgetAnimation.h"
 
 #define LOCTEXT_NAMESPACE "HamaMainWidget"
 
@@ -75,7 +76,7 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
         CachedHamaChar->OnInteractUpdateEvent.Unbind();
         CachedHamaChar->OnCrosshairUpdateEvent.Unbind();
         CachedHamaChar->OnPerksChangedEvent.Unbind();
-        CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.Unbind();
+        CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.RemoveAll(this);
     }
 
     CachedHamaChar = InHama;
@@ -84,7 +85,7 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
     CachedHamaChar->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
     CachedHamaChar->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);
     CachedHamaChar->OnPerksChangedEvent.BindUObject(this, &UHamaMainWidget::HandlePerksUpdate);
-    CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.BindUObject(this, &UHamaMainWidget::ShowPowerMessage);
+    CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.AddUObject(this, &UHamaMainWidget::ShowPowerMessage);
 
     if (UThrowableComponent* ThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
     {
@@ -290,26 +291,25 @@ void UHamaMainWidget::ShowPowerMessage(EPowerUpType PowerUpType)
     const TObjectPtr<UTexture2D>* FoundIcon = PowerUpIcons.Find(PowerUpType);
     if (!FoundIcon || !(*FoundIcon)) return;
 
-    if (IsAnimationPlaying(PowerUpAnim))
-    {
-        UnbindFromAnimationFinished(PowerUpAnim, PowerUpAnimDelegate);
-        StopAnimation(PowerUpAnim);
-    }
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    World->GetTimerManager().ClearTimer(PowerImageHideTimer);
+
+    StopAnimation(PowerUpAnim);
 
     PowerImage->SetBrushFromTexture(*FoundIcon);
+    PowerImage->SetRenderOpacity(1.0f);
     PowerImage->SetVisibility(ESlateVisibility::HitTestInvisible);
 
-    BindToAnimationFinished(PowerUpAnim, PowerUpAnimDelegate);
     PlayAnimation(PowerUpAnim, 0.0f, 1, EUMGSequencePlayMode::Forward, 1.0f, false);
+
+    const float Duration = FMath::Max(PowerUpAnim->GetEndTime() - PowerUpAnim->GetStartTime(), 0.05f);
+    World->GetTimerManager().SetTimer(PowerImageHideTimer, this, &UHamaMainWidget::OnPowerUpAnimFinished, Duration, false);
 }
 
 void UHamaMainWidget::OnPowerUpAnimFinished()
 {
-    if (PowerUpAnim)
-    {
-        UnbindFromAnimationFinished(PowerUpAnim, PowerUpAnimDelegate);
-    }
-
     if (PowerImage)
     {
         PowerImage->SetVisibility(ESlateVisibility::Collapsed);
@@ -425,6 +425,7 @@ void UHamaMainWidget::UnbindAllEvents()
         CachedHamaChar->OnInteractUpdateEvent.Unbind();
         CachedHamaChar->OnCrosshairUpdateEvent.Unbind();
         CachedHamaChar->OnPerksChangedEvent.Unbind();
+        CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.RemoveAll(this);
         CachedHamaChar = nullptr;
     }
 
@@ -448,6 +449,7 @@ void UHamaMainWidget::NativeDestruct()
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(PingUpdateTimer);
+        World->GetTimerManager().ClearTimer(PowerImageHideTimer);
     }
 
     UnbindAllEvents();

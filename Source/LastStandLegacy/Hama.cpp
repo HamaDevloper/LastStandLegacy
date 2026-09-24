@@ -2412,6 +2412,6 @@ void AHama::Client_AnnouncePersonalPowerUp_Implementation(EPowerUpType PowerUpTy
 {
     if (OnPersonalPowerUpAcquiredDelegate.IsBound())
     {
-        OnPersonalPowerUpAcquiredDelegate.ExecuteIfBound(PowerUpType);
+        OnPersonalPowerUpAcquiredDelegate.Broadcast(PowerUpType);
     }
 }

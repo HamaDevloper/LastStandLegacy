@@ -152,4 +152,5 @@ private:
     TObjectPtr<ALastStandLegacyGameState> CachedGameState;
 
     FTimerHandle PingUpdateTimer;
+    FTimerHandle PowerImageHideTimer;
 };
