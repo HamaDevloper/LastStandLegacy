@@ -32,7 +32,7 @@ public:
     float AimSpeed = 150.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
-    float AimCrouchSpeed = 100.f; // خێرایی تێکەڵاوی Aim + Crouch
+    float AimCrouchSpeed = 100.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Speeds")
     float DownSpeed = 50.f;
@@ -63,6 +63,8 @@ private:
         uint8 bSavedWantsToAim : 1;
         uint8 bSavedWantsToDive : 1;
         uint8 bSavedWantsToSlide : 1;
+        uint8 bSavedWasSliding : 1; 
+        uint8 bSavedWasDiving : 1; 
 
         virtual void Clear() override;
         virtual uint8 GetCompressedFlags() const override;

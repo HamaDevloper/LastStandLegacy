@@ -107,7 +107,6 @@ void UZombieDirectorSubsystem::RegisterAttractor(AActor* AttractorActor, float R
 {
     if (!AttractorActor || GetWorld()->GetNetMode() == NM_Client) return;
 
-    // ڕێگریکردن لە دووبارەبوونەوە
     const bool bAlreadyExists = ActiveAttractors.ContainsByPredicate(
         [AttractorActor](const FAttractorData& Data)
         {
@@ -118,7 +117,6 @@ void UZombieDirectorSubsystem::RegisterAttractor(AActor* AttractorActor, float R
     {
         FAttractorData NewAttractor;
         NewAttractor.AttractorActor = AttractorActor;
-        // ⚡ FIX: Location لێرەدا زەخیرە ناکەین تاوەکو کێشەی جوڵەی مەیموونەکە دروست نەبێت
         NewAttractor.RadiusSq = FMath::Square(Radius);
 
         ActiveAttractors.Add(NewAttractor);
@@ -160,7 +158,6 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
     const bool bHasAttractors = !ActiveAttractors.IsEmpty();
 
-    // 2. چاککردنەوەی کێشەکە: ئەگەر بێتو نە یاریزان هەبێت و نە مەیموون، زۆمبییەکان ڕابگرە
     if (ValidTargetPlayers.IsEmpty() && !bHasAttractors)
     {
         for (const TWeakObjectPtr<AZombie>& ZombieWeak : ActiveZombies)
@@ -180,7 +177,6 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         return;
     }
 
-    // --- بەشی دروستکردنی Cache ی یاریزانەکان ---
     PlayerCacheRefreshTimer -= DeltaTime;
 
     if (PlayerCacheRefreshTimer <= 0.f)
@@ -257,7 +253,6 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             float BestAttractorDistSq = UE_BIG_NUMBER;
             for (const FAttractorData& Attractor : ActiveAttractors)
             {
-                // ⚡ FIX 2: خوێندنەوەی شوێنی هەنووکەیی ئەکتەرەکە لەبری (0,0,0)
                 if (AActor* AttractorActor = Attractor.AttractorActor.Get())
                 {
                     const FVector CurrentLoc = AttractorActor->GetActorLocation();

@@ -12,6 +12,8 @@
 #include "Engine/AssetManager.h"
 #include "Engine/DamageEvents.h"
 
+
+
 AZombie::AZombie()
 {
     PrimaryActorTick.bCanEverTick = false;
@@ -244,14 +246,12 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 
         if (CachedGS->bHasInstaKill)
         {
-            DamageApplied = Health; // 🟢 InstaKill: ڕاستەوخۆ هەموو تەندروستی زۆمبییەکە دەبات
+            DamageApplied = Health; 
         }
     }
 
-    // 🟢 3. Health Reduction
     Health = FMath::Clamp(Health - DamageApplied, 0.f, MaxHealth);
 
-    // 🟢 4. PlayerState & Point Awarding Check
     AHamaPlayerState* TargetPlayerState = nullptr;
     if (EventInstigator)
     {

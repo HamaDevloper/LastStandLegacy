@@ -53,7 +53,7 @@ void UThrowableComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 #if !UE_BUILD_SHIPPING
-    Debug_RenderNetworkDesync();
+    //Debug_RenderNetworkDesync();
 #endif
 }
 
