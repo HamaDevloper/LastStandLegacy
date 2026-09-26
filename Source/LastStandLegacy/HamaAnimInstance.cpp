@@ -50,7 +50,7 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     }
 
     ABaseWeapon* TargetWeapon = HamaCharacter->GetCurrentWeapon();
-    if (EquippedWeapon != TargetWeapon)
+    if (EquippedWeapon != TargetWeapon || (EquippedWeapon && EquippedWeapon->GetWeaponIdle() != TargetWeapon->GetWeaponIdle()))
     {
         SetEquippedWeapon(TargetWeapon);
     }

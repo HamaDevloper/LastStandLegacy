@@ -158,6 +158,9 @@ public:
     void RemoveDeathMachine();
 
     void CompleteWeaponSwap();
+    
+    UFUNCTION(Client, Reliable)
+    void Client_EndDeathMachineAndSwap(ABaseWeapon* WeaponToEquip);
 
     UFUNCTION(BlueprintCallable, Category = "Hama|Weapons")
     void GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive);
@@ -171,6 +174,13 @@ public:
 
     void HandleWeaponSwapNotify();
 
+    UFUNCTION(Server, Reliable)
+    void Server_CompleteWeaponSwap();
+
+private:
+
+    //FTimerHandle DeathMachineTimerHandle;
+    FTimerHandle ForceSwapTimerHandle;
 protected:
     UPROPERTY()
     TObjectPtr<ABaseWeapon> PendingWeaponForSwap;
