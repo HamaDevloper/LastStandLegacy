@@ -134,7 +134,7 @@ public:
     void RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefill);
     ABaseWeapon* GetWeaponByClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;
 protected:
-    UPROPERTY(Transient)
+    UPROPERTY(Replicated)
     TObjectPtr<ABaseWeapon> PreDeathMachineWeapon;
 
     FTimerHandle DeathMachineTimerHandle;
@@ -177,9 +177,17 @@ public:
     UFUNCTION(Server, Reliable)
     void Server_CompleteWeaponSwap();
 
+    private:
+        FTimerHandle SwapFailSafeHandle;
+        float PendingSwapStartTime = 0.0f;
+
+        float GetSwapPlayRate() const;
+
+        UFUNCTION(Server, Reliable)
+        void Server_CancelSwap();
+
 private:
 
-    //FTimerHandle DeathMachineTimerHandle;
     FTimerHandle ForceSwapTimerHandle;
 protected:
     UPROPERTY()
@@ -455,12 +463,9 @@ public:
         UPROPERTY()
         class AStaticMeshActor* CurrentSpawnedBottle;
 
-    public:
-        UPROPERTY(ReplicatedUsing = OnRep_bIsDeathMachineActive)
+public:
+        UPROPERTY(Replicated)
         bool bIsDeathMachineActive;
-
-        UFUNCTION()
-        void OnRep_bIsDeathMachineActive();
 
         UFUNCTION(NetMulticast, Reliable)
         void Multicast_PlayDrinkPerkAnimation(ABasePerk * TargetPerk);
@@ -480,11 +485,11 @@ public:
         bool HasMuleKick() const { return OwnedPerks.Contains(FName("MuleKick")); }
         bool HasQuickRevive() const { return OwnedPerks.Contains(FName("QuickRevive")); }
 
-    protected:
+protected:
         FTimerHandle PerkDrinkTimerHandle;
         void GivePendingPerk();
 
-    public:
+public:
         UFUNCTION(Client, Unreliable)
         void Client_ShowDamageIndicator(FVector DamageOrigin);
 

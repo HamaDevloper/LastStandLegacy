@@ -704,6 +704,19 @@ bool AHama::IsSwappingWeapon() const
     return false;
 }
 
+float AHama::GetSwapPlayRate() const
+{
+    float PlayRate = 1.0f;
+    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    {
+        if (HasFastHands() || GS->IsTeamAdrenalineActive())
+        {
+            PlayRate = 2.0f;
+        }
+    }
+    return PlayRate;
+}
+
 void AHama::Input_SwapWeapon()
 {
     SwapWeapon(nullptr);
@@ -718,43 +731,43 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 
     ABaseWeapon* NextWeapon = TargetWeapon;
 
-    if (bIsDeathMachineActive)
+    if (!NextWeapon)
     {
-        NextWeapon = PreDeathMachineWeapon ? PreDeathMachineWeapon : PrimaryWeapon;
-    }
-    else if (!NextWeapon)
-    {
-        if (CurrentWeapon == PrimaryWeapon) NextWeapon = SecondaryWeapon ? SecondaryWeapon : ThirdWeapon;
-        else if (CurrentWeapon == SecondaryWeapon) NextWeapon = ThirdWeapon ? ThirdWeapon : PrimaryWeapon;
-        else if (CurrentWeapon == ThirdWeapon) NextWeapon = PrimaryWeapon ? PrimaryWeapon : SecondaryWeapon;
+        if (bIsDeathMachineActive)
+        {
+            NextWeapon = IsValid(PreDeathMachineWeapon) ? PreDeathMachineWeapon : PrimaryWeapon;
+        }
+        else if (CurrentWeapon == PrimaryWeapon)
+        {
+            NextWeapon = IsValid(SecondaryWeapon) ? SecondaryWeapon : ThirdWeapon;
+        }
+        else if (CurrentWeapon == SecondaryWeapon)
+        {
+            NextWeapon = IsValid(ThirdWeapon) ? ThirdWeapon : PrimaryWeapon;
+        }
+        else if (CurrentWeapon == ThirdWeapon)
+        {
+            NextWeapon = IsValid(PrimaryWeapon) ? PrimaryWeapon : SecondaryWeapon;
+        }
     }
 
-    if (!NextWeapon || NextWeapon == CurrentWeapon) return;
+    if (!IsValid(NextWeapon) || NextWeapon == CurrentWeapon) return;
 
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
     if (!AnimInstance) return;
+
+    float TargetPlayRate = GetSwapPlayRate();
+
+    if (AnimInstance->Montage_Play(SwapWeaponMontage, TargetPlayRate) <= 0.0f)
+    {
+        return;
+    }
 
     if (bIsFireButtonHold) CurrentWeapon->StopFire();
     if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
     if (IsSprinting()) StopSprint();
 
-    if (AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
-    {
-        AnimInstance->Montage_Stop(0.05f, SwapWeaponMontage);
-    }
-
     PendingWeaponForSwap = NextWeapon;
-
-    float TargetPlayRate = 1.0f;
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
-    {
-        if (HasFastHands() || GS->IsTeamAdrenalineActive())
-        {
-            TargetPlayRate = 2.0f;
-        }
-    }
-
-    AnimInstance->Montage_Play(SwapWeaponMontage, TargetPlayRate);
 
     Server_SwapWeapon(NextWeapon);
 
@@ -769,40 +782,63 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
     if (IsDrinkingPerk() || IsDowned()) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
 
-    if (!NewWeapon || (NewWeapon != PrimaryWeapon && NewWeapon != SecondaryWeapon && NewWeapon != ThirdWeapon && NewWeapon != PreDeathMachineWeapon))
+    if (!IsValid(NewWeapon) || NewWeapon == CurrentWeapon || PendingWeaponForSwap != nullptr)
     {
         return;
     }
 
     if (bIsDeathMachineActive)
     {
-        GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
+        if (NewWeapon != PreDeathMachineWeapon && NewWeapon != PrimaryWeapon && NewWeapon != SecondaryWeapon && NewWeapon != ThirdWeapon)
+        {
+            return;
+        }
+    }
+    else
+    {
+        if (NewWeapon != PrimaryWeapon && NewWeapon != SecondaryWeapon && NewWeapon != ThirdWeapon)
+        {
+            return;
+        }
     }
 
     PendingWeaponForSwap = NewWeapon;
+    PendingSwapStartTime = GetWorld()->GetTimeSeconds();
 
-    float BasePlayRate = 1.0f;
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
-    {
-        if (HasFastHands() || GS->IsTeamAdrenalineActive()) BasePlayRate = 2.0f;
-    }
-
-    Multicast_PlaySwapMontage(BasePlayRate);
+    Multicast_PlaySwapMontage(GetSwapPlayRate());
 }
 
 void AHama::HandleWeaponSwapNotify()
 {
     if (IsLocallyControlled())
     {
-        // 1. ڕاستەوخۆ داوا لە سێرڤەر بکە گۆڕینەکە تەواو بکات
+        if (PendingWeaponForSwap)
+        {
+            if (IsValid(CurrentWeapon) && CurrentWeapon != ActiveDeathMachine)
+            {
+                CurrentWeapon->SetActorHiddenInGame(true);
+            }
+
+            PendingWeaponForSwap->SetActorHiddenInGame(false);
+            AttachWeaponToMesh(PendingWeaponForSwap);
+        }
+
         Server_CompleteWeaponSwap();
     }
 }
 
 void AHama::Server_CompleteWeaponSwap_Implementation()
 {
-    // پاراستن لە فێڵکردن (Anti-Cheat): ئەگەر داواکاری چەک گۆڕین لە ئارادا نەبێت، پشتگوێی بخە
     if (!PendingWeaponForSwap) return;
+
+    float AnimDuration = (SwapWeaponMontage ? SwapWeaponMontage->GetPlayLength() : 1.0f) / GetSwapPlayRate();
+    float TimeElapsed = GetWorld()->GetTimeSeconds() - PendingSwapStartTime;
+
+    if (TimeElapsed < (AnimDuration * 0.15f))
+    {
+        PendingWeaponForSwap = nullptr;
+        return;
+    }
 
     CompleteWeaponSwap();
 }
@@ -813,35 +849,47 @@ void AHama::CompleteWeaponSwap()
 
     ABaseWeapon* OldWeapon = CurrentWeapon;
 
-    if (bIsDeathMachineActive && OldWeapon == ActiveDeathMachine)
+    if (IsValid(OldWeapon))
+    {
+        OldWeapon->StopFire();
+        if (OldWeapon->IsReloading()) OldWeapon->CancelReload();
+    }
+
+    if (OldWeapon && OldWeapon == ActiveDeathMachine)
     {
         bIsDeathMachineActive = false;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
 
-        OldWeapon->StopFire();
+        GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
+        GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
+
+        OnRep_CurrentWeapon(OldWeapon);
+
         OldWeapon->Destroy();
         ActiveDeathMachine = nullptr;
+
+        PreDeathMachineWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
+
     }
-    else if (OldWeapon)
+    else if (IsValid(OldWeapon))
     {
         OldWeapon->SetActorHiddenInGame(true);
         OldWeapon->SetActorEnableCollision(false);
+
+        OnRep_CurrentWeapon(OldWeapon);
     }
 
     CurrentWeapon = PendingWeaponForSwap;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
     CurrentWeapon->SetActorHiddenInGame(false);
-    CurrentWeapon->SetActorEnableCollision(true);
     CurrentWeapon->EquipWeapon(this);
-
-    OnRep_CurrentWeapon(OldWeapon);
 
     ABaseWeapon* NewlyEquippedWeapon = PendingWeaponForSwap;
     PendingWeaponForSwap = nullptr;
 
-    // 🔥 Auto Reload لەسەر سێرڤەر: ئەگەر چەکە نوێیەکە فیشەکی لە مەخزەنەکەدا نەبوو/پێویستی بە ڕیلۆد بوو، ڕاستەوخۆ ڕیلۆدی بکە
-    if (NewlyEquippedWeapon && NewlyEquippedWeapon->NeedsAmmo() && NewlyEquippedWeapon->CanReload())
+    if (IsValid(NewlyEquippedWeapon) && NewlyEquippedWeapon->NeedsAmmo() && NewlyEquippedWeapon->CanReload())
     {
         NewlyEquippedWeapon->Reload();
     }
@@ -866,22 +914,21 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 
     Multicast_StopSwapMontage();
 
-    // 🔥 ڕێگری لە Crash: ئەگەر لەم کاتەدا پێشتر Death Machine بەدەستەوە بوو، تەنیا کاتەکەی نوێ بکەرەوە
     if (bIsDeathMachineActive && ActiveDeathMachine)
     {
         GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
         return;
     }
 
-    if (CurrentWeapon)
+    if (IsValid(CurrentWeapon) && CurrentWeapon != ActiveDeathMachine)
     {
         CurrentWeapon->StopFire();
         if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
 
-        // تەنیا ئەو چەکەی دەستت کە Death Machine نیست هەڵپەسێرە
         PreDeathMachineWeapon = CurrentWeapon;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
+
         PreDeathMachineWeapon->SetActorHiddenInGame(true);
-        PreDeathMachineWeapon->SetActorEnableCollision(false);
     }
 
     FActorSpawnParameters SpawnParams;
@@ -912,26 +959,30 @@ void AHama::RemoveDeathMachine()
 {
     if (!HasAuthority()) return;
 
-    GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
+    ABaseWeapon* WeaponToEquip = IsValid(PreDeathMachineWeapon) ? PreDeathMachineWeapon : PrimaryWeapon;
+    if (!IsValid(WeaponToEquip)) return;
 
-    ABaseWeapon* WeaponToEquip = PreDeathMachineWeapon ? PreDeathMachineWeapon : PrimaryWeapon;
+    Client_EndDeathMachineAndSwap(WeaponToEquip);
 
-    if (WeaponToEquip)
-    {
-        // 🔥 ڕاستکردنەوەی Double RPC: تەنیا ئاگاداری کڵایەنت بکەرەوە بۆ ئەوەی پرۆسەی گۆڕینەکە لە کڵایەنتەوە دەستپێبکات
-        Client_EndDeathMachineAndSwap(WeaponToEquip);
-    }
-    else
-    {
-        CompleteWeaponSwap();
-    }
+    float AnimDuration = (SwapWeaponMontage ? SwapWeaponMontage->GetPlayLength() : 1.0f) / GetSwapPlayRate();
+    GetWorldTimerManager().SetTimer(
+        SwapFailSafeHandle,
+        FTimerDelegate::CreateWeakLambda(this, [this, WeaponToEquip]()
+            {
+                if (IsValid(ActiveDeathMachine) && IsValid(WeaponToEquip))
+                {
+                    PendingWeaponForSwap = WeaponToEquip;
+                    CompleteWeaponSwap();
+                }
+            }),
+        AnimDuration + 0.5f,
+        false
+    );
 }
 
 void AHama::Client_EndDeathMachineAndSwap_Implementation(ABaseWeapon* WeaponToEquip)
 {
-    if (!WeaponToEquip) return;
-
-    bIsDeathMachineActive = false;
+    if (!IsValid(WeaponToEquip)) return;
 
     SwapWeapon(WeaponToEquip);
 }
@@ -940,15 +991,18 @@ void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
     if (IsLocallyControlled())
     {
-        // 🔥 Auto Reload لەسەر کڵایەنت (Client-side Prediction):
-        // ئەگەر چەکە نوێیەکە فیشەکی نەبوو، کاتێک ئەنیمەیشنی swap تەواو دەبێت ڕاستەوخۆ دەست دەکات بە Reload
-        if (CurrentWeapon && CurrentWeapon->NeedsAmmo() && CurrentWeapon->CanReload())
-        {
-            CurrentWeapon->Reload();
-        }
-
         PendingWeaponForSwap = nullptr;
+
+        if (bInterrupted)
+        {
+            Server_CancelSwap();
+        }
     }
+}
+
+void AHama::Server_CancelSwap_Implementation()
+{
+    PendingWeaponForSwap = nullptr;
 }
 
 void AHama::Multicast_PlaySwapMontage_Implementation(float PlayRate)
@@ -963,20 +1017,6 @@ void AHama::Multicast_StopSwapMontage_Implementation()
     if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
     {
         if (SwapWeaponMontage && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
-        {
-            AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
-        }
-    }
-}
-
-void AHama::OnRep_bIsDeathMachineActive()
-{
-    if (bIsDeathMachineActive)
-    {
-        PendingWeaponForSwap = nullptr;
-
-        UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
-        if (AnimInstance && SwapWeaponMontage && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
         {
             AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
         }
