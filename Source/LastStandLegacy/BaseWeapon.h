@@ -175,7 +175,7 @@ protected:
     UPROPERTY(Transient, ReplicatedUsing = OnRep_BurstCounter)
     uint8 BurstCounter = 0;
 
-    FTimerHandle FireTimerHandle; // ◄◄◄ Typo Fixed
+    FTimerHandle FireTimerHandle; 
     FTimerHandle ReloadTimerHandle;
 
     int32 CurrentBurstShotsLeft = 0;
@@ -286,4 +286,9 @@ public:
     TSubclassOf<ABaseWeapon> CachedUpgradedClass;
 
     bool NeedsAmmo() const;
+
+private:
+    bool bIsInitialized = false;
+public:
+    bool IsDataInitialized() const { return bIsInitialized; }
 };

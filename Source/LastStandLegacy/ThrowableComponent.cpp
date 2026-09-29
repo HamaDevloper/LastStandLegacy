@@ -156,12 +156,28 @@ void UThrowableComponent::BeginPlay()
 
     if (GrenadeThrowMontage)
     {
-        GrenadeThrowCooldown = GrenadeThrowMontage->GetPlayLength();
+        const int32 SectionIndex = GrenadeThrowMontage->GetSectionIndex(ReleaseSectionName);
+        if (SectionIndex != INDEX_NONE)
+        {
+            GrenadeThrowCooldown = GrenadeThrowMontage->GetSectionLength(SectionIndex);
+        }
+        else
+        {
+            GrenadeThrowCooldown = 0.6f;
+        }
     }
 
     if (MonkeyThrowMontage)
     {
-        MonkeyThrowCooldown = MonkeyThrowMontage->GetPlayLength();
+        const int32 SectionIndex = MonkeyThrowMontage->GetSectionIndex(ReleaseSectionName);
+        if (SectionIndex != INDEX_NONE)
+        {
+            MonkeyThrowCooldown = MonkeyThrowMontage->GetSectionLength(SectionIndex);
+        }
+        else
+        {
+            MonkeyThrowCooldown = 0.8f; 
+        }
     }
 
     if (CharacterOwner && CharacterOwner->IsLocallyControlled())
@@ -226,6 +242,12 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
     if (bIsThrowingLocal)
     {
         return;
+    }
+
+    if ((CurrentTime - LastThrowTime >= ActiveCooldown) && ChargeState != EThrowChargeState::Idle)
+    {
+        ChargeState = EThrowChargeState::Idle;
+        bIsThrowingLocal = false;
     }
 
     if (ChargeState != EThrowChargeState::Idle)
@@ -522,12 +544,12 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
         {
             GrenadeActor->SetFuseDuration(RemainingFuseTime);
             UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
-            GrenadeActor->InitVelocity(TrueLaunchDir * GrenadeThrowImpulseStrength);
+            GrenadeActor->InitVelocity(TrueLaunchDir * GrenadeThrowImpulseStrength, CharacterOwner);
         }
         else if (AMonkeyBomb* MonkeyActor = Cast<AMonkeyBomb>(SpawnedThrowable))
         {
             UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
-            MonkeyActor->InitVelocity(TrueLaunchDir * MonkeyThrowImpulseStrength);
+            MonkeyActor->InitVelocity(TrueLaunchDir * MonkeyThrowImpulseStrength, CharacterOwner);
         }
         else
         {
@@ -561,7 +583,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
         return;
     }
 
-    const float ResetDelay = FMath::Max(0.2f, ActiveCooldown - 0.1f);
+    const float ResetDelay = FMath::Min(ActiveCooldown, 0.5f);
     GetWorld()->GetTimerManager().SetTimer(
         TimerHandle_ResetThrowState, this, &UThrowableComponent::ResetThrowState_Server, ResetDelay, false
     );
@@ -684,6 +706,12 @@ void UThrowableComponent::Client_RejectThrow_Implementation()
 
 void UThrowableComponent::OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
+
+    if (ChargeState != EThrowChargeState::Released)
+    {
+        return;
+    }
+
     if (GetOwner() && GetOwner()->HasAuthority())
     {
         ResetThrowState_Server();
@@ -730,17 +758,26 @@ void UThrowableComponent::HandleChargeStateChanged()
     UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
     UAnimMontage* MontageToPlay = bIsMonkeyThrow ? MonkeyThrowMontage : GrenadeThrowMontage;
 
+    if (!AnimInstance || !MontageToPlay) return;
+
     switch (ChargeState)
     {
     case EThrowChargeState::Charging:
     {
+        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+
         PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
         SetWeaponHidden(true);
         ToggleHandThrowableVisibility(true);
+
+        AnimInstance->Montage_Pause(MontageToPlay);
         break;
     }
     case EThrowChargeState::Released:
     {
+        AnimInstance->Montage_Resume(MontageToPlay);
+        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+
         PlayThrowMontageWithDelegate(MontageToPlay, ReleaseSectionName);
         ToggleHandThrowableVisibility(false);
         break;
@@ -748,7 +785,10 @@ void UThrowableComponent::HandleChargeStateChanged()
     case EThrowChargeState::Idle:
     default:
     {
-        if (AnimInstance && MontageToPlay && AnimInstance->Montage_IsPlaying(MontageToPlay))
+        AnimInstance->Montage_Resume(MontageToPlay);
+        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+
+        if (AnimInstance->Montage_IsPlaying(MontageToPlay))
         {
             AnimInstance->Montage_Stop(0.2f, MontageToPlay);
         }
@@ -776,12 +816,19 @@ void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPl
 
     if (SectionName != NAME_None)
     {
-        AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
+        const FName CurrentSection = AnimInstance->Montage_GetCurrentSection(MontageToPlay);
+        if (CurrentSection != SectionName)
+        {
+            AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
+        }
     }
 
-    FOnMontageEnded EndDelegate;
-    EndDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
-    AnimInstance->Montage_SetEndDelegate(EndDelegate, MontageToPlay);
+    if (ChargeState == EThrowChargeState::Released)
+    {
+        FOnMontageEnded EndDelegate;
+        EndDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
+        AnimInstance->Montage_SetEndDelegate(EndDelegate, MontageToPlay);
+    }
 }
 
 FVector UThrowableComponent::TraceCrosshairTarget(const FVector& ViewLoc, const FVector& AimDir) const
@@ -931,12 +978,13 @@ void UThrowableComponent::HandleOwnerDowned()
                     {
                         GrenadeActor->SetFuseDuration(RemainingFuseTime);
                         UGameplayStatics::FinishSpawningActor(DroppedThrowable, DropTransform);
-                        GrenadeActor->InitVelocity(FVector(FMath::RandRange(-80.0f, 80.0f), FMath::RandRange(-80.0f, 80.0f), 50.0f));
+                        const FVector DropVelocity = FVector(FMath::RandRange(-80.0f, 80.0f), FMath::RandRange(-80.0f, 80.0f), 50.0f);
+                        GrenadeActor->InitVelocity(DropVelocity, CharacterOwner);
                     }
                     else if (AMonkeyBomb* MonkeyActor = Cast<AMonkeyBomb>(DroppedThrowable))
                     {
-                        UGameplayStatics::FinishSpawningActor(DroppedThrowable, DropTransform);
-                        MonkeyActor->InitVelocity(FVector(0.0f, 0.0f, 30.0f));
+                        const FVector DropVelocity = FVector(0.0f, 0.0f, 30.0f);
+                        MonkeyActor->InitVelocity(DropVelocity, CharacterOwner);
                     }
                     else
                     {

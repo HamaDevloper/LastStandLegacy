@@ -9,7 +9,6 @@ class AAIController;
 class ALastStandLegacyGameState;
 class UZombieDirectorSubsystem;
 
-// گەر ئەم Delegateـەت نەبوو پێشتر، زیادی بکە، بەڵام وادیارە لە کۆدە کۆنەکەتدا هەبووە
 DECLARE_DELEGATE_TwoParams(FOnZombieDeathSignature, AZombie*, AController*);
 
 UCLASS()
@@ -22,10 +21,9 @@ public:
 
     virtual void PossessedBy(AController* NewController) override;
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
-
     void SetStatsForRound(int32 CurrentRound);
 
-    UPROPERTY(BlueprintReadOnly, Replicated)
+    UPROPERTY(BlueprintReadOnly)
     TObjectPtr<AActor> CurrentTarget;
 
     UPROPERTY(Transient)

@@ -574,6 +574,12 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 
     if (IsLocallyControlled())
     {
+        if (!CurrentWeapon->IsDataInitialized())
+        {
+            GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Red, "Sync First Weapon Ammo!");
+            CurrentWeapon->InitializeWeaponData();
+        }
+
         CurrentWeapon->OnAmmoChanged.Unbind();
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());

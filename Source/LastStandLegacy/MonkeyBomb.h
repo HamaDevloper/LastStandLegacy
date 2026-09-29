@@ -2,7 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Engine/NetSerialization.h" // ١. زیاکراوە بۆ پشتبەستن بە FVector_NetQuantize
+#include "Engine/NetSerialization.h"
+#include "DamageableInterface.h"
 #include "MonkeyBomb.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
@@ -12,10 +13,10 @@ class UStaticMeshComponent;
 class UAudioComponent;
 class UProjectileMovementComponent;
 class USoundBase;
-class UParticleSystem;
+class UNiagaraSystem; // 🟢 UE5 Standard: بەکارهێنانی Niagara
 
 UCLASS()
-class LASTSTANDLEGACY_API AMonkeyBomb : public AActor
+class LASTSTANDLEGACY_API AMonkeyBomb : public AActor, public IDamageableInterface
 {
     GENERATED_BODY()
 
@@ -27,10 +28,6 @@ public:
 protected:
     virtual void BeginPlay() override;
 
-    // Components
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-    TObjectPtr<USphereComponent> CollisionComp;
-
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UStaticMeshComponent> MeshComp;
 
@@ -40,7 +37,7 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UProjectileMovementComponent> ProjectileMovementComp;
 
-    // Config Properties
+    // Config
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|Config")
     float AttractionRadius = 2000.0f;
 
@@ -53,7 +50,7 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|Config")
     float DamageRadius = 600.0f;
 
-    // FX Assets
+    // FX Assets (UE5 Standard)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|FX")
     TObjectPtr<USoundBase> AttractionSound;
 
@@ -61,12 +58,13 @@ protected:
     TObjectPtr<USoundBase> ExplosionSound;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|FX")
-    TObjectPtr<UParticleSystem> ExplosionVFX;
+    TObjectPtr<UNiagaraSystem> ExplosionVFX; // 🟢 Niagara System
 
     UPROPERTY(ReplicatedUsing = OnRep_AttractionActivated)
     uint8 bAttractionActivated : 1;
 
-    uint8 bHasExploded : 1;
+    UPROPERTY(ReplicatedUsing = OnRep_HasExploded)
+    uint8 bHasExploded : 1; // 🟢 State Replication بۆ ڕێگری لە Race Condition
 
     UPROPERTY(ReplicatedUsing = OnRep_InitialVelocity)
     FVector_NetQuantize InitialVelocity;
@@ -77,17 +75,22 @@ protected:
     void OnRep_AttractionActivated();
 
     UFUNCTION()
+    void OnRep_HasExploded();
+
+    UFUNCTION()
     void OnProjectileStopped(const FHitResult& ImpactResult);
 
     void ActivateAttraction();
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
     void Explode();
 
     UFUNCTION()
     void OnRep_InitialVelocity();
 
-    UFUNCTION(NetMulticast, Unreliable)
-    void Multicast_PlayExplosionFX(FVector_NetQuantize ExplosionLocation);
+    void InternalStopMovement();
 
 public:
-    void InitVelocity(const FVector& InVelocity);
+    void InitVelocity(const FVector& InVelocity, APawn* InInstigator);
+
+    virtual bool CanReceiveWeaponDamage() const override { return !bHasExploded; }
 };

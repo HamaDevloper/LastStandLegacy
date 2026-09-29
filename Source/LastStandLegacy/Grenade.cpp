@@ -3,13 +3,13 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "DrawDebugHelpers.h"
 #include "TimerManager.h"
-#include "Engine/OverlapResult.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "LastStandLegacyGameState.h"
 #include "GameFramework/PlayerState.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 
 AGrenade::AGrenade()
 {
@@ -24,23 +24,17 @@ AGrenade::AGrenade()
 
     bHasExploded = false;
 
-    CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
-    CollisionComp->InitSphereRadius(10.0f);
-    CollisionComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-
-    RootComponent = CollisionComp;
-
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
-    MeshComp->SetupAttachment(CollisionComp);
-    MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    RootComponent = MeshComp;
+
+    MeshComp->SetGenerateOverlapEvents(false);
 
     ProjectileMovementComp = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovementComp"));
-    ProjectileMovementComp->UpdatedComponent = CollisionComp;
+    ProjectileMovementComp->UpdatedComponent = MeshComp;
 
-    ProjectileMovementComp->InitialSpeed = 0.0f; // ١. سفر کردنی InitialSpeed تا لە BeginPlayدا ئاڕاستەی خۆکار دروست نەکات
-    ProjectileMovementComp->MaxSpeed = 10000.0f; // ٢. بەرزکردنەوەی MaxSpeed تا ئاسانکاری بۆ Velocityی بەهێز بکات
-    ProjectileMovementComp->bInitialVelocityInLocalSpace = false; // ٣. لاپۆشکردنی فیزیکی لۆکاڵی Socket
+    ProjectileMovementComp->InitialSpeed = 0.0f;
+    ProjectileMovementComp->MaxSpeed = 10000.0f;
+    ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
     ProjectileMovementComp->Velocity = FVector::ZeroVector;
 
     ProjectileMovementComp->bRotationFollowsVelocity = true;
@@ -49,15 +43,27 @@ AGrenade::AGrenade()
     ProjectileMovementComp->Friction = 0.6f;
 }
 
+void AGrenade::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, InitialVelocity, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, bHasExploded, Params);
+}
+
 void AGrenade::SetFuseDuration(float NewDuration)
 {
     FuseDuration = FMath::Max(0.05f, NewDuration);
 }
 
-void AGrenade::InitVelocity(const FVector& InVelocity)
+void AGrenade::InitVelocity(const FVector& InVelocity, APawn* InInstigator)
 {
     if (HasAuthority())
     {
+        SetInstigator(InInstigator);
         InitialVelocity = InVelocity;
         MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, InitialVelocity, this);
 
@@ -86,12 +92,13 @@ void AGrenade::BeginPlay()
     }
 }
 
-void AGrenade::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+float AGrenade::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    FDoRepLifetimeParams Params;
-    Params.bIsPushBased = true;
-    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, InitialVelocity, Params);
+    if (!HasAuthority() || bHasExploded || DamageAmount <= 0.0f) return 0.0f;
+
+    Explode();
+
+    return DamageAmount;
 }
 
 void AGrenade::Explode()
@@ -99,6 +106,8 @@ void AGrenade::Explode()
     if (!HasAuthority() || bHasExploded) return;
 
     bHasExploded = true;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, bHasExploded, this);
+
     GetWorldTimerManager().ClearTimer(FuseTimerHandle);
 
     const FVector ServerExplosionLocation = GetActorLocation() + FVector(0.0f, 0.0f, 10.0f);
@@ -108,7 +117,6 @@ void AGrenade::Explode()
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
     TArray<AActor*> IgnoredActors;
-    IgnoredActors.Reserve(GS? GS->PlayerArray.Num() + 1 : 3);
     IgnoredActors.Add(this);
 
     if (GS)
@@ -139,22 +147,27 @@ void AGrenade::Explode()
         ECC_WorldStatic
     );
 
-    Multicast_PlayExplosionFX(ServerExplosionLocation);
+    OnRep_HasExploded();
 
     SetActorHiddenInGame(true);
     SetActorEnableCollision(false);
-    SetLifeSpan(0.2f);
+    SetLifeSpan(1.0f);
 }
 
-void AGrenade::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize ExplosionLocation)
+void AGrenade::OnRep_HasExploded()
 {
+    const FVector ExpLoc = GetActorLocation() + FVector(0.0f, 0.0f, 10.0f);
+
     if (ExplosionSound)
     {
-        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, ExplosionLocation);
+        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, ExpLoc);
     }
 
     if (ExplosionVFX && GetWorld())
     {
-        UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ExplosionVFX, ExplosionLocation);
+        UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), ExplosionVFX, ExpLoc);
     }
+
+    SetActorHiddenInGame(true);
+    SetActorEnableCollision(false);
 }
