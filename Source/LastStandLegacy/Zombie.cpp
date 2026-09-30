@@ -60,6 +60,28 @@ void AZombie::BeginPlay()
 
     CachedMovement = GetCharacterMovement();
 
+    if (CachedMovement)
+    {
+        CachedMovement->bEnablePhysicsInteraction = false;
+        CachedMovement->bUseRVOAvoidance = false;
+    }
+
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        if (!IsRunningDedicatedServer())
+        {
+            MeshComp->bEnableUpdateRateOptimizations = true;
+            MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
+            MeshComp->bCastFarShadow = false;
+            MeshComp->SetGenerateOverlapEvents(false);
+            MeshComp->bEnableUpdateRateOptimizations = true;
+        }
+        if (IsRunningDedicatedServer())
+        {
+            MeshComp->bNoSkeletonUpdate = true;
+        }
+    }
+
     if (!HasAuthority()) return;
 
     if (!MeshToSelect.IsEmpty())
@@ -97,7 +119,7 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
     Params.bIsPushBased = true;
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, bIsDead, Params);
-    //DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, CurrentTarget, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, CurrentTarget, Params);
     DOREPLIFETIME_CONDITION(AZombie, MeshIndexSelected, COND_InitialOnly);
     DOREPLIFETIME_CONDITION(AZombie, MaxHealth, COND_InitialOnly);
 }
@@ -159,21 +181,17 @@ void AZombie::ApplySelectedMesh()
         return;
     }
 
-    TWeakObjectPtr<AZombie> WeakThis(this);
     FStreamableManager& Streamable = UAssetManager::GetStreamableManager();
 
     Streamable.RequestAsyncLoad(
         SoftMesh.ToSoftObjectPath(),
-        [WeakThis, SoftMesh]()
+        [this, SoftMesh]()
         {
-            if (AZombie* StrongThis = WeakThis.Get())
+            if (USkeletalMesh* AsyncLoadedMesh = SoftMesh.Get())
             {
-                if (USkeletalMesh* AsyncLoadedMesh = SoftMesh.Get())
+                if (USkeletalMeshComponent* MeshComp = GetMesh())
                 {
-                    if (USkeletalMeshComponent* MeshComp = StrongThis->GetMesh())
-                    {
-                        MeshComp->SetSkeletalMeshAsset(AsyncLoadedMesh);
-                    }
+                    MeshComp->SetSkeletalMeshAsset(AsyncLoadedMesh);
                 }
             }
         }
@@ -203,30 +221,42 @@ void AZombie::ExecuteMeleeHit()
 
 float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-    if (!HasAuthority() || bIsDead || DamageAmount <= 0.f)
+    // 🟢 1. Authority & Death Check
+    if (!HasAuthority() || bIsDead)
     {
         return 0.f;
     }
 
-    float DamageApplied = DamageAmount;
+    // 🟢 2. Super Call Safety Check
+    float DamageApplied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    if (DamageApplied <= 0.f && DamageAmount > 0.f)
+    {
+        // ئەگەر Super بڕی 0ی گەڕاندەوە، بەهۆی CanBeDamaged بووە، بڕە بنەڕەتیەکەی بدەرێ
+        DamageApplied = DamageAmount;
+    }
+
+    const bool bIsMelee = DamageEvent.DamageTypeClass &&
+        DamageEvent.DamageTypeClass->IsChildOf(UMeleeDamageType::StaticClass());
 
     bool bDoublePoints = false;
+
     if (CachedGS)
     {
         bDoublePoints = CachedGS->bIsDoublePointsActive;
 
         if (CachedGS->bHasInstaKill)
         {
-            DamageApplied = Health;
+            DamageApplied = Health; 
         }
     }
 
-    const bool bIsMelee = DamageEvent.DamageTypeClass &&
-        DamageEvent.DamageTypeClass->IsChildOf(UMeleeDamageType::StaticClass());
-
     Health = FMath::Clamp(Health - DamageApplied, 0.f, MaxHealth);
 
-    AHamaPlayerState* TargetPlayerState = EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
+    AHamaPlayerState* TargetPlayerState = nullptr;
+    if (EventInstigator)
+    {
+        TargetPlayerState = EventInstigator->GetPlayerState<AHamaPlayerState>();
+    }
 
     if (Health <= 0.f)
     {
@@ -274,8 +304,6 @@ void AZombie::Die(AController* KillerController)
 
     OnRep_IsDead();
 
-    SetLifeSpan(2.f);
-
     OnZombieDeath.ExecuteIfBound(this, KillerController);
 }
 
@@ -300,4 +328,6 @@ void AZombie::OnRep_IsDead()
             CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
         }
     }
+
+    SetLifeSpan(2.f);
 }

@@ -2,18 +2,17 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Engine/NetSerialization.h"
-#include "DamageableInterface.h"
+#include "Engine/NetSerialization.h" // ١. زیاکراوە بۆ FVector_NetQuantize
 #include "Grenade.generated.h"
 
 class USphereComponent;
 class UStaticMeshComponent;
 class UProjectileMovementComponent;
 class USoundBase;
-class UNiagaraSystem; // 🟢 UE5 Standard: بەکارهێنانی Niagara
+class UParticleSystem;
 
 UCLASS()
-class LASTSTANDLEGACY_API AGrenade : public AActor, public IDamageableInterface
+class LASTSTANDLEGACY_API AGrenade : public AActor
 {
     GENERATED_BODY()
 
@@ -23,6 +22,10 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+    // Components
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    TObjectPtr<USphereComponent> CollisionComp;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UStaticMeshComponent> MeshComp;
@@ -40,34 +43,29 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|Config")
     float DamageRadius = 500.0f;
 
-    // FX Assets (UE5 Standard)
+    // FX Assets
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|FX")
     TObjectPtr<USoundBase> ExplosionSound;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|FX")
-    TObjectPtr<UNiagaraSystem> ExplosionVFX; // 🟢 Niagara
+    TObjectPtr<UParticleSystem> ExplosionVFX;
 
-    UPROPERTY(ReplicatedUsing = OnRep_HasExploded)
-    uint8 bHasExploded : 1; // 🟢 State Replication بۆ گەرەنتی کردنی پەخشی FX
+    uint8 bHasExploded : 1;
 
     UPROPERTY(ReplicatedUsing = OnRep_InitialVelocity)
     FVector_NetQuantize InitialVelocity;
 
     FTimerHandle FuseTimerHandle;
 
-    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
-
     void Explode();
-
-    UFUNCTION()
-    void OnRep_HasExploded();
+   
+    UFUNCTION(NetMulticast, Unreliable)
+    void Multicast_PlayExplosionFX(FVector_NetQuantize ExplosionLocation);
 
     UFUNCTION()
     void OnRep_InitialVelocity();
 
 public:
     void SetFuseDuration(float NewDuration);
-    void InitVelocity(const FVector& InVelocity, APawn* InInstigator); // 🟢 وەرگرتنی Instigator
-
-    virtual bool CanReceiveWeaponDamage() const override { return !bHasExploded; }
+    void InitVelocity(const FVector& InVelocity);
 };

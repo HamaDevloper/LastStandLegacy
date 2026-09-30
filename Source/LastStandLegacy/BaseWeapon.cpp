@@ -441,7 +441,7 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
     TSubclassOf<UDamageType> DamageTypeClass = UDamageType::StaticClass();
 
     TArray<FHitResult> HitResults;
-    GetWorld()->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECollisionChannel::ECC_Bullet, Params);
+    bool bHit = GetWorld()->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECollisionChannel::ECC_Bullet, Params);
 
     TArray<AActor*> AlreadyHitActors;
     int32 PenCount = 0;
@@ -450,38 +450,37 @@ void ABaseWeapon::ProcessShotLogic(const FVector& TraceStart, const FVector& Sho
     for (const FHitResult& Hit : HitResults)
     {
         AActor* HitActor = Hit.GetActor();
-        if (!HitActor || AlreadyHitActors.Contains(HitActor)) continue;
+        if (!HitActor) continue;
 
         IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor);
 
-        if (Damageable)
-        {
-            if (!Damageable->CanReceiveWeaponDamage())
-            {
-                continue;
-            }
-
-            AlreadyHitActors.Add(HitActor);
-
-            float FinalDamage = CalculateDamageBySurface(Hit);
-
-            UGameplayStatics::ApplyPointDamage(
-                HitActor,
-                FinalDamage,
-                ShootDir,
-                Hit,
-                InstigatorController,
-                this,
-                DamageTypeClass
-            );
-
-            PenCount++;
-            if (PenCount >= MaxPen) break;
-        }
-        else if (Hit.bBlockingHit)
+        if (!Damageable)
         {
             break;
         }
+
+        if (!Damageable->CanReceiveWeaponDamage())
+        {
+            continue;
+        }
+
+        if (AlreadyHitActors.Contains(HitActor)) continue;
+        AlreadyHitActors.Add(HitActor);
+
+        float FinalDamage = CalculateDamageBySurface(Hit);
+
+        UGameplayStatics::ApplyPointDamage(
+            HitActor,
+            FinalDamage,
+            ShootDir,
+            Hit,
+            InstigatorController,
+            this,
+            DamageTypeClass
+        );
+
+        PenCount++;
+        if (PenCount >= MaxPen) break;
     }
 }
 

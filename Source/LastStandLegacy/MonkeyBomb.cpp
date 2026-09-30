@@ -7,10 +7,9 @@
 #include "ZombieDirectorSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
+#include "Engine/OverlapResult.h"
 #include "LastStandLegacyGameState.h"
 #include "GameFramework/PlayerState.h"
-#include "NiagaraFunctionLibrary.h"
-#include "NiagaraSystem.h"
 
 AMonkeyBomb::AMonkeyBomb()
 {
@@ -26,18 +25,25 @@ AMonkeyBomb::AMonkeyBomb()
     bAttractionActivated = false;
     bHasExploded = false;
 
-    MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
-    RootComponent = MeshComp;
+    CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
+    CollisionComp->InitSphereRadius(12.0f);
+    CollisionComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 
-    MeshComp->SetGenerateOverlapEvents(false);
+    RootComponent = CollisionComp;
+
+    MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
+    MeshComp->SetupAttachment(CollisionComp);
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     AttractionAudioComp = CreateDefaultSubobject<UAudioComponent>(TEXT("AttractionAudioComp"));
     AttractionAudioComp->SetupAttachment(MeshComp);
     AttractionAudioComp->bAutoActivate = false;
 
     ProjectileMovementComp = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovementComp"));
-    ProjectileMovementComp->UpdatedComponent = MeshComp;
+    ProjectileMovementComp->UpdatedComponent = CollisionComp;
 
+    // 🟢 گۆڕانکارییە سەرەکییەکان:
     ProjectileMovementComp->InitialSpeed = 0.0f;
     ProjectileMovementComp->MaxSpeed = 10000.0f;
     ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
@@ -57,15 +63,13 @@ void AMonkeyBomb::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     Params.bIsPushBased = true;
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, bAttractionActivated, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, bHasExploded, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, InitialVelocity, Params);
 }
 
-void AMonkeyBomb::InitVelocity(const FVector& InVelocity, APawn* InInstigator)
+void AMonkeyBomb::InitVelocity(const FVector& InVelocity)
 {
     if (HasAuthority())
     {
-        SetInstigator(InInstigator); // 🟢 دڵنیابوونەوە لە بەستنەوەی خاوەنی بۆمبەکە بۆ بەخشینی خاڵ
         InitialVelocity = InVelocity;
         MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, InitialVelocity, this);
 
@@ -107,7 +111,13 @@ void AMonkeyBomb::ActivateAttraction()
     bAttractionActivated = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bAttractionActivated, this);
 
-    InternalStopMovement();
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->Deactivate();
+    }
+
+    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 
     if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
@@ -119,19 +129,8 @@ void AMonkeyBomb::ActivateAttraction()
     GetWorldTimerManager().SetTimer(FuseTimerHandle, this, &AMonkeyBomb::Explode, FuseDuration, false);
 }
 
-void AMonkeyBomb::InternalStopMovement()
-{
-    if (ProjectileMovementComp)
-    {
-        ProjectileMovementComp->StopMovementImmediately();
-        ProjectileMovementComp->Deactivate();
-    }
-}
-
 void AMonkeyBomb::OnRep_AttractionActivated()
 {
-    InternalStopMovement();
-
     if (bAttractionActivated && AttractionSound && AttractionAudioComp)
     {
         if (!AttractionAudioComp->IsPlaying())
@@ -142,22 +141,11 @@ void AMonkeyBomb::OnRep_AttractionActivated()
     }
 }
 
-float AMonkeyBomb::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
-{
-    if (!HasAuthority() || bHasExploded || DamageAmount <= 0.0f) return 0.0f;
-
-    Explode();
-
-    return DamageAmount;
-}
-
 void AMonkeyBomb::Explode()
 {
     if (!HasAuthority() || bHasExploded) return;
 
     bHasExploded = true;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bHasExploded, this);
-
     GetWorldTimerManager().ClearTimer(FuseTimerHandle);
 
     const FVector ServerExplosionLocation = GetActorLocation();
@@ -170,6 +158,7 @@ void AMonkeyBomb::Explode()
     ALastStandLegacyGameState* GameState = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
     TArray<AActor*> IgnoredActors;
+    IgnoredActors.Reserve(GameState ? GameState->PlayerArray.Num() + 1 : 3);
     IgnoredActors.Add(this);
 
     APawn* InstigatorPawn = GetInstigator();
@@ -189,8 +178,7 @@ void AMonkeyBomb::Explode()
         }
     }
 
-    AController* InstigatorController = GetInstigatorController();
-
+  
     UGameplayStatics::ApplyRadialDamage(
         this,
         BaseDamage,
@@ -199,37 +187,33 @@ void AMonkeyBomb::Explode()
         UDamageType::StaticClass(),
         IgnoredActors,
         this,
-        InstigatorController,
+        GetInstigatorController(),
         true,
         ECC_WorldStatic
     );
 
-    OnRep_HasExploded();
+
+    Multicast_PlayExplosionFX(ServerExplosionLocation);
 
     SetActorHiddenInGame(true);
     SetActorEnableCollision(false);
-    SetLifeSpan(1.0f);
+    SetLifeSpan(0.2f);
 }
 
-void AMonkeyBomb::OnRep_HasExploded()
+void AMonkeyBomb::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize ExplosionLocation)
 {
     if (AttractionAudioComp && AttractionAudioComp->IsPlaying())
     {
         AttractionAudioComp->Stop();
     }
 
-    const FVector ExpLoc = GetActorLocation();
-
     if (ExplosionSound)
     {
-        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, ExpLoc);
+        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, ExplosionLocation);
     }
 
-    if (ExplosionVFX)
+    if (ExplosionVFX && GetWorld())
     {
-        UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), ExplosionVFX, ExpLoc);
+        UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ExplosionVFX, ExplosionLocation);
     }
-
-    SetActorHiddenInGame(true);
-    SetActorEnableCollision(false);
 }
