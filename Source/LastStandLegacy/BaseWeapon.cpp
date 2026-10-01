@@ -69,6 +69,7 @@ void ABaseWeapon::InitializeWeaponData()
     FWeaponData* Row = WeaponDataTable->FindRow<FWeaponData>(WeaponRowName, TEXT("Weapon Context"));
     if (!Row) return;
 
+    bInitilize = true;
     CurrentWeaponData = *Row;
 
     MaxAmmoInClip = CurrentWeaponData.MaxAmmoInClip;

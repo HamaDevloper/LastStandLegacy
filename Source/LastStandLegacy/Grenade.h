@@ -2,7 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Engine/NetSerialization.h" // ١. زیاکراوە بۆ FVector_NetQuantize
+#include "Engine/NetSerialization.h"
+#include "DamageableInterface.h"
 #include "Grenade.generated.h"
 
 class USphereComponent;
@@ -12,7 +13,7 @@ class USoundBase;
 class UParticleSystem;
 
 UCLASS()
-class LASTSTANDLEGACY_API AGrenade : public AActor
+class LASTSTANDLEGACY_API AGrenade : public AActor, public IDamageableInterface
 {
     GENERATED_BODY()
 
@@ -22,6 +23,7 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -68,4 +70,6 @@ protected:
 public:
     void SetFuseDuration(float NewDuration);
     void InitVelocity(const FVector& InVelocity);
+
+    virtual bool CanReceiveWeaponDamage() const override { return !bHasExploded; }
 };

@@ -281,9 +281,14 @@ public:
     int32 GetMaxClipAmmo() const { return MaxAmmoInClip; }
     FName GetWeaponRowName() const { return WeaponRowName; }
     bool IsEquipped() const;
+    bool NeedsAmmo() const;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
     TSubclassOf<ABaseWeapon> CachedUpgradedClass;
 
-    bool NeedsAmmo() const;
+private:
+    bool bInitilize = false;
+
+public:
+    bool IsDataInitialized() const { return bInitilize; }
 };

@@ -18,7 +18,7 @@ AMonkeyBomb::AMonkeyBomb()
     bReplicates = true;
     SetReplicateMovement(false);
 
-    SetNetUpdateFrequency(10.f);
+    SetNetUpdateFrequency(10.0f);
     SetMinNetUpdateFrequency(2.0f);
     SetNetCullDistanceSquared(FMath::Square(3500.0f));
 
@@ -26,24 +26,25 @@ AMonkeyBomb::AMonkeyBomb()
     bHasExploded = false;
 
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
-    CollisionComp->InitSphereRadius(12.0f);
-    CollisionComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+    CollisionComp->InitSphereRadius(8.0f);
+    CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
 
+    CollisionComp->SetCanEverAffectNavigation(false);
+
+    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
     RootComponent = CollisionComp;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
-    MeshComp->SetupAttachment(CollisionComp);
-    MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    MeshComp->SetupAttachment(RootComponent);
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision); // Zero Collision Overhead
+    MeshComp->SetCastShadow(true);
 
     AttractionAudioComp = CreateDefaultSubobject<UAudioComponent>(TEXT("AttractionAudioComp"));
-    AttractionAudioComp->SetupAttachment(MeshComp);
+    AttractionAudioComp->SetupAttachment(RootComponent);
     AttractionAudioComp->bAutoActivate = false;
 
     ProjectileMovementComp = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovementComp"));
-    ProjectileMovementComp->UpdatedComponent = CollisionComp;
-
-    // 🟢 گۆڕانکارییە سەرەکییەکان:
+    ProjectileMovementComp->UpdatedComponent = RootComponent;
     ProjectileMovementComp->InitialSpeed = 0.0f;
     ProjectileMovementComp->MaxSpeed = 10000.0f;
     ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
@@ -53,6 +54,8 @@ AMonkeyBomb::AMonkeyBomb()
     ProjectileMovementComp->bShouldBounce = true;
     ProjectileMovementComp->Bounciness = 0.15f;
     ProjectileMovementComp->Friction = 0.7f;
+
+    ProjectileMovementComp->BounceVelocityStopSimulatingThreshold = 5.0f;
 }
 
 void AMonkeyBomb::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -117,8 +120,6 @@ void AMonkeyBomb::ActivateAttraction()
         ProjectileMovementComp->Deactivate();
     }
 
-    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-
     if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
         Director->RegisterAttractor(this, AttractionRadius);
@@ -139,6 +140,13 @@ void AMonkeyBomb::OnRep_AttractionActivated()
             AttractionAudioComp->Play();
         }
     }
+}
+
+float AMonkeyBomb::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+    if (!HasAuthority() || bHasExploded || DamageAmount <= 0) return 0.f;
+    Explode();
+    return DamageAmount;
 }
 
 void AMonkeyBomb::Explode()

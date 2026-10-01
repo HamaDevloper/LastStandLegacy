@@ -16,7 +16,7 @@ AGrenade::AGrenade()
     PrimaryActorTick.bCanEverTick = false;
 
     bReplicates = true;
-    SetReplicateMovement(false);
+    SetReplicateMovement(false); // دروستە: بۆ خۆدوورگرتن لە زۆری باری تۆڕ
 
     SetNetUpdateFrequency(10.0f);
     SetMinNetUpdateFrequency(2.0f);
@@ -25,28 +25,33 @@ AGrenade::AGrenade()
     bHasExploded = false;
 
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
-    CollisionComp->InitSphereRadius(10.0f);
-    CollisionComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+    CollisionComp->InitSphereRadius(6.0f);
+    CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
 
+    CollisionComp->SetCanEverAffectNavigation(false);
+
+    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
     RootComponent = CollisionComp;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
-    MeshComp->SetupAttachment(CollisionComp);
+    MeshComp->SetupAttachment(RootComponent);
     MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    MeshComp->SetCastShadow(true);
 
     ProjectileMovementComp = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovementComp"));
-    ProjectileMovementComp->UpdatedComponent = CollisionComp;
+    ProjectileMovementComp->UpdatedComponent = RootComponent;
 
-    ProjectileMovementComp->InitialSpeed = 0.0f; // ١. سفر کردنی InitialSpeed تا لە BeginPlayدا ئاڕاستەی خۆکار دروست نەکات
-    ProjectileMovementComp->MaxSpeed = 10000.0f; // ٢. بەرزکردنەوەی MaxSpeed تا ئاسانکاری بۆ Velocityی بەهێز بکات
-    ProjectileMovementComp->bInitialVelocityInLocalSpace = false; // ٣. لاپۆشکردنی فیزیکی لۆکاڵی Socket
+    ProjectileMovementComp->InitialSpeed = 0.0f;
+    ProjectileMovementComp->MaxSpeed = 10000.0f;
+    ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
     ProjectileMovementComp->Velocity = FVector::ZeroVector;
 
     ProjectileMovementComp->bRotationFollowsVelocity = true;
     ProjectileMovementComp->bShouldBounce = true;
-    ProjectileMovementComp->Bounciness = 0.3f;
+    ProjectileMovementComp->Bounciness = 0.25f;
     ProjectileMovementComp->Friction = 0.6f;
+
+    ProjectileMovementComp->BounceVelocityStopSimulatingThreshold = 5.0f;
 }
 
 void AGrenade::SetFuseDuration(float NewDuration)
@@ -92,6 +97,13 @@ void AGrenade::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetime
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
     DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, InitialVelocity, Params);
+}
+
+float AGrenade::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+    if (!HasAuthority() || bHasExploded || DamageAmount <= 0) return 0.f;
+    Explode();
+    return DamageAmount;
 }
 
 void AGrenade::Explode()
@@ -143,7 +155,7 @@ void AGrenade::Explode()
 
     SetActorHiddenInGame(true);
     SetActorEnableCollision(false);
-    SetLifeSpan(0.2f);
+    SetLifeSpan(1.f);
 }
 
 void AGrenade::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize ExplosionLocation)

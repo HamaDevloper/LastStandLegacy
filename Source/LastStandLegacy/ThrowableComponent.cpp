@@ -19,13 +19,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogThrowableSystem, Log, All);
 
 UThrowableComponent::UThrowableComponent()
 {
-#if UE_BUILD_SHIPPING
     PrimaryComponentTick.bCanEverTick = false;
     PrimaryComponentTick.bStartWithTickEnabled = false;
-#else
-    PrimaryComponentTick.bCanEverTick = true;
-    PrimaryComponentTick.bStartWithTickEnabled = true;
-#endif
 
     SetIsReplicatedByDefault(true);
 
@@ -48,106 +43,6 @@ UThrowableComponent::UThrowableComponent()
     ThrowableHandSocketName = TEXT("GrenadeHandSocket");
 }
 
-void UThrowableComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-#if !UE_BUILD_SHIPPING
-    //Debug_RenderNetworkDesync();
-#endif
-}
-
-void UThrowableComponent::Debug_RenderNetworkDesync()
-{
-#if !UE_BUILD_SHIPPING
-    if (!GEngine || !GetOwner() || !GetWorld()) return;
-
-    const bool bIsServer = GetOwner()->HasAuthority();
-    const FString RoleName = bIsServer ? TEXT("SERVER") : TEXT("CLIENT");
-    const float CurrentTime = GetWorld()->GetTimeSeconds();
-
-    const float TimeSinceLastThrow = CurrentTime - LastThrowTime;
-    const float ActiveCooldown = bIsMonkeyThrow ? MonkeyThrowCooldown : GrenadeThrowCooldown;
-    const float RemainingCooldown = FMath::Max(0.0f, ActiveCooldown - TimeSinceLastThrow);
-    const bool bIsOnCooldown = RemainingCooldown > 0.0f;
-
-    TArray<FString> DesyncReasons;
-
-    if (!bIsServer && bIsThrowingLocal && ChargeState == EThrowChargeState::Idle)
-    {
-        DesyncReasons.Add(TEXT("LocalThrow Active while State is IDLE"));
-    }
-
-    if (!bIsServer && (PendingGrenadeThrows > MaxGrenadeCount || PendingMonkeyThrows > MaxMonkeyCount))
-    {
-        DesyncReasons.Add(TEXT("Pending Throws Overflow/Stuck"));
-    }
-
-    if (CharacterOwner)
-    {
-        const bool bHandMeshVisible = bIsMonkeyThrow ?
-            (CharacterOwner->MonkeyHandMesh && CharacterOwner->MonkeyHandMesh->IsVisible()) :
-            (CharacterOwner->GrenadeHandMesh && CharacterOwner->GrenadeHandMesh->IsVisible());
-
-        const bool bWeaponHidden = IsValid(CharacterOwner->CurrentWeapon) && CharacterOwner->CurrentWeapon->IsHidden();
-
-        if (ChargeState == EThrowChargeState::Idle && (bHandMeshVisible || bWeaponHidden))
-        {
-            DesyncReasons.Add(TEXT("Visual Mismatch (Weapon hidden or Hand Mesh visible in IDLE)"));
-        }
-        else if (ChargeState == EThrowChargeState::Charging && (!bHandMeshVisible || !bWeaponHidden))
-        {
-            DesyncReasons.Add(TEXT("Visual Mismatch (Weapon visible or Hand Mesh hidden in CHARGING)"));
-        }
-    }
-
-    if (!bIsServer)
-    {
-        const bool bLocalTimerActive = GetWorld()->GetTimerManager().IsTimerActive(TimerHandle_LocalCookExplosion);
-        if (bLocalTimerActive && ChargeState != EThrowChargeState::Charging)
-        {
-            DesyncReasons.Add(TEXT("Local Cook Timer active outside CHARGING state"));
-        }
-    }
-
-    const bool bDesyncDetected = DesyncReasons.Num() > 0;
-
-    FColor DisplayColor = FColor::Green;
-    if (bDesyncDetected)
-    {
-        DisplayColor = FColor::Red;
-    }
-    else if (bIsOnCooldown)
-    {
-        DisplayColor = FColor::Yellow;
-    }
-    else if (!bIsServer)
-    {
-        DisplayColor = FColor::Cyan;
-    }
-
-    FString DesyncDetailsStr = TEXT("");
-    if (bDesyncDetected)
-    {
-        DesyncDetailsStr = FString::Printf(TEXT(" | [DESYNC: %s]"), *FString::Join(DesyncReasons, TEXT(", ")));
-    }
-
-    FString DebugMsg = FString::Printf(
-        TEXT("[%s] Grenades: %d (Pending: %d) | Monkeys: %d (Pending: %d) | Cooldown: %.2fs | State: %d | LocalThrow: %s%s"),
-        *RoleName,
-        CurrentGrenadeCount, PendingGrenadeThrows,
-        CurrentMonkeyCount, PendingMonkeyThrows,
-        RemainingCooldown,
-        static_cast<int32>(ChargeState),
-        bIsThrowingLocal ? TEXT("TRUE") : TEXT("FALSE"),
-        *DesyncDetailsStr
-    );
-
-    int32 DebugKey = GetOwner()->GetUniqueID() + (bIsServer ? 1000 : 2000);
-    GEngine->AddOnScreenDebugMessage(DebugKey, 0.0f, DisplayColor, DebugMsg);
-#endif
-}
-
 void UThrowableComponent::BeginPlay()
 {
     Super::BeginPlay();
@@ -156,12 +51,28 @@ void UThrowableComponent::BeginPlay()
 
     if (GrenadeThrowMontage)
     {
-        GrenadeThrowCooldown = GrenadeThrowMontage->GetPlayLength();
+        const int32 SectionIndex = GrenadeThrowMontage->GetSectionIndex(ReleaseSectionName);
+        if (SectionIndex != INDEX_NONE)
+        {
+            GrenadeThrowCooldown = GrenadeThrowMontage->GetSectionLength(SectionIndex);
+        }
+        else
+        {
+            GrenadeThrowCooldown = 0.6f; 
+        }
     }
 
     if (MonkeyThrowMontage)
     {
-        MonkeyThrowCooldown = MonkeyThrowMontage->GetPlayLength();
+        const int32 SectionIndex = MonkeyThrowMontage->GetSectionIndex(ReleaseSectionName);
+        if (SectionIndex != INDEX_NONE)
+        {
+            MonkeyThrowCooldown = MonkeyThrowMontage->GetSectionLength(SectionIndex);
+        }
+        else
+        {
+            MonkeyThrowCooldown = 0.8f; 
+        }
     }
 
     if (CharacterOwner && CharacterOwner->IsLocallyControlled())
@@ -177,7 +88,7 @@ void UThrowableComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     FDoRepLifetimeParams RepParams;
     RepParams.bIsPushBased = true;
 
-    RepParams.Condition = COND_SkipOwner;
+    RepParams.Condition = COND_None;
     DOREPLIFETIME_WITH_PARAMS_FAST(UThrowableComponent, ChargeState, RepParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UThrowableComponent, bIsMonkeyThrow, RepParams);
 
@@ -247,11 +158,12 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
     {
         if (!bIsMonkey)
         {
+            const float LocalCookTimerBuffer = MaxGrenadeCookTime + 0.25f;
             GetWorld()->GetTimerManager().SetTimer(
                 TimerHandle_LocalCookExplosion,
                 this,
                 &UThrowableComponent::Local_OnGrenadeCookExpired,
-                MaxGrenadeCookTime,
+                LocalCookTimerBuffer,
                 false
             );
         }
@@ -730,17 +642,26 @@ void UThrowableComponent::HandleChargeStateChanged()
     UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
     UAnimMontage* MontageToPlay = bIsMonkeyThrow ? MonkeyThrowMontage : GrenadeThrowMontage;
 
+    if (!AnimInstance || !MontageToPlay) return;
+
     switch (ChargeState)
     {
     case EThrowChargeState::Charging:
     {
+        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+
         PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
         SetWeaponHidden(true);
         ToggleHandThrowableVisibility(true);
+
+        AnimInstance->Montage_Pause(MontageToPlay);
         break;
     }
     case EThrowChargeState::Released:
     {
+        AnimInstance->Montage_Resume(MontageToPlay);
+        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+
         PlayThrowMontageWithDelegate(MontageToPlay, ReleaseSectionName);
         ToggleHandThrowableVisibility(false);
         break;
@@ -748,7 +669,10 @@ void UThrowableComponent::HandleChargeStateChanged()
     case EThrowChargeState::Idle:
     default:
     {
-        if (AnimInstance && MontageToPlay && AnimInstance->Montage_IsPlaying(MontageToPlay))
+        AnimInstance->Montage_Resume(MontageToPlay);
+        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+
+        if (AnimInstance->Montage_IsPlaying(MontageToPlay))
         {
             AnimInstance->Montage_Stop(0.2f, MontageToPlay);
         }
@@ -776,12 +700,19 @@ void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPl
 
     if (SectionName != NAME_None)
     {
-        AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
+        const FName CurrentSection = AnimInstance->Montage_GetCurrentSection(MontageToPlay);
+        if (CurrentSection != SectionName)
+        {
+            AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
+        }
     }
 
-    FOnMontageEnded EndDelegate;
-    EndDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
-    AnimInstance->Montage_SetEndDelegate(EndDelegate, MontageToPlay);
+    if (ChargeState == EThrowChargeState::Released)
+    {
+        FOnMontageEnded EndDelegate;
+        EndDelegate.BindUObject(this, &UThrowableComponent::OnThrowMontageEnded);
+        AnimInstance->Montage_SetEndDelegate(EndDelegate, MontageToPlay);
+    }
 }
 
 FVector UThrowableComponent::TraceCrosshairTarget(const FVector& ViewLoc, const FVector& AimDir) const

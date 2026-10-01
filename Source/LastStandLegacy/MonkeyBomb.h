@@ -2,7 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Engine/NetSerialization.h" // ١. زیاکراوە بۆ پشتبەستن بە FVector_NetQuantize
+#include "Engine/NetSerialization.h"
+#include "DamageableInterface.h"
 #include "MonkeyBomb.generated.h"
 
 #define ECC_Bullet ECC_GameTraceChannel1
@@ -15,7 +16,7 @@ class USoundBase;
 class UParticleSystem;
 
 UCLASS()
-class LASTSTANDLEGACY_API AMonkeyBomb : public AActor
+class LASTSTANDLEGACY_API AMonkeyBomb : public AActor, public IDamageableInterface
 {
     GENERATED_BODY()
 
@@ -26,6 +27,8 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
+
 
     // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -90,4 +93,6 @@ protected:
 
 public:
     void InitVelocity(const FVector& InVelocity);
+
+    virtual bool CanReceiveWeaponDamage() const override { return !bHasExploded; }
 };
