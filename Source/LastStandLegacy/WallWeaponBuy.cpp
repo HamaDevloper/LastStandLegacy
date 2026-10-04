@@ -134,8 +134,7 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
         }
     }
 
-    GEngine
-        ->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Interaction with Wall Weapon Buy completed.")));
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Interaction with Wall Weapon Buy completed.")));
 }
 
 FString AWallWeaponBuy::GetInteractMessage(AHama* InteractingPlayer)

@@ -13,7 +13,7 @@ class UStaticMeshComponent;
 class UAudioComponent;
 class UProjectileMovementComponent;
 class USoundBase;
-class UParticleSystem;
+class UNiagaraSystem;
 
 UCLASS()
 class LASTSTANDLEGACY_API AMonkeyBomb : public AActor, public IDamageableInterface
@@ -29,8 +29,6 @@ protected:
     virtual void BeginPlay() override;
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
-
-    // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<USphereComponent> CollisionComp;
 
@@ -43,7 +41,6 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UProjectileMovementComponent> ProjectileMovementComp;
 
-    // Config Properties
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|Config")
     float AttractionRadius = 2000.0f;
 
@@ -56,7 +53,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|Config")
     float DamageRadius = 600.0f;
 
-    // FX Assets
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|FX")
     TObjectPtr<USoundBase> AttractionSound;
 
@@ -64,12 +60,16 @@ protected:
     TObjectPtr<USoundBase> ExplosionSound;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|FX")
-    TObjectPtr<UParticleSystem> ExplosionVFX;
+    TObjectPtr<UNiagaraSystem> ExplosionNiagaraFX;
 
     UPROPERTY(ReplicatedUsing = OnRep_AttractionActivated)
-    uint8 bAttractionActivated : 1;
+    bool bAttractionActivated = false;
 
-    uint8 bHasExploded : 1;
+    UPROPERTY(ReplicatedUsing = OnRep_HasExploded)
+    bool bHasExploded = false;
+
+    UPROPERTY(Replicated)
+    FVector_NetQuantize ExplosionLocation;
 
     UPROPERTY(ReplicatedUsing = OnRep_InitialVelocity)
     FVector_NetQuantize InitialVelocity;
@@ -80,16 +80,17 @@ protected:
     void OnRep_AttractionActivated();
 
     UFUNCTION()
-    void OnProjectileStopped(const FHitResult& ImpactResult);
-
-    void ActivateAttraction();
-    void Explode();
+    void OnRep_HasExploded();
 
     UFUNCTION()
     void OnRep_InitialVelocity();
 
-    UFUNCTION(NetMulticast, Unreliable)
-    void Multicast_PlayExplosionFX(FVector_NetQuantize ExplosionLocation);
+    UFUNCTION()
+    void OnProjectileStopped(const FHitResult& ImpactResult);
+
+    void ActivateAttraction();
+    void Explode();
+    void PlayExplosionFX(const FVector& Location);
 
 public:
     void InitVelocity(const FVector& InVelocity);

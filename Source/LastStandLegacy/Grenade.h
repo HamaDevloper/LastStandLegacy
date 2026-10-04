@@ -10,7 +10,7 @@ class USphereComponent;
 class UStaticMeshComponent;
 class UProjectileMovementComponent;
 class USoundBase;
-class UParticleSystem;
+class UNiagaraSystem;
 
 UCLASS()
 class LASTSTANDLEGACY_API AGrenade : public AActor, public IDamageableInterface
@@ -20,12 +20,12 @@ class LASTSTANDLEGACY_API AGrenade : public AActor, public IDamageableInterface
 public:
     AGrenade();
 
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 protected:
     virtual void BeginPlay() override;
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
-    // Components
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<USphereComponent> CollisionComp;
 
@@ -35,24 +35,26 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UProjectileMovementComponent> ProjectileMovementComp;
 
-    // Grenade Config Properties
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|Config")
     float FuseDuration = 3.5f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|Config")
-    float BaseDamage = 500.f;
+    float BaseDamage = 500.0f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|Config")
     float DamageRadius = 500.0f;
 
-    // FX Assets
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|FX")
     TObjectPtr<USoundBase> ExplosionSound;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade|FX")
-    TObjectPtr<UParticleSystem> ExplosionVFX;
+    TObjectPtr<UNiagaraSystem> ExplosionNiagaraFX;
 
-    uint8 bHasExploded : 1;
+    UPROPERTY(ReplicatedUsing = OnRep_HasExploded)
+    bool bHasExploded = false;
+
+    UPROPERTY(Replicated)
+    FVector_NetQuantize ExplosionLocation;
 
     UPROPERTY(ReplicatedUsing = OnRep_InitialVelocity)
     FVector_NetQuantize InitialVelocity;
@@ -60,9 +62,10 @@ protected:
     FTimerHandle FuseTimerHandle;
 
     void Explode();
-   
-    UFUNCTION(NetMulticast, Unreliable)
-    void Multicast_PlayExplosionFX(FVector_NetQuantize ExplosionLocation);
+    void PlayExplosionFX(const FVector& Location);
+
+    UFUNCTION()
+    void OnRep_HasExploded();
 
     UFUNCTION()
     void OnRep_InitialVelocity();

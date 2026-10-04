@@ -3,9 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "DrawDebugHelpers.h"
-#include "TimerManager.h"
-#include "Engine/OverlapResult.h"
+#include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "LastStandLegacyGameState.h"
@@ -16,7 +14,7 @@ AGrenade::AGrenade()
     PrimaryActorTick.bCanEverTick = false;
 
     bReplicates = true;
-    SetReplicateMovement(false); // دروستە: بۆ خۆدوورگرتن لە زۆری باری تۆڕ
+    SetReplicateMovement(false);
 
     SetNetUpdateFrequency(10.0f);
     SetMinNetUpdateFrequency(2.0f);
@@ -25,11 +23,9 @@ AGrenade::AGrenade()
     bHasExploded = false;
 
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
-    CollisionComp->InitSphereRadius(6.0f);
+    CollisionComp->InitSphereRadius(8.0f);
     CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
-
     CollisionComp->SetCanEverAffectNavigation(false);
-
     CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
     RootComponent = CollisionComp;
 
@@ -40,23 +36,42 @@ AGrenade::AGrenade()
 
     ProjectileMovementComp = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovementComp"));
     ProjectileMovementComp->UpdatedComponent = RootComponent;
-
     ProjectileMovementComp->InitialSpeed = 0.0f;
     ProjectileMovementComp->MaxSpeed = 10000.0f;
     ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
     ProjectileMovementComp->Velocity = FVector::ZeroVector;
-
     ProjectileMovementComp->bRotationFollowsVelocity = true;
     ProjectileMovementComp->bShouldBounce = true;
-    ProjectileMovementComp->Bounciness = 0.25f;
-    ProjectileMovementComp->Friction = 0.6f;
-
+    ProjectileMovementComp->Bounciness = 0.3f;
+    ProjectileMovementComp->Friction = 0.5f;
     ProjectileMovementComp->BounceVelocityStopSimulatingThreshold = 5.0f;
+}
+
+void AGrenade::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    FDoRepLifetimeParams Params;
+    Params.bIsPushBased = true;
+
+    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, bHasExploded, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, ExplosionLocation, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, InitialVelocity, Params);
+}
+
+void AGrenade::BeginPlay()
+{
+    Super::BeginPlay();
+
+    if (HasAuthority())
+    {
+        GetWorldTimerManager().SetTimer(FuseTimerHandle, this, &AGrenade::Explode, FuseDuration, false);
+    }
 }
 
 void AGrenade::SetFuseDuration(float NewDuration)
 {
-    FuseDuration = FMath::Max(0.05f, NewDuration);
+    FuseDuration = FMath::Max(0.1f, NewDuration);
 }
 
 void AGrenade::InitVelocity(const FVector& InVelocity)
@@ -81,27 +96,10 @@ void AGrenade::OnRep_InitialVelocity()
     }
 }
 
-void AGrenade::BeginPlay()
-{
-    Super::BeginPlay();
-
-    if (HasAuthority())
-    {
-        GetWorldTimerManager().SetTimer(FuseTimerHandle, this, &AGrenade::Explode, FuseDuration, false);
-    }
-}
-
-void AGrenade::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    FDoRepLifetimeParams Params;
-    Params.bIsPushBased = true;
-    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, InitialVelocity, Params);
-}
-
 float AGrenade::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-    if (!HasAuthority() || bHasExploded || DamageAmount <= 0) return 0.f;
+    if (!HasAuthority() || bHasExploded || DamageAmount <= 0.0f) return 0.0f;
+
     Explode();
     return DamageAmount;
 }
@@ -111,26 +109,33 @@ void AGrenade::Explode()
     if (!HasAuthority() || bHasExploded) return;
 
     bHasExploded = true;
+    ExplosionLocation = GetActorLocation();
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, bHasExploded, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, ExplosionLocation, this);
+
+    ForceNetUpdate();
+
     GetWorldTimerManager().ClearTimer(FuseTimerHandle);
 
-    const FVector ServerExplosionLocation = GetActorLocation() + FVector(0.0f, 0.0f, 10.0f);
+    PlayExplosionFX(ExplosionLocation);
 
-    APawn* ThrowerPawn = GetInstigator();
-
-    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    ALastStandLegacyGameState* GameState = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
     TArray<AActor*> IgnoredActors;
-    IgnoredActors.Reserve(GS? GS->PlayerArray.Num() + 1 : 3);
+    IgnoredActors.Reserve(GameState ? GameState->PlayerArray.Num() + 1 : 3);
     IgnoredActors.Add(this);
 
-    if (GS)
+    APawn* InstigatorPawn = GetInstigator();
+
+    if (GameState)
     {
-        for (APlayerState* PS : GS->PlayerArray)
+        for (APlayerState* PS : GameState->PlayerArray)
         {
             if (!PS) continue;
             if (APawn* PlayerPawn = PS->GetPawn())
             {
-                if (PlayerPawn != ThrowerPawn)
+                if (PlayerPawn != InstigatorPawn)
                 {
                     IgnoredActors.Add(PlayerPawn);
                 }
@@ -141,32 +146,52 @@ void AGrenade::Explode()
     UGameplayStatics::ApplyRadialDamage(
         this,
         BaseDamage,
-        ServerExplosionLocation,
+        ExplosionLocation,
         DamageRadius,
         UDamageType::StaticClass(),
         IgnoredActors,
         this,
         GetInstigatorController(),
-        false,
+        true,
         ECC_WorldStatic
     );
 
-    Multicast_PlayExplosionFX(ServerExplosionLocation);
-
     SetActorHiddenInGame(true);
     SetActorEnableCollision(false);
-    SetLifeSpan(1.f);
+
+    SetLifeSpan(2.0f);
 }
 
-void AGrenade::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize ExplosionLocation)
+void AGrenade::OnRep_HasExploded()
 {
+    if (bHasExploded)
+    {
+        PlayExplosionFX(ExplosionLocation);
+        SetActorHiddenInGame(true);
+        SetActorEnableCollision(false);
+    }
+}
+
+void AGrenade::PlayExplosionFX(const FVector& Location)
+{
+    if (GetNetMode() == NM_DedicatedServer) return;
+
     if (ExplosionSound)
     {
-        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, ExplosionLocation);
+        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, Location);
     }
 
-    if (ExplosionVFX && GetWorld())
+    if (ExplosionNiagaraFX && GetWorld())
     {
-        UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ExplosionVFX, ExplosionLocation);
+        UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+            GetWorld(),
+            ExplosionNiagaraFX,
+            Location,
+            FRotator::ZeroRotator,
+            FVector(1.0f),
+            true,
+            true,
+            ENCPoolMethod::AutoRelease
+        );
     }
 }

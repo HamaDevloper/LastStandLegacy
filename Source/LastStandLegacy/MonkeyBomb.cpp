@@ -4,10 +4,10 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraFunctionLibrary.h"
 #include "ZombieDirectorSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
-#include "Engine/OverlapResult.h"
 #include "LastStandLegacyGameState.h"
 #include "GameFramework/PlayerState.h"
 
@@ -28,15 +28,13 @@ AMonkeyBomb::AMonkeyBomb()
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
     CollisionComp->InitSphereRadius(8.0f);
     CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
-
     CollisionComp->SetCanEverAffectNavigation(false);
-
     CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
     RootComponent = CollisionComp;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
     MeshComp->SetupAttachment(RootComponent);
-    MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision); // Zero Collision Overhead
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     MeshComp->SetCastShadow(true);
 
     AttractionAudioComp = CreateDefaultSubobject<UAudioComponent>(TEXT("AttractionAudioComp"));
@@ -49,12 +47,10 @@ AMonkeyBomb::AMonkeyBomb()
     ProjectileMovementComp->MaxSpeed = 10000.0f;
     ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
     ProjectileMovementComp->Velocity = FVector::ZeroVector;
-
     ProjectileMovementComp->bRotationFollowsVelocity = true;
     ProjectileMovementComp->bShouldBounce = true;
     ProjectileMovementComp->Bounciness = 0.15f;
     ProjectileMovementComp->Friction = 0.7f;
-
     ProjectileMovementComp->BounceVelocityStopSimulatingThreshold = 5.0f;
 }
 
@@ -66,7 +62,19 @@ void AMonkeyBomb::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     Params.bIsPushBased = true;
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, bAttractionActivated, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, bHasExploded, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, ExplosionLocation, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, InitialVelocity, Params);
+}
+
+void AMonkeyBomb::BeginPlay()
+{
+    Super::BeginPlay();
+
+    if (HasAuthority() && ProjectileMovementComp)
+    {
+        ProjectileMovementComp->OnProjectileStop.AddDynamic(this, &AMonkeyBomb::OnProjectileStopped);
+    }
 }
 
 void AMonkeyBomb::InitVelocity(const FVector& InVelocity)
@@ -88,16 +96,6 @@ void AMonkeyBomb::OnRep_InitialVelocity()
     if (ProjectileMovementComp)
     {
         ProjectileMovementComp->Velocity = InitialVelocity;
-    }
-}
-
-void AMonkeyBomb::BeginPlay()
-{
-    Super::BeginPlay();
-
-    if (HasAuthority() && ProjectileMovementComp)
-    {
-        ProjectileMovementComp->OnProjectileStop.AddDynamic(this, &AMonkeyBomb::OnProjectileStopped);
     }
 }
 
@@ -144,7 +142,7 @@ void AMonkeyBomb::OnRep_AttractionActivated()
 
 float AMonkeyBomb::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-    if (!HasAuthority() || bHasExploded || DamageAmount <= 0) return 0.f;
+    if (!HasAuthority() || bHasExploded || DamageAmount <= 0.0f) return 0.0f;
     Explode();
     return DamageAmount;
 }
@@ -154,14 +152,21 @@ void AMonkeyBomb::Explode()
     if (!HasAuthority() || bHasExploded) return;
 
     bHasExploded = true;
-    GetWorldTimerManager().ClearTimer(FuseTimerHandle);
+    ExplosionLocation = GetActorLocation();
 
-    const FVector ServerExplosionLocation = GetActorLocation();
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bHasExploded, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, ExplosionLocation, this);
+
+    ForceNetUpdate();
+
+    GetWorldTimerManager().ClearTimer(FuseTimerHandle);
 
     if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
         Director->UnregisterAttractor(this);
     }
+
+    PlayExplosionFX(ExplosionLocation);
 
     ALastStandLegacyGameState* GameState = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
@@ -186,11 +191,10 @@ void AMonkeyBomb::Explode()
         }
     }
 
-  
     UGameplayStatics::ApplyRadialDamage(
         this,
         BaseDamage,
-        ServerExplosionLocation,
+        ExplosionLocation,
         DamageRadius,
         UDamageType::StaticClass(),
         IgnoredActors,
@@ -200,16 +204,26 @@ void AMonkeyBomb::Explode()
         ECC_WorldStatic
     );
 
-
-    Multicast_PlayExplosionFX(ServerExplosionLocation);
-
     SetActorHiddenInGame(true);
     SetActorEnableCollision(false);
-    SetLifeSpan(0.2f);
+
+    SetLifeSpan(2.0f);
 }
 
-void AMonkeyBomb::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize ExplosionLocation)
+void AMonkeyBomb::OnRep_HasExploded()
 {
+    if (bHasExploded)
+    {
+        PlayExplosionFX(ExplosionLocation);
+        SetActorHiddenInGame(true);
+        SetActorEnableCollision(false);
+    }
+}
+
+void AMonkeyBomb::PlayExplosionFX(const FVector& Location)
+{
+    if (GetNetMode() == NM_DedicatedServer) return;
+
     if (AttractionAudioComp && AttractionAudioComp->IsPlaying())
     {
         AttractionAudioComp->Stop();
@@ -217,11 +231,20 @@ void AMonkeyBomb::Multicast_PlayExplosionFX_Implementation(FVector_NetQuantize E
 
     if (ExplosionSound)
     {
-        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, ExplosionLocation);
+        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, Location);
     }
 
-    if (ExplosionVFX && GetWorld())
+    if (ExplosionNiagaraFX && GetWorld())
     {
-        UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ExplosionVFX, ExplosionLocation);
+        UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+            GetWorld(),
+            ExplosionNiagaraFX,
+            Location,
+            FRotator::ZeroRotator,
+            FVector(1.0f),
+            true,
+            true,
+            ENCPoolMethod::AutoRelease
+        );
     }
 }

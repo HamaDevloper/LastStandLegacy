@@ -699,7 +699,7 @@ void ABaseWeapon::RefillAmmo()
     {
         OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 
-        if (bWasEmpty && CurrentAmmo <= 0)
+        if (bWasEmpty || CurrentAmmo <= 0)
         {
             if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
             Reload();
@@ -721,7 +721,7 @@ void ABaseWeapon::Client_OnAmmoRefilled_Implementation(bool bWasEmpty, bool bIsC
 
     OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 
-    if (bWasEmpty && CurrentAmmo <= 0)
+    if (bWasEmpty || CurrentAmmo <= 0)
     {
         if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
         Reload();
