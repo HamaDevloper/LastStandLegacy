@@ -1676,7 +1676,8 @@ void AHama::AddPerkByID(FName PerkID)
     }
 }
 
-void AHama::HandleDeath()
+
+void AHama::OnPlayerDowned()
 {
     if (!HasAuthority()) return;
 
@@ -1689,12 +1690,61 @@ void AHama::HandleDeath()
         PerkBottleMesh->SetStaticMesh(nullptr);
     }
 
-    OwnedPerks.Empty();
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
+    if (CurrentWeapon)
+    {
+        CurrentWeapon->StopFire();
+        if (CurrentWeapon->IsReloading())
+        {
+            CurrentWeapon->CancelReload();
+        }
+    }
 
     if (HamaComponent)
     {
         HamaComponent->ResetStamina();
+    }
+
+    const FName QuickReviveID = FName(TEXT("QuickRevive"));
+    bool bHasQuickRevive = OwnedPerks.Contains(QuickReviveID);
+
+    OwnedPerks.Empty();
+
+    if (bHasQuickRevive)
+    {
+        OwnedPerks.Add(QuickReviveID);
+    }
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
+    ForceNetUpdate();
+}
+
+void AHama::HandleRevived()
+{
+    if (!HasAuthority()) return;
+
+    bIsDead = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
+
+    const FName QuickReviveID = FName(TEXT("QuickRevive"));
+    if (OwnedPerks.Contains(QuickReviveID))
+    {
+        OwnedPerks.Remove(QuickReviveID);
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
+        ForceNetUpdate();
+    }
+}
+
+void AHama::HandleDeath()
+{
+    if (!HasAuthority()) return;
+
+    GetWorldTimerManager().ClearTimer(PerkDrinkTimerHandle);
+    PendingPerkID = NAME_None;
+
+    if (PerkBottleMesh)
+    {
+        PerkBottleMesh->SetVisibility(false);
+        PerkBottleMesh->SetStaticMesh(nullptr);
     }
 
     bIsDead = true;
@@ -1722,11 +1772,6 @@ void AHama::HandleDeath()
         ThirdWeapon->Destroy();
         ThirdWeapon = nullptr;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
-    }
-
-    if (IsLocallyControlled())
-    {
-        OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
     }
 }
 
@@ -2055,7 +2100,6 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
         return;
     }
 
-    // 🔴 RETURN 3: ئاکتەرەکە Interfaceی Damageableی نییە یان ئامادە نییە دیمەج وەربگرێت
     IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor);
     if (!Damageable || !Damageable->CanReceiveWeaponDamage())
     {

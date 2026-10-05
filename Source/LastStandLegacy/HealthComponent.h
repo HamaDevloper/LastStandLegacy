@@ -56,8 +56,8 @@ public:
 
     bool IsDowned() const;
 
-    FORCEINLINE bool IsBeingRevived() const { return bIsBeingRevived; }
-    FORCEINLINE void SetBeingRevived(bool bState) { bIsBeingRevived = bState; }
+     bool IsBeingRevived() const { return bIsBeingRevived; }
+     void SetBeingRevived(bool bState) { bIsBeingRevived = bState; }
 
     FOnDeathDelegate OnDeath;
     FOnReviveStateChanged OnReviveStateChanged;

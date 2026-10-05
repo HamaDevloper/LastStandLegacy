@@ -87,6 +87,7 @@ void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 
         if (CurrentHealth <= 0.f)
         {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Player Downed!")); 
             DownPlayer();
         }
         else
@@ -118,6 +119,8 @@ void UHealthComponent::DownPlayer()
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || IsDowned()) return;
 
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Player Downed!"));
+
     bIsBeingRevived = false;
     CurrentReviver = nullptr;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
@@ -147,7 +150,7 @@ void UHealthComponent::DownPlayer()
                 ThrowableComp->HandleOwnerDowned();
             }
 
-            OwnerCharacter->HandleDeath();
+            OwnerCharacter->OnPlayerDowned();
         }
 
         if (auto* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
@@ -158,8 +161,24 @@ void UHealthComponent::DownPlayer()
         ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
         if (GS && GS->bIsSoloMatch && OwnerCharacter && OwnerCharacter->HasQuickRevive())
         {
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Solo Revive Active!"));
             World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
             return;
+        }
+
+        if (GS && GS->bIsSoloMatch)
+        {
+            if (OwnerCharacter && OwnerCharacter->HasQuickRevive())
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Solo Revive Active!"));
+                World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
+                return;
+            }
+            else
+            {
+                HandlePlayerDeath();
+                return;
+            }
         }
 
         World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, DeathTime, false);
@@ -190,6 +209,13 @@ void UHealthComponent::Revive()
 
     CurrentHealth = MaxHealth;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
+
+    if (OwnerCharacter)
+    {
+        OwnerCharacter->HandleRevived();
+    }
+
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Player Revived!"));
 }
 
 void UHealthComponent::HandlePlayerDeath()
@@ -202,6 +228,11 @@ void UHealthComponent::HandlePlayerDeath()
         World->GetTimerManager().ClearTimer(DownTimerHandle);
     }
 
+    if (OwnerCharacter)
+    {
+        OwnerCharacter->HandleDeath();
+    }
+  
     OnDeath.Broadcast();
 
     APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
