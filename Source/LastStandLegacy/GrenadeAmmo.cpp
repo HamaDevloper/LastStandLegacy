@@ -32,7 +32,17 @@ AGrenadeAmmo::AGrenadeAmmo()
 bool AGrenadeAmmo::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
-    return InteractingPlayer->SetCanInteract();
+    if (!InteractingPlayer->SetCanInteract()) return false;
+
+    UThrowableComponent* ThrowableComp = InteractingPlayer->GetThrowableComponent();
+    if (!ThrowableComp) return false;
+
+    if (ThrowableComp->GetCurrentGrenadeCount() >= ThrowableComp->GetMaxGrenadeCount())
+    {
+        return false;
+    }
+
+    return true;
 }
 
 bool AGrenadeAmmo::Client_PreInteract(AHama* InteractingPlayer)
@@ -93,4 +103,4 @@ void AGrenadeAmmo::Interact(AHama* InteractingPlayer)
 FString AGrenadeAmmo::GetInteractMessage(AHama* InteractingPlayer)
 {
     return FString::Printf(TEXT("Press F to purchase a grenade for %d points"), GrenadeCost);
-}+
+}

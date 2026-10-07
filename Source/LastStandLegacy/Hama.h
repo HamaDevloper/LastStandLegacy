@@ -415,6 +415,7 @@ public:
     FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
     FORCEINLINE bool GetDeathMachine() const { return bIsDeathMachineActive; }
+    FORCEINLINE UThrowableComponent* GetThrowableComponent() const { return ThrowableComponent; }
     bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     const TArray<FName>& GetOwnedPerks() const { return OwnedPerks; }
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
