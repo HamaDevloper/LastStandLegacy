@@ -35,8 +35,15 @@ protected:
     TObjectPtr<URecoilComponent> RecoilComponent;
 
 private:
-    void CreateMainWidget();
-    void BindGameState();
-
     FTimerHandle GameStateBindTimer;
+
+    UPROPERTY()
+    TObjectPtr<AHama> CurrentSpectateTarget;
+
+public:
+    void OnOwnerDied();
+
+protected:
+    AHama* GetNextSpectatorTarget(AHama* CurrentTarget = nullptr);
+    virtual void ClientGotoState_Implementation(FName NewState, uint8 GroupID) override;
 };

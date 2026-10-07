@@ -1,13 +1,11 @@
 ﻿#include "HealthComponent.h"
 #include "Hama.h"
 #include "HamaComponent.h"
+#include "HamaPlayerController.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "GameFramework/GameStateBase.h"
-#include "GameFramework/PlayerState.h"
-#include "LastStandLegacyGameState.h"
-#include "ZombieDirectorSubsystem.h"
-#include "ThrowableComponent.h"
+#include "LastStandLegacyGameMode.h" 
 
 UHealthComponent::UHealthComponent()
 {
@@ -32,8 +30,8 @@ void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
-
     Params.Condition = COND_OwnerOnly;
+
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, CurrentHealth, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, MaxHealth, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, bIsBeingRevived, Params);
@@ -46,26 +44,20 @@ bool UHealthComponent::IsDowned() const
 
 void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
 {
-    if (CurrentHealth < OldHealth)
+    if (CurrentHealth < OldHealth && OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
-        if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-        {
-            // OwnerCharacter->Client_ShowDamageIndicator();
-        }
+        // OwnerCharacter->Client_ShowDamageIndicator();
     }
 }
 
 void UHealthComponent::OnRep_IsBeingRevived()
 {
-    if (OnReviveStateChanged.IsBound())
-    {
-        OnReviveStateChanged.Broadcast(bIsBeingRevived);
-    }
+    OnReviveStateChanged.Broadcast(bIsBeingRevived);
 }
 
 void UHealthComponent::UpgradeHealth(float Amount)
 {
-    if (!GetOwner()->HasAuthority() || Amount <= 0.0f) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority() || Amount <= 0.0f) return;
 
     MaxHealth += Amount;
     CurrentHealth = FMath::Clamp(CurrentHealth + Amount, 0.f, MaxHealth);
@@ -87,7 +79,6 @@ void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 
         if (CurrentHealth <= 0.f)
         {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Player Downed!")); 
             DownPlayer();
         }
         else
@@ -100,8 +91,7 @@ void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 void UHealthComponent::RegenerateHealth()
 {
     float HealAmountPerTick = MaxHealth / 20.0f;
-
-    CurrentHealth += HealAmountPerTick;
+    CurrentHealth = FMath::Min(CurrentHealth + HealAmountPerTick, MaxHealth);
 
     if (CurrentHealth >= MaxHealth)
     {
@@ -118,8 +108,6 @@ void UHealthComponent::RegenerateHealth()
 void UHealthComponent::DownPlayer()
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || IsDowned()) return;
-
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Player Downed!"));
 
     bIsBeingRevived = false;
     CurrentReviver = nullptr;
@@ -142,37 +130,17 @@ void UHealthComponent::DownPlayer()
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
 
-
-        if (OwnerCharacter)
+        if (ALastStandLegacyGameMode* GM = World->GetAuthGameMode<ALastStandLegacyGameMode>())
         {
-            if (UThrowableComponent* ThrowableComp = OwnerCharacter->FindComponentByClass<UThrowableComponent>())
-            {
-                ThrowableComp->HandleOwnerDowned();
-            }
-
-            OwnerCharacter->OnPlayerDowned();
+            GM->CheckGameOverCondition();
         }
 
-        if (auto* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
-        {
-            Director->SetPlayerTargetable(Cast<APawn>(GetOwner()), false);
-        }
+        AGameStateBase* GS = World->GetGameState();
 
-        ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
-    
-        if (GS && GS->bIsSoloMatch)
+        if (GS && OwnerCharacter && OwnerCharacter->HasQuickRevive() /* و بەستنەوە بە Solo Check لە GameMode/GameState */)
         {
-            if (OwnerCharacter && OwnerCharacter->HasQuickRevive())
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Solo Revive Active!"));
-                World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
-                return;
-            }
-            else
-            {
-                HandlePlayerDeath();
-                return;
-            }
+            World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
+            return;
         }
 
         World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, DeathTime, false);
@@ -181,9 +149,10 @@ void UHealthComponent::DownPlayer()
 
 void UHealthComponent::Revive()
 {
-    if (!GetOwner()->HasAuthority()) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 
     bIsBeingRevived = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
 
     if (OwnerComponent)
     {
@@ -194,27 +163,18 @@ void UHealthComponent::Revive()
     {
         World->GetTimerManager().ClearTimer(DownTimerHandle);
         World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
-
-        if (auto* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
-        {
-            Director->SetPlayerTargetable(Cast<APawn>(GetOwner()), true);
-        }
     }
 
     CurrentHealth = MaxHealth;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
-
-    if (OwnerCharacter)
-    {
-        OwnerCharacter->HandleRevived();
-    }
-
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Player Revived!"));
 }
 
 void UHealthComponent::HandlePlayerDeath()
 {
-    if (!GetOwner()->HasAuthority() || !OwnerCharacter || OwnerCharacter->bIsDead) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !OwnerCharacter || OwnerCharacter->bIsDead)
+    {
+        return;
+    }
 
     if (UWorld* World = GetWorld())
     {
@@ -222,35 +182,22 @@ void UHealthComponent::HandlePlayerDeath()
         World->GetTimerManager().ClearTimer(DownTimerHandle);
     }
 
-    if (OwnerCharacter)
-    {
-        OwnerCharacter->HandleDeath();
-    }
-  
     OnDeath.Broadcast();
 
-    APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
-    if (PC && GetWorld() && GetWorld()->GetGameState())
+    if (APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController()))
     {
-        APawn* SpectatorTargetPawn = nullptr;
-        for (auto PlayerState : GetWorld()->GetGameState()->PlayerArray)
+        if (AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(PC))
         {
-            if (PlayerState && PlayerState->GetPawn() && PlayerState->GetPawn() != OwnerCharacter)
-            {
-                SpectatorTargetPawn = PlayerState->GetPawn();
-                break;
-            }
+            HamaPC->OnOwnerDied(); 
         }
+    }
 
-        PC->UnPossess();
-
-        if (SpectatorTargetPawn)
+    if (UWorld* World = GetWorld())
+    {
+        if (ALastStandLegacyGameMode* GM = World->GetAuthGameMode<ALastStandLegacyGameMode>())
         {
-            PC->SetViewTargetWithBlend(SpectatorTargetPawn, 0.5f);
+            GM->CheckGameOverCondition();
         }
-
-        PC->ChangeState(NAME_Spectating);
-        PC->ClientGotoState(NAME_Spectating);
     }
 
     OwnerCharacter->Destroy();

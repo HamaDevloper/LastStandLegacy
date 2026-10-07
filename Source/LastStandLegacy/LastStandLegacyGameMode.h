@@ -129,4 +129,13 @@ protected:
 
 private:
     FTimerHandle RoundTransitionTimerHandle;
+
+
+public:
+    void CheckGameOverCondition();
+
+    virtual void Logout(AController* Exiting) override;
+
+protected:
+    void TriggerGameOver();
 };

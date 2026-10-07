@@ -449,3 +449,43 @@ void ALastStandLegacyGameMode::ProcessNukeKills()
         }
     }
 }
+
+void ALastStandLegacyGameMode::CheckGameOverCondition()
+{
+    ALastStandLegacyGameState* GS = GetGameState<ALastStandLegacyGameState>();
+    if (!GS) return;
+
+    bool bIsAnyPlayerAliveAndUp = false;
+
+    for (APlayerState* PS : GS->PlayerArray)
+    {
+        if (!PS || PS->IsABot()) continue;
+
+        AHama* Character = Cast<AHama>(PS->GetPawn());
+
+        if (IsValid(Character) && !Character->bIsDead && !Character->IsDowned())
+        {
+            bIsAnyPlayerAliveAndUp = true;
+            break;
+        }
+    }
+
+    if (!bIsAnyPlayerAliveAndUp)
+    {
+        TriggerGameOver();
+    }
+}
+
+void ALastStandLegacyGameMode::Logout(AController* Exiting)
+{
+    Super::Logout(Exiting);
+
+    CheckGameOverCondition();
+}
+
+void ALastStandLegacyGameMode::TriggerGameOver()
+{
+    UE_LOG(LogTemp, Warning, TEXT("GAME OVER: All players are downed or dead!"));
+
+    // لۆجیکی Game Over (نیشاندانی UI بۆ کلاینتەکان، Restart Level، یان فێن کردنی AI Director)
+}

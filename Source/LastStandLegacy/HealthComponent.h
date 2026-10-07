@@ -35,7 +35,7 @@ protected:
     int32 SoloReviveTime = 3;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health")
-    int32 DeathTime = 45;
+    int32 DeathTime = 10;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health")
     float HealthGenerateDelay = 3.f;

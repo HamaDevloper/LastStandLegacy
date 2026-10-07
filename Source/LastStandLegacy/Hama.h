@@ -420,7 +420,6 @@ public:
     const TArray<FName>& GetOwnedPerks() const { return OwnedPerks; }
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
     FORCEINLINE bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
-    UFUNCTION(BlueprintCallable, Category = "Hama|Perks")
     FORCEINLINE bool IsDrinkingPerk() const {return PerkBottleMesh && PerkBottleMesh->IsVisible(); }
     bool IsMovingForward() const;
     bool IsSliding() const { return HamaComponent->IsSlide(); }
