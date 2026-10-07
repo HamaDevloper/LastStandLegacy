@@ -159,13 +159,7 @@ void UHealthComponent::DownPlayer()
         }
 
         ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
-        if (GS && GS->bIsSoloMatch && OwnerCharacter && OwnerCharacter->HasQuickRevive())
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Solo Revive Active!"));
-            World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
-            return;
-        }
-
+    
         if (GS && GS->bIsSoloMatch)
         {
             if (OwnerCharacter && OwnerCharacter->HasQuickRevive())

@@ -418,9 +418,9 @@ public:
     bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
     const TArray<FName>& GetOwnedPerks() const { return OwnedPerks; }
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
-    bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
+    FORCEINLINE bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
     UFUNCTION(BlueprintCallable, Category = "Hama|Perks")
-    bool IsDrinkingPerk() const {return PerkBottleMesh && PerkBottleMesh->IsVisible(); }
+    FORCEINLINE bool IsDrinkingPerk() const {return PerkBottleMesh && PerkBottleMesh->IsVisible(); }
     bool IsMovingForward() const;
     bool IsSliding() const { return HamaComponent->IsSlide(); }
     bool IsDiving() const { return HamaComponent->IsDiving(); }

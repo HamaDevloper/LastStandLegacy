@@ -55,7 +55,7 @@ public:
     void RefillGrenadesToMax();
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
-    bool IsThrowingInProcess() const { return bIsThrowingLocal || ChargeState != EThrowChargeState::Idle; }
+    FORCEINLINE bool IsThrowingInProcess() const { return bIsThrowingLocal || ChargeState != EThrowChargeState::Idle; }
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     bool IsCharging() const { return ChargeState == EThrowChargeState::Charging; }

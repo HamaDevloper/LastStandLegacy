@@ -12,7 +12,7 @@ AWallWeaponBuy::AWallWeaponBuy()
     bReplicates = true;
     SetReplicatingMovement(false);
 
-    NetDormancy = DORM_Initial;
+    SetNetDormancy(DORM_Initial);
     SetNetUpdateFrequency(1.f);
     SetMinNetUpdateFrequency(0.5f);
 

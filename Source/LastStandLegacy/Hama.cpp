@@ -1676,7 +1676,6 @@ void AHama::AddPerkByID(FName PerkID)
     }
 }
 
-
 void AHama::OnPlayerDowned()
 {
     if (!HasAuthority()) return;

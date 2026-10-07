@@ -198,6 +198,8 @@ bool UHamaAbilityComponent::CanActivateMedicalSupportLocal() const
     const FVector CenterLocation = CachedOwner->GetActorLocation();
     const float SphereRadiusSq = FMath::Square(SphereRadius);
 
+    DrawDebugSphere(GetWorld(), CenterLocation, SphereRadius, 12, FColor::Yellow, false, 0.1f, 0, 1.0f);
+
     for (APlayerState* PS : GS->PlayerArray)
     {
         if (!PS) continue;

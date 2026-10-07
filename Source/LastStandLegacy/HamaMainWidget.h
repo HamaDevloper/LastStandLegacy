@@ -52,6 +52,9 @@ protected:
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UTextBlock> PingText;
 
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UTextBlock> ReviveText;
+
     // --- Animations & PowerUps ---
     UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
     TObjectPtr<UWidgetAnimation> PowerUpAnim;
