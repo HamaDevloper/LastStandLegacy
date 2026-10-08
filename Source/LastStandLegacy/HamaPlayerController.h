@@ -2,12 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "InputActionValue.h"
 #include "HamaPlayerController.generated.h"
 
-class UHamaMainWidget;
+class UInputMappingContext;
+class UInputAction;
 class AHama;
-class AHamaPlayerState;
-class ALastStandLegacyGameState;
+class UHamaMainWidget;
 class URecoilComponent;
 
 UCLASS()
@@ -16,34 +17,41 @@ class LASTSTANDLEGACY_API AHamaPlayerController : public APlayerController
     GENERATED_BODY()
 
 public:
-
     AHamaPlayerController();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
-    TSubclassOf<UHamaMainWidget> MainWidgetClass;
+    void OnOwnerDied();
 
-    UPROPERTY(BlueprintReadOnly, Category = "UI")
-    UHamaMainWidget* MainWidgetRef;
+    UFUNCTION(Server, Reliable)
+    void Server_SpectateNext();
 
 protected:
     virtual void BeginPlay() override;
     virtual void OnRep_PlayerState() override;
     virtual void AcknowledgePossession(APawn* P) override;
+    virtual void SetupInputComponent() override;
+    virtual void BeginSpectatingState() override;
+
     void CheckAndBindUI();
+    AHama* GetNextSpectatorTarget(AHama* CurrentTarget);
+
+    void SpectateNextActionPressed(const FInputActionValue& Value);
+
+protected:
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputMappingContext> SpectatorMappingContext;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> SpectateNextAction;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spectate")
+    TObjectPtr<AHama> CurrentSpectateTarget;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<URecoilComponent> RecoilComponent;
 
-private:
-    FTimerHandle GameStateBindTimer;
+    UPROPERTY(EditDefaultsOnly, Category = "UI")
+    TSubclassOf<UHamaMainWidget> MainWidgetClass;
 
     UPROPERTY()
-    TObjectPtr<AHama> CurrentSpectateTarget;
-
-public:
-    void OnOwnerDied();
-
-protected:
-    AHama* GetNextSpectatorTarget(AHama* CurrentTarget = nullptr);
-    virtual void ClientGotoState_Implementation(FName NewState, uint8 GroupID) override;
+    TObjectPtr<UHamaMainWidget> MainWidgetRef;
 };

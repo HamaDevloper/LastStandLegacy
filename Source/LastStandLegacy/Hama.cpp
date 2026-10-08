@@ -96,6 +96,7 @@ void AHama::BeginPlay()
     {
         InteractSphere->OnComponentBeginOverlap.AddDynamic(this, &AHama::OnInteractSphereBeginOverlap);
         InteractSphere->OnComponentEndOverlap.AddDynamic(this, &AHama::OnInteractSphereEndOverlap);
+        HealthComponent->OnDownStateChanged.BindUObject(this, &AHama::HandleDownStateChanged);
     }
 
     if (HasAuthority())
@@ -1109,6 +1110,144 @@ bool AHama::IsWeaponCurrentlyUpgrading(TSubclassOf<ABaseWeapon> WeaponClassToChe
     }
 
     return false;
+}
+
+void AHama::HandleDownStateChanged(bool bIsDowned)
+{
+    if (!HasAuthority()) return;
+
+    if (bIsDowned)
+    {
+        EquipDownedWeapon();
+    }
+    else
+    {
+        RestorePreDownWeapon();
+    }
+}
+
+void AHama::EquipDownedWeapon()
+{
+    if (!HasAuthority()) return;
+
+    PreDownWeapon = CurrentWeapon;
+
+    if (CurrentWeapon)
+    {
+        CurrentWeapon->SetActorHiddenInGame(true);
+    }
+
+    ABaseWeapon* ExistingPistol = nullptr;
+
+    if (PrimaryWeapon && PrimaryWeapon->IsA(DownedPistolClass))
+    {
+        ExistingPistol = PrimaryWeapon;
+    }
+    else if (SecondaryWeapon && SecondaryWeapon->IsA(DownedPistolClass))
+    {
+        ExistingPistol = SecondaryWeapon;
+    }
+    else if (ThirdWeapon && ThirdWeapon->IsA(DownedPistolClass))
+    {
+        ExistingPistol = ThirdWeapon;
+    }
+
+    if (ExistingPistol)
+    {
+        CurrentWeapon = ExistingPistol;
+        CurrentWeapon->SetActorHiddenInGame(false);
+    }
+    else if (DownedPistolClass)
+    {
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Owner = this;
+        SpawnParams.Instigator = GetInstigator();
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+        DownedWeaponInstance = GetWorld()->SpawnActor<ABaseWeapon>(DownedPistolClass, GetActorTransform(), SpawnParams);
+        if (DownedWeaponInstance)
+        {
+            DownedWeaponInstance->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+            CurrentWeapon = DownedWeaponInstance;
+        }
+    }
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
+    OnRep_CurrentWeapon(PreDownWeapon);
+}
+
+void AHama::RestorePreDownWeapon()
+{
+    if (!HasAuthority()) return;
+
+    if (DownedWeaponInstance)
+    {
+        DownedWeaponInstance->Destroy();
+        DownedWeaponInstance = nullptr;
+    }
+
+    if (PreDownWeapon && IsValid(PreDownWeapon))
+    {
+        CurrentWeapon = PreDownWeapon;
+        CurrentWeapon->SetActorHiddenInGame(false);
+    }
+    else if (PrimaryWeapon)
+    {
+        CurrentWeapon = PrimaryWeapon;
+        CurrentWeapon->SetActorHiddenInGame(false);
+    }
+
+    ABaseWeapon* OldWeapon = PreDownWeapon;
+    PreDownWeapon = nullptr;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
+    OnRep_CurrentWeapon(OldWeapon);
+}
+
+void AHama::Destroyed()
+{
+    Super::Destroyed();
+
+    if (HasAuthority())
+    {
+        if (DownedWeaponInstance)
+        {
+            DownedWeaponInstance->Destroy();
+            DownedWeaponInstance = nullptr;
+        }
+
+        if (ActiveDeathMachine)
+        {
+            ActiveDeathMachine->Destroy();
+            ActiveDeathMachine = nullptr;
+        }
+
+        if (PrimaryWeapon)
+        {
+            PrimaryWeapon->Destroy();
+            PrimaryWeapon = nullptr;
+        }
+
+        if (SecondaryWeapon)
+        {
+            SecondaryWeapon->Destroy();
+            SecondaryWeapon = nullptr;
+        }
+
+        if (ThirdWeapon)
+        {
+            ThirdWeapon->Destroy();
+            ThirdWeapon = nullptr;
+        }
+
+        if (CurrentWeapon && IsValid(CurrentWeapon))
+        {
+            CurrentWeapon->Destroy();
+            CurrentWeapon = nullptr;
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------

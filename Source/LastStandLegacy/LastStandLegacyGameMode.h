@@ -114,6 +114,7 @@ private:
 
     UFUNCTION()
     void ProcessNukeKills();
+    void RespawnDeadPlayers();
 
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie Spawning|Timing")
@@ -135,7 +136,14 @@ public:
     void CheckGameOverCondition();
 
     virtual void Logout(AController* Exiting) override;
+    virtual void RestartPlayer(AController* NewPlayer) override;
 
 protected:
     void TriggerGameOver();
+
+    bool GetSpawnTransformNearTeammate(AController* Player, FTransform& OutSpawnTransform);
+
+
+    UPROPERTY(EditDefaultsOnly, Category = "LastStand|Spawning")
+    float TeammateSpawnRadius = 300.0f;
 };

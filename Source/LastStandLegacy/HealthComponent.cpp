@@ -30,11 +30,13 @@ void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
-    Params.Condition = COND_OwnerOnly;
 
+    Params.Condition = COND_None;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, bIsBeingRevived, Params);
+
+    Params.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, CurrentHealth, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, MaxHealth, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, bIsBeingRevived, Params);
 }
 
 bool UHealthComponent::IsDowned() const
@@ -118,6 +120,8 @@ void UHealthComponent::DownPlayer()
         OwnerComponent->SetDowned(true);
     }
 
+    OnDownStateChanged.ExecuteIfBound(true);
+
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
@@ -159,6 +163,8 @@ void UHealthComponent::Revive()
         OwnerComponent->SetDowned(false);
     }
 
+    OnDownStateChanged.ExecuteIfBound(false);
+
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(DownTimerHandle);
@@ -175,6 +181,9 @@ void UHealthComponent::HandlePlayerDeath()
     {
         return;
     }
+
+    OwnerCharacter->bIsDead = true;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, OwnerCharacter);
 
     if (UWorld* World = GetWorld())
     {

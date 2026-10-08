@@ -130,6 +130,15 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Weapons")
     FName SocketName;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Weapons")
+    TSubclassOf<ABaseWeapon> DownedPistolClass;
+
+    UPROPERTY()
+    TObjectPtr<ABaseWeapon> PreDownWeapon;
+
+    UPROPERTY()
+    TObjectPtr<ABaseWeapon> DownedWeaponInstance;
+
 public:
     void RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefill);
     ABaseWeapon* GetWeaponByClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;
@@ -214,10 +223,19 @@ public:
     ABaseWeapon* GetNextWeaponWithAmmo() const;
     void AutoSwapToAvailableWeapon();
 
+    protected:
+
+        void HandleDownStateChanged(bool bIsDown);
+        void EquipDownedWeapon();
+        void RestorePreDownWeapon();
+
+        virtual void Destroyed() override;
+
     // -----------------------------------------------------------------------------
     // Input Mapping & Actions
     // -----------------------------------------------------------------------------
 
+public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputMappingContext> DefaultMappingContext;
 

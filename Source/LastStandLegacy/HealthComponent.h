@@ -9,6 +9,7 @@ class UHamaComponent;
 
 DECLARE_MULTICAST_DELEGATE(FOnDeathDelegate);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnReviveStateChanged, bool);
+DECLARE_DELEGATE_OneParam(FOnDownStateChanged, bool);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class LASTSTANDLEGACY_API UHealthComponent : public UActorComponent
@@ -17,6 +18,8 @@ class LASTSTANDLEGACY_API UHealthComponent : public UActorComponent
 
 public:
     UHealthComponent();
+
+    FOnDownStateChanged OnDownStateChanged;
 
 protected:
     virtual void BeginPlay() override;

@@ -13,6 +13,7 @@
 #include "HamaAbilityComponent.h"
 #include "PerkSpawnPoint.h"
 #include "BasePerk.h"
+#include "NavigationSystem.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -55,7 +56,6 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
                 EHamaAbilityType AssignedAbility = ActiveAbilities.Pop();
                 PS->SetAssignedRole(AssignedAbility);
 
-                UE_LOG(LogTemp, Log, TEXT("Assigned permanent role to %s via PlayerState!"), *NewPlayer->GetName());
             }
             else if (ActiveAbilities.IsEmpty())
             {
@@ -249,6 +249,7 @@ float ALastStandLegacyGameMode::GetCalculateSpawnInterval() const
 
 void ALastStandLegacyGameMode::StartNextRound()
 {
+    RespawnDeadPlayers();
     DeadZombiesCount = 0;
     ZombiesSpawnedThisRound = 0;
     ActiveZombiesCount = 0;
@@ -275,6 +276,90 @@ void ALastStandLegacyGameMode::StartNextRound()
     const float NewInterval = GetCalculateSpawnInterval();
 
     GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, NewInterval, true);
+}
+
+void ALastStandLegacyGameMode::RespawnDeadPlayers()
+{
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+    {
+        APlayerController* PC = It->Get();
+        if (PC && (PC->GetPawn() == nullptr || PC->IsInState(NAME_Spectating)))
+        {
+            PC->ChangeState(NAME_Playing);
+            RestartPlayer(PC);
+        }
+    }
+}
+
+void ALastStandLegacyGameMode::RestartPlayer(AController* NewPlayer)
+{
+    if (!NewPlayer) return;
+
+    FTransform TeammateSpawnTransform;
+
+    if (GetSpawnTransformNearTeammate(NewPlayer, TeammateSpawnTransform))
+    {
+        APawn* NewPawn = SpawnDefaultPawnAtTransform(NewPlayer, TeammateSpawnTransform);
+        if (NewPawn)
+        {
+            NewPlayer->Possess(NewPawn);
+            FinishRestartPlayer(NewPlayer, NewPawn->GetActorRotation());
+            return;
+        }
+    }
+
+    Super::RestartPlayer(NewPlayer);
+}
+
+bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player, FTransform& OutSpawnTransform)
+{
+    UWorld* World = GetWorld();
+    if (!World) return false;
+
+    TArray<AHama*> AliveTeammates;
+
+    for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+    {
+        APlayerController* PC = It->Get();
+        if (PC && PC != Player)
+        {
+            AHama* Candidate = Cast<AHama>(PC->GetPawn());
+            if (IsValid(Candidate) && !Candidate->bIsDead && !Candidate->IsDowned())
+            {
+                AliveTeammates.Add(Candidate);
+            }
+        }
+    }
+
+    if (AliveTeammates.Num() == 0)
+    {
+        return false; 
+    }
+
+    AHama* TargetTeammate = AliveTeammates[FMath::RandRange(0, AliveTeammates.Num() - 1)];
+    FVector TeammateLocation = TargetTeammate->GetActorLocation();
+    FRotator TeammateRotation = TargetTeammate->GetActorRotation();
+
+    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    if (NavSys)
+    {
+        FNavLocation ResultNavLocation;
+        bool bFound = NavSys->GetRandomReachablePointInRadius(TeammateLocation, TeammateSpawnRadius, ResultNavLocation);
+
+        if (bFound)
+        {
+            FVector FinalLocation = ResultNavLocation.Location + FVector(0.f, 0.f, 90.f);
+            OutSpawnTransform = FTransform(TeammateRotation, FinalLocation, FVector::OneVector);
+            return true;
+        }
+    }
+
+    FVector FallbackLocation = TeammateLocation + (TargetTeammate->GetActorRightVector() * 150.f) + FVector(0.f, 0.f, 20.f);
+    OutSpawnTransform = FTransform(TeammateRotation, FallbackLocation, FVector::OneVector);
+    return true;
 }
 
 void ALastStandLegacyGameMode::ProcessSpawning()
@@ -459,7 +544,7 @@ void ALastStandLegacyGameMode::CheckGameOverCondition()
 
     for (APlayerState* PS : GS->PlayerArray)
     {
-        if (!PS || PS->IsABot()) continue;
+        if (!PS) continue;
 
         AHama* Character = Cast<AHama>(PS->GetPawn());
 

@@ -25,7 +25,8 @@ public class LastStandLegacy : ModuleRules
             "SlateCore",
             "PhysicsCore",
             "AIModule",
-            "Niagara"
+            "Niagara",
+            "NavigationSystem"
         });
     }
 }
