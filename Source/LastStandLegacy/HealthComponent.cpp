@@ -6,6 +6,7 @@
 #include "Net/Core/PushModel/PushModel.h"
 #include "GameFramework/GameStateBase.h"
 #include "LastStandLegacyGameMode.h" 
+#include "GameFramework/CharacterMovementComponent.h"
 
 UHealthComponent::UHealthComponent()
 {
@@ -185,19 +186,36 @@ void UHealthComponent::HandlePlayerDeath()
     OwnerCharacter->bIsDead = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, OwnerCharacter);
 
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red,
+            FString::Printf(TEXT("[HealthComp] Player Died: %s (Authority: YES)"), *OwnerCharacter->GetName()));
+    }
+
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
         World->GetTimerManager().ClearTimer(DownTimerHandle);
     }
 
+    OwnerCharacter->SetActorEnableCollision(false);
+    if (UCharacterMovementComponent* MoveComp = OwnerCharacter->GetCharacterMovement())
+    {
+        MoveComp->StopActiveMovement();
+        MoveComp->DisableMovement();
+    }
+
     OnDeath.Broadcast();
 
-    if (APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController()))
+    if (AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(OwnerCharacter->GetController()))
     {
-        if (AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(PC))
+        HamaPC->OnOwnerDied();
+    }
+    else
+    {
+        if (GEngine)
         {
-            HamaPC->OnOwnerDied(); 
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[HealthComp] ERROR: OwnerCharacter Controller is NOT AHamaPlayerController!"));
         }
     }
 
@@ -209,5 +227,5 @@ void UHealthComponent::HandlePlayerDeath()
         }
     }
 
-    OwnerCharacter->Destroy();
+    OwnerCharacter->SetLifeSpan(5.0f);
 }

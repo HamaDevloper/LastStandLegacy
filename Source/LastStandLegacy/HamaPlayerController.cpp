@@ -1,9 +1,13 @@
 ﻿#include "HamaPlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "InputMappingContext.h"
 #include "Hama.h"
 #include "GameFramework/GameStateBase.h"
+#include "GameFramework/PlayerState.h"
+#include "LastStandLegacyGameState.h"
 #include "HamaMainWidget.h"
+#include "RecoilComponent.h"
 
 AHamaPlayerController::AHamaPlayerController()
 {
@@ -13,20 +17,26 @@ AHamaPlayerController::AHamaPlayerController()
 void AHamaPlayerController::BeginPlay()
 {
     Super::BeginPlay();
-    if (IsLocalController()) CheckAndBindUI();
+    if (IsLocalController())
+    {
+        CheckAndBindUI();
+    }
 }
 
 void AHamaPlayerController::OnRep_PlayerState()
 {
     Super::OnRep_PlayerState();
-    if (IsLocalController()) CheckAndBindUI();
+    if (IsLocalController())
+    {
+        CheckAndBindUI();
+    }
 }
 
 void AHamaPlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
 
-    if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent))
+    if (UEnhancedInputComponent* EnhancedInput = CastChecked<UEnhancedInputComponent>(InputComponent))
     {
         if (SpectateNextAction)
         {
@@ -35,52 +45,103 @@ void AHamaPlayerController::SetupInputComponent()
     }
 }
 
+void AHamaPlayerController::OnPossess(APawn* InPawn)
+{
+    bAutoManageActiveCameraTarget = true;
+    CurrentSpectateTarget = nullptr;
+
+    ResetIgnoreMoveInput();
+    ResetIgnoreLookInput();
+
+    if (HasAuthority())
+    {
+        GetWorldTimerManager().ClearTimer(SpectateValidationTimerHandle);
+    }
+
+    Super::OnPossess(InPawn);
+}
+
 void AHamaPlayerController::AcknowledgePossession(APawn* P)
 {
     Super::AcknowledgePossession(P);
 
-    if (IsLocalController())
+    AHama* HamaPawn = Cast<AHama>(P);
+    if (!IsLocalController() || !HamaPawn) return;
+
+    bAutoManageActiveCameraTarget = true;
+    SetInputMode(FInputModeGameOnly());
+    bShowMouseCursor = false;
+
+    SafeRemoveMappingContext(SpectatorMappingContext);
+
+    if (HamaPawn->DefaultMappingContext)
     {
-        CheckAndBindUI();
-
-        FInputModeGameOnly GameInputMode;
-        SetInputMode(GameInputMode);
-        bShowMouseCursor = false;
-
-        ResetIgnoreMoveInput();
-        ResetIgnoreLookInput();
-
-        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
-        {
-            Subsystem->ClearAllMappings();
-
-            if (AHama* HamaPawn = Cast<AHama>(P))
-            {
-                if (HamaPawn->DefaultMappingContext)
-                {
-                    Subsystem->AddMappingContext(HamaPawn->DefaultMappingContext, 0);
-                }
-            }
-        }
+        ActiveGameplayContext = HamaPawn->DefaultMappingContext;
+        SafeAddMappingContext(HamaPawn->DefaultMappingContext, 0);
     }
+
+    CheckAndBindUI();
 }
 
-void AHamaPlayerController::BeginSpectatingState()
+void AHamaPlayerController::ClientRestart_Implementation(APawn* NewPawn)
 {
-    Super::BeginSpectatingState();
+    Super::ClientRestart_Implementation(NewPawn);
 
-    if (IsLocalController())
+    if (!NewPawn || !IsLocalController()) return;
+
+    bAutoManageActiveCameraTarget = true;
+    ChangeState(NAME_Playing);
+
+    if (PlayerInput)
     {
-        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
-        {
-            Subsystem->ClearAllMappings();
-
-            if (SpectatorMappingContext)
-            {
-                Subsystem->AddMappingContext(SpectatorMappingContext, 0);
-            }
-        }
+        PlayerInput->FlushPressedKeys();
     }
+
+    ResetIgnoreMoveInput();
+    ResetIgnoreLookInput();
+
+    SafeRemoveMappingContext(SpectatorMappingContext);
+
+    if (AHama* HamaPawn = Cast<AHama>(NewPawn))
+    {
+        ActiveGameplayContext = HamaPawn->DefaultMappingContext;
+        SafeRemoveMappingContext(HamaPawn->DefaultMappingContext);
+        SafeAddMappingContext(HamaPawn->DefaultMappingContext, 0);
+        SetViewTarget(HamaPawn);
+    }
+
+    SetControlRotation(NewPawn->GetActorRotation());
+    SetInputMode(FInputModeGameOnly());
+    bShowMouseCursor = false;
+
+    CheckAndBindUI();
+}
+
+void AHamaPlayerController::OnOwnerDied()
+{
+    if (!HasAuthority()) return;
+
+    UnPossess();
+
+    bAutoManageActiveCameraTarget = false;
+    ChangeState(NAME_Spectating);
+
+    if (PlayerState)
+    {
+        PlayerState->SetIsSpectator(true);
+    }
+
+    AHama* TargetCandidate = GetNextSpectatorTarget(nullptr);
+    CurrentSpectateTarget = TargetCandidate;
+
+    if (TargetCandidate)
+    {
+        SetViewTarget(TargetCandidate);
+    }
+
+    ClientEnterSpectating(TargetCandidate);
+
+    GetWorldTimerManager().SetTimer(SpectateValidationTimerHandle, this, &AHamaPlayerController::ValidateSpectateTarget, 0.25f, true);
 }
 
 void AHamaPlayerController::SpectateNextActionPressed(const FInputActionValue& Value)
@@ -100,33 +161,28 @@ void AHamaPlayerController::Server_SpectateNext_Implementation()
     {
         CurrentSpectateTarget = Target;
         SetViewTarget(Target);
+        Client_SetSpectateTarget(Target);
     }
 }
 
-void AHamaPlayerController::OnOwnerDied()
+void AHamaPlayerController::ValidateSpectateTarget()
 {
-    if (!HasAuthority()) return;
-
-    UnPossess();
-    ChangeState(NAME_Spectating);
-    ClientGotoState(NAME_Spectating);
-
-    UWorld* World = GetWorld();
-    if (!World) return;
-
-    ALastStandLegacyGameState* GS = Cast<ALastStandLegacyGameState>(World->GetGameState());
-    if (!GS) return;
-
-    for (APlayerState* PS : GS->PlayerArray)
+    if (!HasAuthority() || !IsInState(NAME_Spectating))
     {
-        if (!PS) continue;
+        GetWorldTimerManager().ClearTimer(SpectateValidationTimerHandle);
+        return;
+    }
 
-        AHama* Candidate = Cast<AHama>(PS->GetPawn());
-        if (IsValid(Candidate) && !Candidate->bIsDead && !Candidate->IsDowned())
+    AHama* Current = CurrentSpectateTarget;
+    if (!IsValid(Current) || Current->bIsDead || Current->IsDowned())
+    {
+        AHama* NextTarget = GetNextSpectatorTarget(Current);
+        CurrentSpectateTarget = NextTarget;
+
+        if (NextTarget)
         {
-            CurrentSpectateTarget = Candidate;
-            SetViewTarget(Candidate);
-            break;
+            SetViewTarget(NextTarget);
+            Client_SetSpectateTarget(NextTarget);
         }
     }
 }
@@ -137,39 +193,111 @@ AHama* AHamaPlayerController::GetNextSpectatorTarget(AHama* CurrentTarget)
     if (!World) return nullptr;
 
     AGameStateBase* GS = World->GetGameState();
-    if (!GS) return nullptr;
+    if (!GS) return nullptr;    
 
-    bool bFoundCurrent = (CurrentTarget == nullptr);
+    TArray<AHama*, TInlineAllocator<4>> ValidTargets;
 
     for (APlayerState* PS : GS->PlayerArray)
     {
-        if (!PS) continue;
+        if (!PS || PS == PlayerState) continue;
 
-        AHama* Candidate = Cast<AHama>(PS->GetPawn());
+        APawn* PawnCandidate = PS->GetPawn();
+        AHama* Candidate = Cast<AHama>(PawnCandidate);
+
         if (IsValid(Candidate) && !Candidate->bIsDead && !Candidate->IsDowned())
         {
-            if (bFoundCurrent)
-            {
-                return Candidate;
-            }
-
-            if (Candidate == CurrentTarget)
-            {
-                bFoundCurrent = true;
-            }
+            ValidTargets.Add(Candidate);
         }
     }
 
-    if (CurrentTarget != nullptr)
+    if (ValidTargets.Num() == 0) return nullptr;
+
+    if (!CurrentTarget) return ValidTargets[0];
+
+    int32 CurrentIndex = ValidTargets.Find(CurrentTarget);
+    if (CurrentIndex != INDEX_NONE && CurrentIndex + 1 < ValidTargets.Num())
     {
-        return GetNextSpectatorTarget(nullptr);
+        return ValidTargets[CurrentIndex + 1];
     }
 
-    return nullptr;
+    return ValidTargets[0];
+}
+
+void AHamaPlayerController::ClientEnterSpectating_Implementation(AHama* Target)
+{
+    if (!IsLocalController()) return;
+
+    ChangeState(NAME_Spectating);
+    bAutoManageActiveCameraTarget = false;
+
+    if (PlayerInput)
+    {
+        PlayerInput->FlushPressedKeys();
+    }
+
+    if (ActiveGameplayContext)
+    {
+        SafeRemoveMappingContext(ActiveGameplayContext);
+    }
+
+    SafeAddMappingContext(SpectatorMappingContext, 10);
+
+    AHama* FinalTarget = IsValid(Target) ? Target : GetNextSpectatorTarget(nullptr);
+    CurrentSpectateTarget = FinalTarget;
+
+    if (IsValid(FinalTarget))
+    {
+        SetViewTarget(FinalTarget);
+    }
+
+    bShowMouseCursor = false;
+    SetInputMode(FInputModeGameOnly());
+}
+
+void AHamaPlayerController::Client_SetSpectateTarget_Implementation(AHama* Target)
+{
+    if (!IsLocalController()) return;
+
+    AHama* FinalTarget = IsValid(Target) ? Target : GetNextSpectatorTarget(nullptr);
+    CurrentSpectateTarget = FinalTarget;
+
+    if (IsValid(FinalTarget) && GetViewTarget() != FinalTarget)
+    {
+        SetViewTarget(FinalTarget);
+        FinalTarget->UpdateCameraAndMeshVisibility();
+    }
+}
+
+void AHamaPlayerController::SafeAddMappingContext(UInputMappingContext* Context, int32 Priority)
+{
+    if (!Context || !IsLocalController()) return;
+
+    if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+    {
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
+        {
+            Subsystem->AddMappingContext(Context, Priority);
+        }
+    }
+}
+
+void AHamaPlayerController::SafeRemoveMappingContext(UInputMappingContext* Context)
+{
+    if (!Context || !IsLocalController()) return;
+
+    if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+    {
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
+        {
+            Subsystem->RemoveMappingContext(Context);
+        }
+    }
 }
 
 void AHamaPlayerController::CheckAndBindUI()
 {
+    if (!IsLocalController()) return;
+
     if (!MainWidgetRef && MainWidgetClass)
     {
         MainWidgetRef = CreateWidget<UHamaMainWidget>(this, MainWidgetClass);
@@ -183,7 +311,10 @@ void AHamaPlayerController::CheckAndBindUI()
 
     if (AGameStateBase* GS = GetWorld()->GetGameState())
     {
-        MainWidgetRef->BindGameState(Cast<ALastStandLegacyGameState>(GS));
+        if (ALastStandLegacyGameState* LSLGameState = Cast<ALastStandLegacyGameState>(GS))
+        {
+            MainWidgetRef->BindGameState(LSLGameState);
+        }
     }
 
     if (AHamaPlayerState* PS = GetPlayerState<AHamaPlayerState>())

@@ -7,9 +7,9 @@
 
 class UInputMappingContext;
 class UInputAction;
-class AHama;
-class UHamaMainWidget;
 class URecoilComponent;
+class UHamaMainWidget;
+class AHama;
 
 UCLASS()
 class LASTSTANDLEGACY_API AHamaPlayerController : public APlayerController
@@ -19,39 +19,54 @@ class LASTSTANDLEGACY_API AHamaPlayerController : public APlayerController
 public:
     AHamaPlayerController();
 
+    virtual void BeginPlay() override;
+    virtual void OnRep_PlayerState() override;
+    virtual void SetupInputComponent() override;
+    virtual void AcknowledgePossession(APawn* P) override;
+    virtual void OnPossess(APawn* InPawn) override;
+    virtual void ClientRestart_Implementation(APawn* NewPawn) override;
+
+    // Spectating Network API
     void OnOwnerDied();
 
     UFUNCTION(Server, Reliable)
     void Server_SpectateNext();
 
-protected:
-    virtual void BeginPlay() override;
-    virtual void OnRep_PlayerState() override;
-    virtual void AcknowledgePossession(APawn* P) override;
-    virtual void SetupInputComponent() override;
-    virtual void BeginSpectatingState() override;
+    UFUNCTION(Client, Reliable)
+    void ClientEnterSpectating(AHama* Target);
 
-    void CheckAndBindUI();
-    AHama* GetNextSpectatorTarget(AHama* CurrentTarget);
-
-    void SpectateNextActionPressed(const FInputActionValue& Value);
+    UFUNCTION(Client, Reliable)
+    void Client_SetSpectateTarget(AHama* Target);
 
 protected:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-    TObjectPtr<UInputMappingContext> SpectatorMappingContext;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
-    TObjectPtr<UInputAction> SpectateNextAction;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spectate")
-    TObjectPtr<AHama> CurrentSpectateTarget;
-
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<URecoilComponent> RecoilComponent;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Input")
+    TObjectPtr<UInputMappingContext> SpectatorMappingContext;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Input")
+    TObjectPtr<UInputAction> SpectateNextAction;
 
     UPROPERTY(EditDefaultsOnly, Category = "UI")
     TSubclassOf<UHamaMainWidget> MainWidgetClass;
 
     UPROPERTY()
     TObjectPtr<UHamaMainWidget> MainWidgetRef;
+
+    UPROPERTY()
+    TObjectPtr<AHama> CurrentSpectateTarget;
+
+    UPROPERTY()
+    TObjectPtr<UInputMappingContext> ActiveGameplayContext;
+
+    FTimerHandle SpectateValidationTimerHandle;
+
+private:
+    void SpectateNextActionPressed(const FInputActionValue& Value);
+    AHama* GetNextSpectatorTarget(AHama* CurrentTarget);
+    void ValidateSpectateTarget();
+    void CheckAndBindUI();
+    void SafeAddMappingContext(UInputMappingContext* Context, int32 Priority);
+    void SafeRemoveMappingContext(UInputMappingContext* Context);
 };

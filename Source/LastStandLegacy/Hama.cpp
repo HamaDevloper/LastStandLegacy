@@ -142,6 +142,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentWeapon, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsDead, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, OwnedPerks, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsInFirstPerson, Params);
 
     Params.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, PrimaryWeapon, Params);
@@ -1625,6 +1626,38 @@ void AHama::OnDiveMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     }
 }
 
+bool AHama::ShouldShowFirstPersonView() const
+{
+    if (IsLocallyControlled())
+    {
+        return bIsInFirstPerson;
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        if (APlayerController* PC = World->GetFirstPlayerController())
+        {
+            if (PC->IsLocalController() && PC->GetViewTarget() == this)
+            {
+                return bIsInFirstPerson;
+            }
+        }
+    }
+
+    return false;
+}
+
+void AHama::UpdateCameraAndMeshVisibility()
+{
+    const bool bUseFPP = ShouldShowFirstPersonView();
+
+    if (TPCamera && FPCamera)
+    {
+        FPCamera->SetActive(bUseFPP);
+        TPCamera->SetActive(!bUseFPP);
+    }
+}
+
 void AHama::SwitchCameraPressed(const FInputActionInstance& Instance)
 {
     if (Instance.GetElapsedTime() >= 0.5f)
@@ -1634,10 +1667,11 @@ void AHama::SwitchCameraPressed(const FInputActionInstance& Instance)
             bIsHoldedTrigger = true;
             bIsInFirstPerson = !bIsInFirstPerson;
 
-            if (TPCamera && FPCamera)
+            UpdateCameraAndMeshVisibility();
+
+            if (!HasAuthority())
             {
-                TPCamera->SetActive(!bIsInFirstPerson);
-                FPCamera->SetActive(bIsInFirstPerson);
+                Server_SetFirstPersonState(bIsInFirstPerson);
             }
         }
     }
@@ -1653,7 +1687,21 @@ void AHama::SwitchCameraReleased()
             Switchcamera(bIsInRightShoulderView);
         }
     }
+
     bIsHoldedTrigger = false;
+}
+
+void AHama::Server_SetFirstPersonState_Implementation(bool bNewState)
+{
+    bIsInFirstPerson = bNewState;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsInFirstPerson, this);
+
+    UpdateCameraAndMeshVisibility();
+}
+
+void AHama::OnRep_IsInFirstPerson()
+{
+    UpdateCameraAndMeshVisibility();
 }
 
 bool AHama::IsMovingForward() const

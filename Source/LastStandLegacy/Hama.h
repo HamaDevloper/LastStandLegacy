@@ -351,7 +351,7 @@ protected:
     void OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon = nullptr);
 
 protected:
-    UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
+    UPROPERTY(ReplicatedUsing = OnRep_IsInFirstPerson)
     bool bIsInFirstPerson = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Hama|Camera")
@@ -360,10 +360,21 @@ protected:
     UFUNCTION(BlueprintImplementableEvent, Category = "Hama|Events")
     void Switchcamera(bool bIsRightShoulderViewChanged);
 
+    UFUNCTION(Server, Reliable)
+    void Server_SetFirstPersonState(bool bNewState);
+
+    UFUNCTION()
+    void OnRep_IsInFirstPerson();
+
+
+public:
+    void UpdateCameraAndMeshVisibility();
+
+    bool ShouldShowFirstPersonView() const;
     // -----------------------------------------------------------------------------
     // Input Callbacks & Network RPCs
     // -----------------------------------------------------------------------------
-public:
+
     void FireActionPressed();
 protected:
     void FireActionReleased();

@@ -283,32 +283,49 @@ void ALastStandLegacyGameMode::RespawnDeadPlayers()
     UWorld* World = GetWorld();
     if (!World) return;
 
+    int32 SpectatorCount = 0;
+
     for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
     {
         APlayerController* PC = It->Get();
-        if (PC && (PC->GetPawn() == nullptr || PC->IsInState(NAME_Spectating)))
+        if (PC && PC->IsInState(NAME_Spectating))
         {
-            PC->ChangeState(NAME_Playing);
+            SpectatorCount++;
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan,
+                    FString::Printf(TEXT("[GM] Respawning Spectator Player: %s"), *PC->GetName()));
+            }
             RestartPlayer(PC);
         }
     }
+
+    UE_LOG(LogTemp, Log, TEXT("[RespawnDeadPlayers] Found %d spectating players to respawn."), SpectatorCount);
 }
 
 void ALastStandLegacyGameMode::RestartPlayer(AController* NewPlayer)
 {
     if (!NewPlayer) return;
 
-    FTransform TeammateSpawnTransform;
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Green,
+            FString::Printf(TEXT("[GM] RestartPlayer called for: %s"), *NewPlayer->GetName()));
+    }
 
+    if (APlayerController* PC = Cast<APlayerController>(NewPlayer))
+    {
+        PC->ClientGotoState(NAME_Playing);
+    }
+
+    NewPlayer->ChangeState(NAME_Playing);
+
+
+    FTransform TeammateSpawnTransform;
     if (GetSpawnTransformNearTeammate(NewPlayer, TeammateSpawnTransform))
     {
-        APawn* NewPawn = SpawnDefaultPawnAtTransform(NewPlayer, TeammateSpawnTransform);
-        if (NewPawn)
-        {
-            NewPlayer->Possess(NewPawn);
-            FinishRestartPlayer(NewPlayer, NewPawn->GetActorRotation());
-            return;
-        }
+        Super::RestartPlayerAtTransform(NewPlayer, TeammateSpawnTransform);
+        return;
     }
 
     Super::RestartPlayer(NewPlayer);
@@ -336,12 +353,17 @@ bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player
 
     if (AliveTeammates.Num() == 0)
     {
-        return false; 
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("[GM] No Alive Teammates found to spawn near!"));
+        }
+        return false;
     }
 
     AHama* TargetTeammate = AliveTeammates[FMath::RandRange(0, AliveTeammates.Num() - 1)];
     FVector TeammateLocation = TargetTeammate->GetActorLocation();
-    FRotator TeammateRotation = TargetTeammate->GetActorRotation();
+
+    FRotator CleanSpawnRotation = FRotator(0.f, TargetTeammate->GetActorRotation().Yaw, 0.f);
 
     UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
     if (NavSys)
@@ -352,15 +374,16 @@ bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player
         if (bFound)
         {
             FVector FinalLocation = ResultNavLocation.Location + FVector(0.f, 0.f, 90.f);
-            OutSpawnTransform = FTransform(TeammateRotation, FinalLocation, FVector::OneVector);
+            OutSpawnTransform = FTransform(CleanSpawnRotation, FinalLocation, FVector::OneVector);
             return true;
         }
     }
 
     FVector FallbackLocation = TeammateLocation + (TargetTeammate->GetActorRightVector() * 150.f) + FVector(0.f, 0.f, 20.f);
-    OutSpawnTransform = FTransform(TeammateRotation, FallbackLocation, FVector::OneVector);
+    OutSpawnTransform = FTransform(CleanSpawnRotation, FallbackLocation, FVector::OneVector);
     return true;
 }
+
 
 void ALastStandLegacyGameMode::ProcessSpawning()
 {
