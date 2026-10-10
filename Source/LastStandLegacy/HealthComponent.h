@@ -8,7 +8,8 @@ class AHama;
 class UHamaComponent;
 
 DECLARE_MULTICAST_DELEGATE(FOnDeathDelegate);
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnReviveStateChanged, bool);
+DECLARE_DELEGATE_TwoParams(FOnReviveStateChanged, bool, bool);
+DECLARE_DELEGATE_OneParam(FOnReviveProgressChanged, float);
 DECLARE_DELEGATE_OneParam(FOnDownStateChanged, bool);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
@@ -20,6 +21,9 @@ public:
     UHealthComponent();
 
     FOnDownStateChanged OnDownStateChanged;
+    FOnDeathDelegate OnDeath;
+    FOnReviveStateChanged OnReviveStateChanged;
+    FOnReviveProgressChanged OnReviveProgressChanged;
 
 protected:
     virtual void BeginPlay() override;
@@ -61,9 +65,6 @@ public:
 
      bool IsBeingRevived() const { return bIsBeingRevived; }
      void SetBeingRevived(bool bState) { bIsBeingRevived = bState; }
-
-    FOnDeathDelegate OnDeath;
-    FOnReviveStateChanged OnReviveStateChanged;
 
 protected:
     void DownPlayer();

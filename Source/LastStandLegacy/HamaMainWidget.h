@@ -11,6 +11,8 @@ class AHama;
 class AHamaPlayerState;
 class ALastStandLegacyGameState;
 class UHorizontalBox;
+class UWidgetAnimation;
+class UProgressBar;
 
 UCLASS()
 class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
@@ -54,6 +56,12 @@ protected:
 
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UTextBlock> ReviveText;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UProgressBar> ReviveProgressBar;
+
+    UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+    TObjectPtr<UWidgetAnimation> ReviveAnim;
 
     // --- Animations & PowerUps ---
     UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
@@ -156,4 +164,11 @@ private:
 
     FTimerHandle PingUpdateTimer;
     FTimerHandle PowerImageHideTimer;
+
+    // دێلیگاتەکان بۆ وەگرتنی Progress
+    UFUNCTION()
+    void HandleReviveProgressUpdate(float Percent);
+
+    UFUNCTION()
+    void HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRevivingOthers);
 };

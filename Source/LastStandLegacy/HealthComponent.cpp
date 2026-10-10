@@ -7,6 +7,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "LastStandLegacyGameMode.h" 
 #include "GameFramework/CharacterMovementComponent.h"
+#include "LastStandLegacyGameState.h"
 
 UHealthComponent::UHealthComponent()
 {
@@ -55,7 +56,7 @@ void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
 
 void UHealthComponent::OnRep_IsBeingRevived()
 {
-    OnReviveStateChanged.Broadcast(bIsBeingRevived);
+    OnReviveStateChanged.ExecuteIfBound(bIsBeingRevived);
 }
 
 void UHealthComponent::UpgradeHealth(float Amount)
@@ -136,17 +137,27 @@ void UHealthComponent::DownPlayer()
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
 
-        if (ALastStandLegacyGameMode* GM = World->GetAuthGameMode<ALastStandLegacyGameMode>())
+        ALastStandLegacyGameMode* GM = World->GetAuthGameMode<ALastStandLegacyGameMode>();
+        if (GM)
         {
             GM->CheckGameOverCondition();
         }
 
-        AGameStateBase* GS = World->GetGameState();
-
-        if (GS && OwnerCharacter && OwnerCharacter->HasQuickRevive())
+        if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
         {
-            World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
-            return;
+            if (GS->bIsSoloMatch)
+            {
+                if (OwnerCharacter && OwnerCharacter->HasQuickRevive())
+                {
+                    World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
+                    return;
+                }
+            }
+            else
+            {
+                HandlePlayerDeath();
+                return;
+            }
         }
 
         World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, DeathTime, false);
@@ -164,6 +175,8 @@ void UHealthComponent::Revive()
     {
         OwnerComponent->SetDowned(false);
     }
+
+    OwnerCharacter->OnPlayerRevived();
 
     OnDownStateChanged.ExecuteIfBound(false);
 

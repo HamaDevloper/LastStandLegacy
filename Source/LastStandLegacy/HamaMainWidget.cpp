@@ -4,11 +4,13 @@
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
 #include "HamaPlayerState.h"
+#include "HealthComponent.h"
 #include "BaseWeapon.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Animation/WidgetAnimation.h"
+#include "Components/ProgressBar.h"
 
 #define LOCTEXT_NAMESPACE "HamaMainWidget"
 
@@ -95,6 +97,12 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
         EnsureThrowablePoolSize(MonkeyContainer, MonkeyImagePool, MonkeyIconTexture, ThrowableComp->GetMaxMonkeyCount());
 
         HandleThrowableCountUpdate(ThrowableComp->GetCurrentMonkeyCount(), ThrowableComp->GetCurrentGrenadeCount());
+    }
+
+    if (UHealthComponent* HealthComp = InHama->FindComponentByClass<UHealthComponent>())
+    {
+        HealthComp->OnReviveProgressChanged.BindUObject(this, &UHamaMainWidget::HandleReviveProgressUpdate);
+        HealthComp->OnReviveStateChanged.BindUObject(this, &UHamaMainWidget::HandleReviveStateChanged);
     }
 
     HandlePerksUpdate(CachedHamaChar->GetOwnedPerks());
@@ -408,6 +416,41 @@ void UHamaMainWidget::HandleThrowableCountUpdate(int32 MonkeyCount, int32 Grenad
         {
             const bool bShouldShow = (i >= (TotalMonkeys - MonkeyCount));
             MonkeyImg->SetVisibility(bShouldShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+        }
+    }
+}
+
+void UHamaMainWidget::HandleReviveProgressUpdate(float Percent)
+{
+    if (ReviveProgressBar)
+    {
+        ReviveProgressBar->SetPercent(Percent);
+    }
+}
+
+void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRevivingOthers)
+{
+    const bool bShowUI = bIsBeingRevived || bIsRevivingOthers;
+
+    if (ReviveProgressBar)
+    {
+        ReviveProgressBar->SetVisibility(bShowUI ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        if (!bShowUI)
+        {
+            ReviveProgressBar->SetPercent(0.0f);
+        }
+    }
+
+    if (ReviveText)
+    {
+        ReviveText->SetVisibility(bShowUI ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        if (bIsRevivingOthers)
+        {
+            ReviveText->SetText(FText::FromString(TEXT("REVIVING TEAMMATE...")));
+        }
+        else if (bIsBeingRevived)
+        {
+            ReviveText->SetText(FText::FromString(TEXT("BEING REVIVED...")));
         }
     }
 }

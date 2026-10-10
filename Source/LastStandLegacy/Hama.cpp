@@ -1890,6 +1890,29 @@ void AHama::OnPlayerDowned()
         HamaComponent->ResetStamina();
     }
 
+    FName QuickReviveId = FName(TEXT("QuickRevive"));
+    bool bHadQuickRevivePerk = OwnedPerks.Contains(QuickReviveId);
+
+    OwnedPerks.Empty();
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
+
+    if (bHadQuickRevivePerk)
+    {
+        OwnedPerks.Add(QuickReviveId);
+    }
+
+    if (IsLocallyControlled())
+    {
+        OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
+    }
+
+    ForceNetUpdate();
+}
+
+void AHama::OnPlayerRevived()
+{
+    if (!HasAuthority()) return;
+
     OwnedPerks.Empty();
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
 

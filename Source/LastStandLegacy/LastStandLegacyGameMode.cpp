@@ -637,4 +637,5 @@ void ALastStandLegacyGameMode::Logout(AController* Exiting)
 
 void ALastStandLegacyGameMode::TriggerGameOver()
 {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Game Over!"));
 }

@@ -508,6 +508,7 @@ public:
         bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
         void HandleDeath();
         void OnPlayerDowned();
+        void OnPlayerRevived();
 
         bool HasFastHands() const { return OwnedPerks.Contains(FName("FastHands")); }
         bool HasDoubleTap() const { return OwnedPerks.Contains(FName("DoubleTap")); }
