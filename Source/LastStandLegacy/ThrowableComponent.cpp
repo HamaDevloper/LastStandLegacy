@@ -151,6 +151,9 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
         return;
     }
 
+    if (CharacterOwner->CurrentWeapon->IsReloading()) CharacterOwner->CurrentWeapon->CancelReload();
+    if (CharacterOwner->bIsFireButtonHold) CharacterOwner->CurrentWeapon->StopFire();
+
     bIsThrowingLocal = true;
     bIsMonkeyThrow = bIsMonkey;
 
@@ -235,6 +238,9 @@ void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
         return;
     }
 
+    if (CharacterOwner->CurrentWeapon->IsReloading()) CharacterOwner->CurrentWeapon->CancelReload();
+    if (CharacterOwner->bIsFireButtonHold) CharacterOwner->CurrentWeapon->StopFire();
+            
     const int32 TargetCount = bIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const TSubclassOf<AActor> TargetClass = bIsMonkey ? MonkeyClass : GrenadeClass;
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;

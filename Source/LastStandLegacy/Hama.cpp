@@ -1890,34 +1890,15 @@ void AHama::OnPlayerDowned()
         HamaComponent->ResetStamina();
     }
 
-    const FName QuickReviveID = FName(TEXT("QuickRevive"));
-    bool bHasQuickRevive = OwnedPerks.Contains(QuickReviveID);
-
     OwnedPerks.Empty();
-
-    if (bHasQuickRevive)
-    {
-        OwnedPerks.Add(QuickReviveID);
-    }
-
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
-    ForceNetUpdate();
-}
 
-void AHama::HandleRevived()
-{
-    if (!HasAuthority()) return;
-
-    bIsDead = false;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
-
-    const FName QuickReviveID = FName(TEXT("QuickRevive"));
-    if (OwnedPerks.Contains(QuickReviveID))
+    if (IsLocallyControlled())
     {
-        OwnedPerks.Remove(QuickReviveID);
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
-        ForceNetUpdate();
+        OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
     }
+
+    ForceNetUpdate();
 }
 
 void AHama::HandleDeath()
@@ -2030,12 +2011,6 @@ void AHama::OnRep_OwnedPerks()
     if (IsLocallyControlled())
     {
         OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
-    }
-
-    if (OwnedPerks.Num() > 0)
-    {
-        FName LatestPerk = OwnedPerks.Last();
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Client Received Perk: %s"), *LatestPerk.ToString()));
     }
 }
 

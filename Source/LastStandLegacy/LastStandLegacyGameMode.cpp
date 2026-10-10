@@ -14,6 +14,7 @@
 #include "PerkSpawnPoint.h"
 #include "BasePerk.h"
 #include "NavigationSystem.h"
+#include "Components/CapsuleComponent.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -280,51 +281,37 @@ void ALastStandLegacyGameMode::StartNextRound()
 
 void ALastStandLegacyGameMode::RespawnDeadPlayers()
 {
+    if (!HasAuthority()) return;
+
     UWorld* World = GetWorld();
     if (!World) return;
-
-    int32 SpectatorCount = 0;
 
     for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
     {
         APlayerController* PC = It->Get();
         if (PC && PC->IsInState(NAME_Spectating))
         {
-            SpectatorCount++;
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan,
-                    FString::Printf(TEXT("[GM] Respawning Spectator Player: %s"), *PC->GetName()));
-            }
             RestartPlayer(PC);
         }
     }
-
-    UE_LOG(LogTemp, Log, TEXT("[RespawnDeadPlayers] Found %d spectating players to respawn."), SpectatorCount);
 }
 
 void ALastStandLegacyGameMode::RestartPlayer(AController* NewPlayer)
 {
-    if (!NewPlayer) return;
-
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Green,
-            FString::Printf(TEXT("[GM] RestartPlayer called for: %s"), *NewPlayer->GetName()));
-    }
+    if (!NewPlayer || !HasAuthority()) return;
 
     if (APlayerController* PC = Cast<APlayerController>(NewPlayer))
     {
         PC->ClientGotoState(NAME_Playing);
     }
-
     NewPlayer->ChangeState(NAME_Playing);
 
-
     FTransform TeammateSpawnTransform;
+
     if (GetSpawnTransformNearTeammate(NewPlayer, TeammateSpawnTransform))
     {
         Super::RestartPlayerAtTransform(NewPlayer, TeammateSpawnTransform);
+        UE_LOG(LogTemp, Log, TEXT("[RestartPlayer] Spawned player %s near a teammate."), *NewPlayer->GetName());
         return;
     }
 
@@ -337,51 +324,108 @@ bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player
     if (!World) return false;
 
     TArray<AHama*> AliveTeammates;
-
     for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
     {
         APlayerController* PC = It->Get();
-        if (PC && PC != Player)
+        if (!PC || PC == Player) continue;
+
+        AHama* Candidate = Cast<AHama>(PC->GetPawn());
+        if (IsValid(Candidate) && !Candidate->bIsDead && !Candidate->IsDowned())
         {
-            AHama* Candidate = Cast<AHama>(PC->GetPawn());
-            if (IsValid(Candidate) && !Candidate->bIsDead && !Candidate->IsDowned())
+            AliveTeammates.Add(Candidate);
+        }
+    }
+
+    if (AliveTeammates.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[GM] No alive teammates to spawn near."));
+        return false;
+    }
+
+    // Shuffle کردنی هاوڕێکان
+    for (int32 i = AliveTeammates.Num() - 1; i > 0; --i)
+    {
+        const int32 j = FMath::RandRange(0, i);
+        if (i != j) AliveTeammates.Swap(i, j);
+    }
+
+    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+
+    // تەنها Pawn-ی کۆنی یاریزانە ڕیسپاونبووەکە ignore دەکرێت
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(SpawnNearTeammate), false);
+    if (Player && Player->GetPawn())
+    {
+        Params.AddIgnoredActor(Player->GetPawn());
+    }
+
+    for (AHama* Teammate : AliveTeammates)
+    {
+        // ١. وەرگرتنی قەبارەی Capsule لە CDO (ڕاوەستاو) بۆ ئەوەی لە کاتی Crouch/Slide قەبارەکە بچووک نەبێتەوە
+        const AHama* DefaultChar = Teammate->GetClass()->GetDefaultObject<AHama>();
+        const UCapsuleComponent* DefaultCap = DefaultChar->GetCapsuleComponent();
+        const float Radius = DefaultCap->GetScaledCapsuleRadius();
+        const float HalfHeight = DefaultCap->GetScaledCapsuleHalfHeight();
+        const FCollisionShape Shape = FCollisionShape::MakeCapsule(Radius, HalfHeight);
+
+        // ٢. حیسابکردنی شوێنی پێیەکان لەسەر Capsuleی ئێستای هاوڕێکە
+        const float CurrentHalfHeight = Teammate->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+        const FVector TeammateLoc = Teammate->GetActorLocation();
+        const FVector FeetLoc = TeammateLoc - FVector(0.f, 0.f, CurrentHalfHeight);
+        const FRotator SpawnRot(0.f, Teammate->GetActorRotation().Yaw, 0.f);
+
+        // A) Navmesh Attempts
+        if (NavSys)
+        {
+            for (int32 Attempt = 0; Attempt < MaxSpawnAttempts; ++Attempt)
             {
-                AliveTeammates.Add(Candidate);
+                FNavLocation NavLoc;
+                if (!NavSys->GetRandomReachablePointInRadius(FeetLoc, TeammateSpawnRadius, NavLoc))
+                    continue;
+
+                // پشکنینی جیاوازی نهۆم
+                if (FMath::Abs(NavLoc.Location.Z - FeetLoc.Z) > MaxSpawnHeightDiff)
+                    continue;
+
+                const FVector Test = NavLoc.Location + FVector(0.f, 0.f, HalfHeight + 2.f);
+                if (!World->OverlapBlockingTestByChannel(Test, FQuat::Identity, ECC_Pawn, Shape, Params))
+                {
+                    OutSpawnTransform = FTransform(SpawnRot, Test);
+                    return true;
+                }
+            }
+        }
+
+        FCollisionQueryParams LosParams = Params;
+        LosParams.AddIgnoredActor(Teammate);
+
+        for (int32 i = 0; i < 8; ++i)
+        {
+            const FVector Dir = FRotator(0.f, i * 45.f, 0.f).Vector();
+            const FVector Probe = TeammateLoc + Dir * FallbackDistance;
+
+            FHitResult Floor;
+            if (!World->LineTraceSingleByChannel(Floor, Probe, Probe - FVector(0.f, 0.f, 300.f), ECC_Visibility, LosParams))
+                continue;
+
+            // ڕێگری لە spawnبوون لەسەر Pawn (وەک زۆمبی) یان لەسەر ڕووی زۆر لێژ
+            if (Cast<APawn>(Floor.GetActor()) || Floor.ImpactNormal.Z < 0.7f)
+                continue;
+
+            const FVector Test = Floor.ImpactPoint + FVector(0.f, 0.f, HalfHeight + 2.f);
+
+            // ڕێگری لە spawnبوون لە پشت دیواری باریک (Line of Sight Check)
+            if (World->LineTraceTestByChannel(TeammateLoc, Test, ECC_Visibility, LosParams))
+                continue;
+
+            if (!World->OverlapBlockingTestByChannel(Test, FQuat::Identity, ECC_Pawn, Shape, Params))
+            {
+                OutSpawnTransform = FTransform(SpawnRot, Test);
+                return true;
             }
         }
     }
 
-    if (AliveTeammates.Num() == 0)
-    {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("[GM] No Alive Teammates found to spawn near!"));
-        }
-        return false;
-    }
-
-    AHama* TargetTeammate = AliveTeammates[FMath::RandRange(0, AliveTeammates.Num() - 1)];
-    FVector TeammateLocation = TargetTeammate->GetActorLocation();
-
-    FRotator CleanSpawnRotation = FRotator(0.f, TargetTeammate->GetActorRotation().Yaw, 0.f);
-
-    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
-    if (NavSys)
-    {
-        FNavLocation ResultNavLocation;
-        bool bFound = NavSys->GetRandomReachablePointInRadius(TeammateLocation, TeammateSpawnRadius, ResultNavLocation);
-
-        if (bFound)
-        {
-            FVector FinalLocation = ResultNavLocation.Location + FVector(0.f, 0.f, 90.f);
-            OutSpawnTransform = FTransform(CleanSpawnRotation, FinalLocation, FVector::OneVector);
-            return true;
-        }
-    }
-
-    FVector FallbackLocation = TeammateLocation + (TargetTeammate->GetActorRightVector() * 150.f) + FVector(0.f, 0.f, 20.f);
-    OutSpawnTransform = FTransform(CleanSpawnRotation, FallbackLocation, FVector::OneVector);
-    return true;
+    return false;
 }
 
 
@@ -593,7 +637,4 @@ void ALastStandLegacyGameMode::Logout(AController* Exiting)
 
 void ALastStandLegacyGameMode::TriggerGameOver()
 {
-    UE_LOG(LogTemp, Warning, TEXT("GAME OVER: All players are downed or dead!"));
-
-    // لۆجیکی Game Over (نیشاندانی UI بۆ کلاینتەکان، Restart Level، یان فێن کردنی AI Director)
 }

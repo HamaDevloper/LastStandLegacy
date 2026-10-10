@@ -48,6 +48,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Input")
     TObjectPtr<UInputAction> SpectateNextAction;
 
+    UPROPERTY(EditDefaultsOnly, Category = "Input")
+    TObjectPtr<UInputAction> SpectatePreviousAction;
+
     UPROPERTY(EditDefaultsOnly, Category = "UI")
     TSubclassOf<UHamaMainWidget> MainWidgetClass;
 

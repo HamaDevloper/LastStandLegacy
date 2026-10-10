@@ -121,6 +121,7 @@ void UHealthComponent::DownPlayer()
         OwnerComponent->SetDowned(true);
     }
 
+    OwnerCharacter->OnPlayerDowned();
     OnDownStateChanged.ExecuteIfBound(true);
 
     if (UWorld* World = GetWorld())
@@ -142,7 +143,7 @@ void UHealthComponent::DownPlayer()
 
         AGameStateBase* GS = World->GetGameState();
 
-        if (GS && OwnerCharacter && OwnerCharacter->HasQuickRevive() /* و بەستنەوە بە Solo Check لە GameMode/GameState */)
+        if (GS && OwnerCharacter && OwnerCharacter->HasQuickRevive())
         {
             World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
             return;

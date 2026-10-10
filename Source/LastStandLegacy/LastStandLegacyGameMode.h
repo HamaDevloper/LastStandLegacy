@@ -9,7 +9,7 @@ class AZombieSpawnPoint;
 class ABasePowerUp;
 class AController;
 class ABasePerk;
-class APerkSpawnPoint; // 🚀 دڵنیابەوە لەم فۆروەرد دێکلەرەیشنە
+class APerkSpawnPoint;
 enum class EHamaAbilityType : uint8;
 
 UCLASS()
@@ -33,12 +33,10 @@ protected:
     void ProcessSpawning();
     AActor* PickWeightedSpawnPoint();
 
-    // 🚀 فەنکشنەکانی شەفڵ و سپاونی تایبەت بە پێرک
     void MyShufflePerks(TArray<TSubclassOf<ABasePerk>>& ArrayToShuffle);
     void SpawnRandomPerks();
 
 public:
-    // [Zombie Settings] 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     TSubclassOf<AZombie> ZombieClass;
 
@@ -79,11 +77,9 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Economy|Scaling")
     int32 PointsPerRoundScaling = 250;
 
-    // [PowerUp & Perk Settings]
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|PowerUp")
     TArray<TSubclassOf<ABasePowerUp>> PowerUpClasses;
 
-    // 🚀 کڵاسی ئەو پێرکانەی دەتەوێت لەم نەخشەیەدا سپاون ببن (لە بلوپرێنت پڕی بکەرەوە)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|Perks")
     TArray<TSubclassOf<ABasePerk>> PerkClasses;
 
@@ -100,7 +96,6 @@ public:
 
     float CurrentPowerSpawnTime = -9999.0f;
 
-    // [Abilities]
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|Abilities")
     TArray<EHamaAbilityType> ActiveAbilities;
 
@@ -126,6 +121,18 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie Spawning|Timing")
     float MinSpawnInterval = 0.3f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
+    float TeammateSpawnRadius = 300.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
+    int32 MaxSpawnAttempts = 5;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
+    float MaxSpawnHeightDiff = 150.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
+    float FallbackDistance = 150.f;
+
     float GetCalculateSpawnInterval() const;
 
 private:
@@ -140,10 +147,5 @@ public:
 
 protected:
     void TriggerGameOver();
-
     bool GetSpawnTransformNearTeammate(AController* Player, FTransform& OutSpawnTransform);
-
-
-    UPROPERTY(EditDefaultsOnly, Category = "LastStand|Spawning")
-    float TeammateSpawnRadius = 300.0f;
 };

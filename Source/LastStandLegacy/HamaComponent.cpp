@@ -68,6 +68,8 @@ void UHamaComponent::SetDowned(bool NewValue)
         bIsDowned = NewValue;
         MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDowned, this);
 
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("SetDowned: %s"), bIsDowned ? TEXT("true") : TEXT("false")));
+
         if (MoveComp)
         {
             MoveComp->bDowned = bIsDowned;
