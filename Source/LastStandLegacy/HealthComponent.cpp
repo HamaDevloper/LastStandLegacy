@@ -241,5 +241,6 @@ void UHealthComponent::HandlePlayerDeath()
         }
     }
 
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[HealthComp] Player will be destroyed in 5 seconds."));
     OwnerCharacter->SetLifeSpan(5.0f);
 }

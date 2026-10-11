@@ -2408,53 +2408,29 @@ bool AHama::Client_PreInteract(AHama* Player)
 }
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
-
 {
-
     if (!DownedPlayer || !DownedPlayer->HealthComponent) return;
-
     if (DownedPlayer->HealthComponent->IsBeingRevived()) return;
-
     if (bIsDead || IsDowned() || !DownedPlayer->HealthComponent->IsDowned()) return;
-
-
-
     const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.f);
-
     if (FVector::DistSquared(GetActorLocation(), DownedPlayer->GetActorLocation()) > MaxAllowedDistSq)
-
     {
-
         return;
-
     }
 
-
-
     ClearAllReviveTimers();
-
-
 
     CurrentReviveTarget = DownedPlayer;
 
     DownedPlayer->HealthComponent->SetBeingRevived(true);
 
-
-
     float FinalReviveTime = DefaultReviveTime;
-
-
 
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
-
-
     if (HasQuickRevive() || (GS && GS->IsTeamAdrenalineActive()))
-
     {
-
         FinalReviveTime *= 0.5f;
-
     }
 
     if (HamaAbilityComponent && HamaAbilityComponent->GetAssignedAbility() == EHamaAbilityType::MedicalSupport)
@@ -2468,28 +2444,18 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveTotalDuration, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveEndTime, this);
 
-
-
     FTimerDelegate ReviveDel;
 
     ReviveDel.BindUObject(this, &AHama::Server_CompleteRevive);
 
     GetWorldTimerManager().SetTimer(ReviveTimerHandle, ReviveDel, FinalReviveTime, false);
 
-
-
     GetWorldTimerManager().SetTimer(
-
         ReviveCheckTimerHandle,
-
         this,
-
         &AHama::Server_CheckReviveConditions,
-
         0.1f,
-
         true
-
     );
 }
 

@@ -6,7 +6,6 @@
 #include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
-#include "LastStandLegacyGameState.h"
 #include "GameFramework/PlayerState.h"
 
 AGrenade::AGrenade()
@@ -120,7 +119,7 @@ void AGrenade::Explode()
 
     PlayExplosionFX(ExplosionLocation);
 
-    ALastStandLegacyGameState* GameState = GetWorld()->GetGameState<ALastStandLegacyGameState>();
+    AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState<AGameState>() : nullptr;
 
     TArray<AActor*> IgnoredActors;
     IgnoredActors.Reserve(GameState ? GameState->PlayerArray.Num() + 1 : 3);
