@@ -149,6 +149,9 @@ public:
     void HandlePerksUpdate(const TArray<FName>& CurrentPerks);
 
     UFUNCTION()
+    void NativeUpdateReviveProgress();
+
+    UFUNCTION()
     void HandleThrowableCountUpdate(int32 NewMonkeyCount, int32 NewGrenadeCount);
     void EnsureThrowablePoolSize(UHorizontalBox* Container, TArray<TObjectPtr<UImage>>& Pool, UTexture2D* IconTexture, int32 TargetSize);
 
@@ -164,6 +167,7 @@ private:
 
     FTimerHandle PingUpdateTimer;
     FTimerHandle PowerImageHideTimer;
+    FTimerHandle UIUpdateTimerHandle;
 
     // دێلیگاتەکان بۆ وەگرتنی Progress
     UFUNCTION()

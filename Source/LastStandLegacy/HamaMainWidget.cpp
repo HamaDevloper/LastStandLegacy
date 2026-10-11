@@ -74,6 +74,12 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
             OldThrowableComp->OnThrowableCountChanged.Unbind();
         }
 
+        if (UHealthComponent* HealthComp = InHama->FindComponentByClass<UHealthComponent>())
+        {
+            HealthComp->OnReviveProgressChanged.Unbind();
+            HealthComp->OnReviveStateChanged.Unbind();
+        }
+
         CachedHamaChar->OnAmmoUpdateEvent.Unbind();
         CachedHamaChar->OnInteractUpdateEvent.Unbind();
         CachedHamaChar->OnCrosshairUpdateEvent.Unbind();
@@ -438,6 +444,17 @@ void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRev
         if (!bShowUI)
         {
             ReviveProgressBar->SetPercent(0.0f);
+            GetWorld()->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
+        }
+        else
+        {
+            GetWorld()->GetTimerManager().SetTimer(
+                UIUpdateTimerHandle,
+                this,
+                &UHamaMainWidget::NativeUpdateReviveProgress,
+                0.033f,
+                true
+            );
         }
     }
 
@@ -451,6 +468,28 @@ void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRev
         else if (bIsBeingRevived)
         {
             ReviveText->SetText(FText::FromString(TEXT("BEING REVIVED...")));
+        }
+    }
+}
+
+void UHamaMainWidget::NativeUpdateReviveProgress()
+{
+    AHama* Player = Cast<AHama>(GetOwningPlayerPawn());
+    if (!Player) return;
+
+    if (Player->ReviveTotalDuration > 0.0f)
+    {
+        float RemainingTime = Player->ReviveEndTime - GetWorld()->GetTimeSeconds();
+        float Percent = 1.0f - FMath::Clamp(RemainingTime / Player->ReviveTotalDuration, 0.0f, 1.0f);
+
+        if (ReviveProgressBar)
+        {
+            ReviveProgressBar->SetPercent(Percent);
+        }
+
+        if (RemainingTime <= 0.0f)
+        {
+            GetWorld()->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
         }
     }
 }

@@ -50,6 +50,7 @@ class ABasePerk;
 class USphereComponent;
 class UStaticMeshComponent;
 class URecoilComponent;
+class IInteractInterface;
 
 struct FInputActionValue;
 struct FInputActionInstance;
@@ -535,7 +536,7 @@ public:
         UPROPERTY()
         FTimerHandle InteractTimerHandle;
 
-        class IInteractInterface* FocusedInteractable;
+        TObjectPtr<AActor> FocusedInteractable;
 
         void InteractActionPressed();
         void GamepadXActionPressed(const FInputActionInstance & Instance);
@@ -593,15 +594,27 @@ public:
         UFUNCTION(Server, Reliable)
         void Server_CancelRevive();
 
-        // ⚡ گۆڕدرا: لادانی Parameter بۆ ڕێگری لە Memory Crash
+
+        UPROPERTY(ReplicatedUsing = OnRep_ReviveData)
+        float ReviveEndTime = 0.0f;
+
+        UPROPERTY(Replicated)
+        float ReviveTotalDuration = 0.0f;
+
+        UFUNCTION()
+        void OnRep_ReviveData();
+
         UFUNCTION()
         void Server_CompleteRevive();
 
         void Server_CheckReviveConditions();
+        void CancelReviveInternal();
         void ClearAllReviveTimers();
 
         UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama | Revive")
         float DefaultReviveTime = 5.0f;
+
+        void SetIsDead(bool bNewIsDead);
 
     private:
         FTimerHandle ReviveTimerHandle;
@@ -640,4 +653,7 @@ public:
         TArray<TObjectPtr<ABaseWeapon>> EquippedWeapons;
 public:
     bool SetCanInteract() const;
+
+
+    void ClearInteractFocus();
 };

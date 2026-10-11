@@ -56,7 +56,7 @@ void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
 
 void UHealthComponent::OnRep_IsBeingRevived()
 {
-    OnReviveStateChanged.ExecuteIfBound(bIsBeingRevived);
+    OnReviveStateChanged.ExecuteIfBound(bIsBeingRevived, false);
 }
 
 void UHealthComponent::UpgradeHealth(float Amount)
@@ -152,11 +152,12 @@ void UHealthComponent::DownPlayer()
                     World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
                     return;
                 }
-            }
-            else
-            {
-                HandlePlayerDeath();
-                return;
+
+                else
+                {
+                    HandlePlayerDeath();
+                    return;
+                }
             }
         }
 
@@ -197,8 +198,7 @@ void UHealthComponent::HandlePlayerDeath()
         return;
     }
 
-    OwnerCharacter->bIsDead = true;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, OwnerCharacter);
+    OwnerCharacter->SetIsDead(true);
 
     if (GEngine)
     {
