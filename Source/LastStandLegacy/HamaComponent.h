@@ -115,6 +115,7 @@ protected:
     void SetSprinting(bool bNewSprinting);
     void DrainStamina();
     void RegenerateStamina();
+    void StartStaminaRegen(float Delay);
 
     // --- ONREP NOTIFIES ---
     UFUNCTION()

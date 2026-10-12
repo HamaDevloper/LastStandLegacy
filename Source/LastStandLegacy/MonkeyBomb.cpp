@@ -170,7 +170,7 @@ void AMonkeyBomb::Explode()
     AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState<AGameState>() : nullptr;
 
     TArray<AActor*> IgnoredActors;
-    IgnoredActors.Reserve(GameState ? GameState->PlayerArray.Num() + 1 : 3);
+    IgnoredActors.Reserve(GameState ? GameState->PlayerArray.Num() + 1 : 4);
     IgnoredActors.Add(this);
 
     APawn* InstigatorPawn = GetInstigator();

@@ -210,7 +210,17 @@ void UHamaComponent::StopDive()
 
 void UHamaComponent::DecreaseStamina(float Amount)
 {
-    Stamina = FMath::Clamp(Stamina - Amount, 0.0f, MaxStamina);
+    Stamina = FMath::Clamp(Stamina - Amount, 0.f, MaxStamina);
+    if (!bIsSprinting) StartStaminaRegen(NormalDelayStamina);
+}
+
+void UHamaComponent::StartStaminaRegen(float Delay)
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this,
+            &UHamaComponent::RegenerateStamina, 0.1f, true, Delay);
+    }
 }
 
 void UHamaComponent::StartSprinting()
@@ -226,11 +236,6 @@ void UHamaComponent::StopSprinting()
 void UHamaComponent::SetSprinting(bool bNewSprinting)
 {
     if (bIsSprinting == bNewSprinting) return;
-
-    if (bNewSprinting && bIsAiming)
-    {
-        SetAiming(false);
-    }
 
     if (UWorld* World = GetWorld())
     {
