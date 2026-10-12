@@ -70,7 +70,8 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 {
     Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
-    if (bSlide && (Velocity.SizeSquared2D() < FMath::Square(50.f) || !IsMovingOnGround()))
+    const float SlideStopThresholdSquared = FMath::Square(60.f);
+    if (bSlide && (Velocity.SizeSquared2D() < SlideStopThresholdSquared || !IsMovingOnGround()))
     {
         bSlide = false;
     }
@@ -84,13 +85,13 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
     {
         if (IsMovingOnGround())
         {
-            FVector MoveDir = FVector::ZeroVector;
-            if (CharacterOwner)
+            FVector SlideDir = Velocity.GetSafeNormal2D();
+            if (SlideDir.IsNearlyZero() && CharacterOwner)
             {
-                MoveDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+                SlideDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
             }
 
-            Velocity = FVector(MoveDir.X * SlideSpeed, MoveDir.Y * SlideSpeed, Velocity.Z);
+            Velocity = FVector(SlideDir.X * SlideSpeed, SlideDir.Y * SlideSpeed, Velocity.Z);
         }
         else
         {
@@ -103,7 +104,7 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         FVector DiveDir = Velocity.GetSafeNormal2D();
         if (DiveDir.IsNearlyZero() && CharacterOwner)
         {
-            DiveDir = CharacterOwner->GetActorForwardVector();
+            DiveDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
         }
 
         Velocity = FVector(DiveDir.X * DiveImpulseHorizontal, DiveDir.Y * DiveImpulseHorizontal, DiveImpulseVertical);
@@ -124,6 +125,43 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 
     bWasSliding = bSlide;
     bWasDiving = bDiving;
+}
+
+void UHamaMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity)
+{
+    Super::OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
+
+    const bool bStateChanged = (bSlide != bPrevSlide) ||
+        (bDiving != bPrevDiving) ||
+        (bSprinting != bPrevSprinting);
+
+    if (!bStateChanged)
+    {
+        return; 
+    }
+
+    bPrevSlide = bSlide;
+    bPrevDiving = bDiving;
+    bPrevSprinting = bSprinting;
+
+    UHamaComponent* HamaComp = GetHamaComp();
+    if (!HamaComp) return;
+
+    if (CharacterOwner && CharacterOwner->HasAuthority())
+    {
+        HamaComp->SyncStatesFromCMC(bSlide, bDiving, bSprinting);
+    }
+    else if (CharacterOwner && CharacterOwner->IsLocallyControlled())
+    {
+        if (!bSlide && HamaComp->bIsSlide)
+        {
+            HamaComp->StopSlide();
+        }
+        if (!bDiving && HamaComp->bIsDiving)
+        {
+            HamaComp->StopDive();
+        }
+    }
 }
 
 void UHamaMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
@@ -159,7 +197,7 @@ void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT
     bSavedWantsToSprint = Comp->bSprinting;
     bSavedWantsToDive = Comp->bDiving;
     bSavedWantsToSlide = Comp->bSlide;
-    bSavedWasSliding = Comp->bWasSliding; 
+    bSavedWasSliding = Comp->bWasSliding;
     bSavedWasDiving = Comp->bWasDiving;
 }
 
@@ -174,7 +212,7 @@ void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
     Comp->bAiming = bSavedWantsToAim;
     Comp->bDiving = bSavedWantsToDive;
     Comp->bSlide = bSavedWantsToSlide;
-    Comp->bWasSliding = bSavedWasSliding; 
+    Comp->bWasSliding = bSavedWasSliding;
     Comp->bWasDiving = bSavedWasDiving;
 }
 
@@ -183,9 +221,11 @@ bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr
     const FSavedMove_Hama* Other = static_cast<const FSavedMove_Hama*>(NewMove.Get());
 
     if (bSavedWantsToSprint != Other->bSavedWantsToSprint) return false;
-    if (bSavedWantsToAim != Other->bSavedWantsToAim) return false;
-    if (bSavedWantsToDive != Other->bSavedWantsToDive) return false;
-    if (bSavedWantsToSlide != Other->bSavedWantsToSlide) return false;
+    if (bSavedWantsToAim != Other->bSavedWantsToAim)    return false;
+    if (bSavedWantsToDive != Other->bSavedWantsToDive)   return false;
+    if (bSavedWantsToSlide != Other->bSavedWantsToSlide)  return false;
+    if (bSavedWasSliding != Other->bSavedWasSliding) return false;
+    if (bSavedWasDiving != Other->bSavedWasDiving)  return false;
 
     return FSavedMove_Character::CanCombineWith(NewMove, C, MaxDelta);
 }

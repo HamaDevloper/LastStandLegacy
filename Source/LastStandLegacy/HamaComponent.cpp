@@ -19,6 +19,7 @@ void UHamaComponent::BeginPlay()
     Stamina = MaxStamina;
     OwnerCharacter = Cast<AHama>(GetOwner());
     if (!OwnerCharacter) return;
+
     MoveComp = OwnerCharacter->FindComponentByClass<UHamaMovementComponent>();
 }
 
@@ -31,7 +32,7 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
     Params.Condition = COND_None;
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsDowned, Params);
-   
+
     Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsSprinting, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHamaComponent, bIsAiming, Params);
@@ -43,6 +44,11 @@ void UHamaComponent::SetAiming(bool bNewAiming)
 {
     if (bIsAiming == bNewAiming) return;
     bIsAiming = bNewAiming;
+
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsAiming, this);
+    }
 
     if (MoveComp)
     {
@@ -67,8 +73,6 @@ void UHamaComponent::SetDowned(bool NewValue)
     {
         bIsDowned = NewValue;
         MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDowned, this);
-
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("SetDowned: %s"), bIsDowned ? TEXT("true") : TEXT("false")));
 
         if (MoveComp)
         {
@@ -100,6 +104,20 @@ void UHamaComponent::StartSlide()
     {
         MoveComp->bSlide = true;
     }
+
+    if (OwnerCharacter->IsLocallyControlled() && GetNetMode() != NM_DedicatedServer)
+    {
+        if (USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh())
+        {
+            if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+            {
+                if (OwnerCharacter->SlideMontage)
+                {
+                    AnimInstance->Montage_Play(OwnerCharacter->SlideMontage);
+                }
+            }
+        }
+    }
 }
 
 void UHamaComponent::StopSlide()
@@ -110,16 +128,28 @@ void UHamaComponent::StopSlide()
 
     if (MoveComp)
     {
-        MoveComp->bSlide = bIsSlide;
+        MoveComp->bSlide = false;
+    }
+
+    if (OwnerCharacter->IsLocallyControlled() && GetNetMode() != NM_DedicatedServer)
+    {
+        if (USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh())
+        {
+            if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+            {
+                if (OwnerCharacter->SlideMontage)
+                {
+                    AnimInstance->Montage_Stop(0.2f, OwnerCharacter->SlideMontage);
+                }
+            }
+        }
     }
 }
 
 bool UHamaComponent::CanDive() const
 {
     if (!OwnerCharacter || !MoveComp) return false;
-
     if (bIsDiving || bIsDowned || bIsSlide || MoveComp->IsFalling()) return false;
-
     if (Stamina < 25.f) return false;
 
     return true;
@@ -129,11 +159,26 @@ void UHamaComponent::StartDive()
 {
     if (!CanDive()) return;
 
+    DecreaseStamina(25.f);
     bIsDiving = true;
 
     if (MoveComp)
     {
-        MoveComp->bDiving = bIsDiving;
+        MoveComp->bDiving = true;
+    }
+
+    if (OwnerCharacter->IsLocallyControlled() && GetNetMode() != NM_DedicatedServer)
+    {
+        if (USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh())
+        {
+            if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+            {
+                if (OwnerCharacter->DiveMontage)
+                {
+                    AnimInstance->Montage_Play(OwnerCharacter->DiveMontage);
+                }
+            }
+        }
     }
 }
 
@@ -142,19 +187,30 @@ void UHamaComponent::StopDive()
     if (!bIsDiving) return;
 
     bIsDiving = false;
+
     if (MoveComp)
     {
         MoveComp->bDiving = false;
     }
-}
 
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled() && GetNetMode() != NM_DedicatedServer)
+    {
+        if (USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh())
+        {
+            if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+            {
+                if (OwnerCharacter->DiveMontage)
+                {
+                    AnimInstance->Montage_Stop(0.2f, OwnerCharacter->DiveMontage);
+                }
+            }
+        }
+    }
+}
 
 void UHamaComponent::DecreaseStamina(float Amount)
 {
-    if (GetOwner() && GetOwner()->HasAuthority())
-    {
-        Stamina = FMath::Clamp(Stamina - Amount, 0.0f, MaxStamina);
-    }
+    Stamina = FMath::Clamp(Stamina - Amount, 0.0f, MaxStamina);
 }
 
 void UHamaComponent::StartSprinting()
@@ -176,38 +232,57 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
         SetAiming(false);
     }
 
-    GetWorld()->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
-    GetWorld()->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
+        World->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
+    }
 
     bIsSprinting = bNewSprinting;
 
-    if (MoveComp) MoveComp->bSprinting = bIsSprinting;
-
-    if (bIsSprinting)
+    if (GetOwner() && GetOwner()->HasAuthority())
     {
-        SetAiming(false);
-        GetWorld()->GetTimerManager().ClearTimer(StaminaPenaltyTimerHandle);
-        GetWorld()->GetTimerManager().SetTimer(StaminaDrainTimerHandle, this, &UHamaComponent::DrainStamina, 0.1f, true);
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsSprinting, this);
     }
-    else
+
+    if (MoveComp)
     {
-        if (OwnerCharacter) OwnerCharacter->ResetValuesAfterSprint();
-        if (GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
-        GetWorld()->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
+        MoveComp->bSprinting = bIsSprinting;
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        if (bIsSprinting)
+        {
+            SetAiming(false);
+            World->GetTimerManager().ClearTimer(StaminaPenaltyTimerHandle);
+            World->GetTimerManager().SetTimer(StaminaDrainTimerHandle, this, &UHamaComponent::DrainStamina, 0.1f, true);
+        }
+        else
+        {
+            if (OwnerCharacter)
+            {
+                OwnerCharacter->ResetValuesAfterSprint();
+            }
+
+            if (World->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
+
+            World->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
+        }
     }
 }
-
 
 void UHamaComponent::DrainStamina()
 {
     if (!OwnerCharacter || !MoveComp) return;
+
     if (MoveComp->IsFalling())
     {
         SetSprinting(false);
         return;
     }
 
-    FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
+    const FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
     if (InputVector.SizeSquared() < 0.64f)
     {
         SetSprinting(false);
@@ -215,25 +290,16 @@ void UHamaComponent::DrainStamina()
     }
 
     const FVector Forward2D = OwnerCharacter->GetActorForwardVector().GetSafeNormal2D();
-    FVector NormalizedInput = InputVector.GetSafeNormal2D();
+    const FVector NormalizedInput = InputVector.GetSafeNormal2D();
+    const float ForwardDot = FVector::DotProduct(Forward2D, NormalizedInput);
 
-    float ForwardDot = FVector::DotProduct(Forward2D, NormalizedInput);
-
-    if (ForwardDot < 0.5f)
+    if (ForwardDot < 0.5f || IsDowned())
     {
         SetSprinting(false);
         return;
     }
 
-    if(IsDowned())
-    {
-        SetSprinting(false);
-        return;
-    }
-    FVector CurrentVelocity = OwnerCharacter->GetVelocity();
-    CurrentVelocity.Z = 0.f;
-
-    if (!GSCache)
+    if (!GSCache && GetWorld())
     {
         GSCache = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     }
@@ -245,16 +311,19 @@ void UHamaComponent::DrainStamina()
     {
         SetSprinting(false);
 
-        GetWorld()->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
-        GetWorld()->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
-        GetWorld()->GetTimerManager().SetTimer(
-            StaminaRegenTimerHandle,
-            this,
-            &UHamaComponent::RegenerateStamina,
-            0.1f,
-            true,
-            PenaltyStamina
-        );
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
+            World->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
+            World->GetTimerManager().SetTimer(
+                StaminaRegenTimerHandle,
+                this,
+                &UHamaComponent::RegenerateStamina,
+                0.1f,
+                true,
+                PenaltyStamina
+            );
+        }
         return;
     }
 
@@ -264,9 +333,13 @@ void UHamaComponent::DrainStamina()
 void UHamaComponent::RegenerateStamina()
 {
     if (bIsSlide) return;
+
     if (Stamina >= MaxStamina)
     {
-        GetWorld()->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
+        }
         return;
     }
 
@@ -275,22 +348,22 @@ void UHamaComponent::RegenerateStamina()
 
 void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
 {
-    float StaminaRatio = (MaxStamina > 0.f) ? (Stamina / MaxStamina) : 1.0f;
-
+    const float StaminaRatio = (MaxStamina > 0.f) ? (Stamina / MaxStamina) : 1.0f;
     MaxStamina = NewMaxStamina;
-
     Stamina = MaxStamina * StaminaRatio;
 
     if (!bIsSprinting)
     {
-        if (GetWorld() && !GetWorld()->GetTimerManager().IsTimerActive(StaminaRegenTimerHandle))
+        if (UWorld* World = GetWorld())
         {
-            float Delay = GetWorld()->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle) ? PenaltyStamina : NormalDelayStamina;
-
-            GetWorld()->GetTimerManager().SetTimer(
-                StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina,
-                0.1f, true, Delay
-            );
+            if (!World->GetTimerManager().IsTimerActive(StaminaRegenTimerHandle))
+            {
+                const float Delay = World->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle) ? PenaltyStamina : NormalDelayStamina;
+                World->GetTimerManager().SetTimer(
+                    StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina,
+                    0.1f, true, Delay
+                );
+            }
         }
     }
 }
@@ -330,6 +403,7 @@ void UHamaComponent::SyncStatesFromCMC(bool bInSlide, bool bInDiving, bool bInSp
 void UHamaComponent::OnRep_Sprinting()
 {
     if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
+
     if (MoveComp)
     {
         MoveComp->bSprinting = bIsSprinting;
@@ -350,14 +424,27 @@ void UHamaComponent::OnRep_Slide()
 {
     if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
 
+    if (MoveComp)
+    {
+        MoveComp->bSlide = bIsSlide;
+    }
+
+    if (GetNetMode() == NM_DedicatedServer) return;
+
     USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
     if (!Mesh) return;
 
     UAnimInstance* AnimInstance = Mesh->GetAnimInstance();
     if (!AnimInstance || !OwnerCharacter->SlideMontage) return;
 
-    if (bIsSlide) AnimInstance->Montage_Play(OwnerCharacter->SlideMontage);
-    else          AnimInstance->Montage_Stop(0.2f, OwnerCharacter->SlideMontage);
+    if (bIsSlide)
+    {
+        AnimInstance->Montage_Play(OwnerCharacter->SlideMontage);
+    }
+    else
+    {
+        AnimInstance->Montage_Stop(0.2f, OwnerCharacter->SlideMontage);
+    }
 }
 
 void UHamaComponent::OnRep_Down()
@@ -367,7 +454,6 @@ void UHamaComponent::OnRep_Down()
     if (MoveComp)
     {
         MoveComp->bDowned = bIsDowned;
-
         if (bIsDowned)
         {
             MoveComp->bSprinting = false;
@@ -381,6 +467,13 @@ void UHamaComponent::OnRep_Down()
 void UHamaComponent::OnRep_Dive()
 {
     if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
+
+    if (MoveComp)
+    {
+        MoveComp->bDiving = bIsDiving;
+    }
+
+    if (GetNetMode() == NM_DedicatedServer) return;
 
     USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
     if (!Mesh) return;
