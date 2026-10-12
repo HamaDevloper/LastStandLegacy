@@ -282,6 +282,7 @@ void AHama::CheckForInteractables()
     Params.bReturnPhysicalMaterial = false;
 
     FCollisionShape Sphere = FCollisionShape::MakeSphere(45.f);
+    DrawDebugSphere(GetWorld(), EndLocation, Sphere.GetSphereRadius(), 12, FColor::Green, false, 0.1f);
 
     FTraceDelegate TraceDelegate;
     TraceDelegate.BindUObject(this, &AHama::OnInteractTraceCompleted);
@@ -309,6 +310,7 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
 
     if (Datum.OutHits.IsEmpty() || !Datum.OutHits[0].GetActor())
     {
+        GEngine->AddOnScreenDebugMessage(1, 3.f, FColor::Red, TEXT("No interactable hit."));
         ClearInteractFocus();
         return;
     }
@@ -339,8 +341,6 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
 
 void AHama::ClearInteractFocus()
 {
-    GetWorld()->GetTimerManager().ClearTimer(InteractTimerHandle);
-
     if (FocusedInteractable)
     {
         FocusedInteractable = nullptr;
@@ -1427,27 +1427,6 @@ void AHama::AimPressedSitck()
     }
 }
 
-void AHama::ResetValuesAfterSprint()
-{
-    if (bIsAimButtonHold)
-    {
-        HamaComponent->SetAiming(true);
-        OnAim(true);
-    }
-    if (CurrentWeapon)
-    {
-        if (bIsFireButtonHold)
-        {
-           CurrentWeapon->StartFire();
-        }
-        if (CurrentWeapon->CanReload())
-        {
-            CurrentWeapon->Reload();
-        }
-    }
-   
-}
-
 void AHama::ReloadActionPressed()
 {
     if (!CurrentWeapon || !CurrentWeapon->ShouldReload()) return;
@@ -1735,6 +1714,26 @@ void AHama::StopSprint()
     if (!HamaComponent) return;
 
     HamaComponent->StopSprinting();
+}
+
+void AHama::ResetValuesAfterSprint()
+{
+    if (bIsAimButtonHold)
+    {
+        HamaComponent->SetAiming(true);
+        OnAim(true);
+    }
+    if (CurrentWeapon)
+    {
+        if (bIsFireButtonHold)
+        {
+            CurrentWeapon->StartFire();
+        }
+        if (CurrentWeapon->CanReload())
+        {
+            CurrentWeapon->Reload();
+        }
+    }
 }
 
 void AHama::OnSprintStopped()

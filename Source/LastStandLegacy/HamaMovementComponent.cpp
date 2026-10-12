@@ -60,6 +60,7 @@ FVector UHamaMovementComponent::ScaleInputAcceleration(const FVector& InputAccel
 {
     if (bSlide || bDiving)
     {
+        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Green, "InputDown!");
         return FVector::ZeroVector;
     }
 

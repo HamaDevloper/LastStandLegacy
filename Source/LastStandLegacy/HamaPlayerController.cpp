@@ -65,8 +65,10 @@ void AHamaPlayerController::AcknowledgePossession(APawn* P)
 {
     Super::AcknowledgePossession(P);
 
+    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "Started!");
     AHama* HamaPawn = Cast<AHama>(P);
     if (!IsLocalController() || !HamaPawn) return;
+    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "Second!");
 
     bAutoManageActiveCameraTarget = true;
     SetInputMode(FInputModeGameOnly());
@@ -76,10 +78,15 @@ void AHamaPlayerController::AcknowledgePossession(APawn* P)
 
     if (HamaPawn->DefaultMappingContext)
     {
+        GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "InsideHama!");
         ActiveGameplayContext = HamaPawn->DefaultMappingContext;
         SafeAddMappingContext(HamaPawn->DefaultMappingContext, 0);
     }
-
+    else
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Red, TEXT("DefaultMappingContext is NULL on AcknowledgePossession!"));
+    }
+    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "Done!");
     CheckAndBindUI();
 }
 
@@ -105,7 +112,6 @@ void AHamaPlayerController::ClientRestart_Implementation(APawn* NewPawn)
     if (AHama* HamaPawn = Cast<AHama>(NewPawn))
     {
         ActiveGameplayContext = HamaPawn->DefaultMappingContext;
-        SafeRemoveMappingContext(HamaPawn->DefaultMappingContext);
         SafeAddMappingContext(HamaPawn->DefaultMappingContext, 0);
         SetViewTarget(HamaPawn);
     }
@@ -270,7 +276,11 @@ void AHamaPlayerController::Client_SetSpectateTarget_Implementation(AHama* Targe
 
 void AHamaPlayerController::SafeAddMappingContext(UInputMappingContext* Context, int32 Priority)
 {
+    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "InMapping!");
+
     if (!Context || !IsLocalController()) return;
+
+    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "StartedMapping!");
 
     if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
     {
@@ -278,7 +288,18 @@ void AHamaPlayerController::SafeAddMappingContext(UInputMappingContext* Context,
         {
             Subsystem->AddMappingContext(Context, Priority);
         }
+        else
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "SubSystemFailed!");
+
+        }
     }
+    else
+    {
+        GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "NotFoundLocalPlayer!");
+
+    }
+    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "FinishedMapping!");
 }
 
 void AHamaPlayerController::SafeRemoveMappingContext(UInputMappingContext* Context)

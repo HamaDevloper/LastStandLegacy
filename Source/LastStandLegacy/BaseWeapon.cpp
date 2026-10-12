@@ -301,12 +301,6 @@ void ABaseWeapon::HandleFireLocal()
 
     BurstCounter = (BurstCounter > 255) ? 1 : (BurstCounter + 1);
 
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(2001, 6.f, FColor::Cyan,
-            FString::Printf(TEXT("[CLIENT] CurrentAmmo=%d | ReserveAmmo=%d"), CurrentAmmo, ReserveAmmo));
-    }
-
     if (ShootForceFeedback)
     {
         FForceFeedbackParameters FeedbackParams;
@@ -410,12 +404,6 @@ void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLo
 
             BurstCounter = (BurstCounter > 255) ? 1 : (BurstCounter + 1);
         }
-    }
-
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(2002, 6.f, FColor::Orange,
-            FString::Printf(TEXT("[SERVER-RECEIVED] CurrentAmmo=%d | ReserveAmmo=%d"), CurrentAmmo, ReserveAmmo));
     }
 
     ServerNextAllowedFireTime = CurrentTime + GetEffectiveFireRate();
