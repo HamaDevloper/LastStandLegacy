@@ -37,6 +37,7 @@ public:
 
     void SetAiming(bool bNewAiming);
     void SetDowned(bool NewValue);
+    void ApplyDownedState();
 
     bool CanDive() const;
 

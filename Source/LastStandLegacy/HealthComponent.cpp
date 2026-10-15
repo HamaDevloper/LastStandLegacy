@@ -54,6 +54,19 @@ void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
     }
 }
 
+void UHealthComponent::SetBeingRevived(bool bState)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || bIsBeingRevived == bState) return;
+
+    bIsBeingRevived = bState;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnRep_IsBeingRevived();
+    }
+}
+
 void UHealthComponent::OnRep_IsBeingRevived()
 {
     OnReviveStateChanged.ExecuteIfBound(bIsBeingRevived, false);

@@ -73,7 +73,6 @@ protected:
     UPROPERTY()
     TArray<TObjectPtr<UImage>> PerkImagePool;
 
-    // 🔥 UE5 Modern Standard: بەکارهێنانی TObjectPtr لە ناو Mapەکاندا
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PowerUp Data")
     TMap<EPowerUpType, TObjectPtr<UTexture2D>> PowerUpIcons;
 
@@ -169,7 +168,6 @@ private:
     FTimerHandle PowerImageHideTimer;
     FTimerHandle UIUpdateTimerHandle;
 
-    // دێلیگاتەکان بۆ وەگرتنی Progress
     UFUNCTION()
     void HandleReviveProgressUpdate(float Percent);
 

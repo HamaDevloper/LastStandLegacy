@@ -436,51 +436,66 @@ void UHamaMainWidget::HandleReviveProgressUpdate(float Percent)
 
 void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRevivingOthers)
 {
-    const bool bShowUI = bIsBeingRevived || bIsRevivingOthers;
+    UWorld* World = GetWorld();
 
+    // ١. کۆنتڕۆڵکردنی Progress Bar (تەنها بۆ ئەو کەسەی کە هاوڕێکەی زیندوو دەکاتەوە - وەک BO3)
     if (ReviveProgressBar)
     {
-        ReviveProgressBar->SetVisibility(bShowUI ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-        if (!bShowUI)
+        if (bIsRevivingOthers)
         {
             ReviveProgressBar->SetPercent(0.0f);
-            GetWorld()->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
+            ReviveProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+            if (World)
+            {
+                World->GetTimerManager().SetTimer(
+                    UIUpdateTimerHandle,
+                    this,
+                    &UHamaMainWidget::NativeUpdateReviveProgress,
+                    0.033f,
+                    true
+                );
+            }
         }
         else
         {
-            GetWorld()->GetTimerManager().SetTimer(
-                UIUpdateTimerHandle,
-                this,
-                &UHamaMainWidget::NativeUpdateReviveProgress,
-                0.033f,
-                true
-            );
+            ReviveProgressBar->SetVisibility(ESlateVisibility::Collapsed);
+            ReviveProgressBar->SetPercent(0.0f);
+
+            if (World)
+            {
+                World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
+            }
         }
     }
 
     if (ReviveText)
     {
-        ReviveText->SetVisibility(bShowUI ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-        if (bIsRevivingOthers)
+        if (bIsBeingRevived && !bIsRevivingOthers)
         {
-            ReviveText->SetText(FText::FromString(TEXT("REVIVING TEAMMATE...")));
+            static const FText BeingRevivedMsg = LOCTEXT("BeingRevived", "BEING REVIVED...");
+            ReviveText->SetText(BeingRevivedMsg);
+            ReviveText->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
-        else if (bIsBeingRevived)
+        else
         {
-            ReviveText->SetText(FText::FromString(TEXT("BEING REVIVED...")));
+            ReviveText->SetVisibility(ESlateVisibility::Collapsed);
         }
     }
 }
 
 void UHamaMainWidget::NativeUpdateReviveProgress()
 {
-    AHama* Player = Cast<AHama>(GetOwningPlayerPawn());
-    if (!Player) return;
+    UWorld* World = GetWorld();
+    if (!CachedHamaChar || !World) return;
 
-    if (Player->ReviveTotalDuration > 0.0f)
+    if (CachedHamaChar->ReviveTotalDuration > 0.0f)
     {
-        float RemainingTime = Player->ReviveEndTime - GetWorld()->GetTimeSeconds();
-        float Percent = 1.0f - FMath::Clamp(RemainingTime / Player->ReviveTotalDuration, 0.0f, 1.0f);
+        const AGameStateBase* GS = World->GetGameState();
+        const float CurrentServerTime = GS ? GS->GetServerWorldTimeSeconds() : World->GetTimeSeconds();
+
+        const float RemainingTime = CachedHamaChar->ReviveEndTime - CurrentServerTime;
+        const float Percent = 1.0f - FMath::Clamp(RemainingTime / CachedHamaChar->ReviveTotalDuration, 0.0f, 1.0f);
 
         if (ReviveProgressBar)
         {
@@ -489,7 +504,7 @@ void UHamaMainWidget::NativeUpdateReviveProgress()
 
         if (RemainingTime <= 0.0f)
         {
-            GetWorld()->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
+            World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
         }
     }
 }
@@ -532,6 +547,7 @@ void UHamaMainWidget::NativeDestruct()
     {
         World->GetTimerManager().ClearTimer(PingUpdateTimer);
         World->GetTimerManager().ClearTimer(PowerImageHideTimer);
+        World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
     }
 
     UnbindAllEvents();

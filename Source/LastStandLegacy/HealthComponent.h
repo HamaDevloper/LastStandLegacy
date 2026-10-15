@@ -64,7 +64,7 @@ public:
     bool IsDowned() const;
 
      bool IsBeingRevived() const { return bIsBeingRevived; }
-     void SetBeingRevived(bool bState) { bIsBeingRevived = bState; }
+     void SetBeingRevived(bool bState);
 
 protected:
     void DownPlayer();

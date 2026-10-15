@@ -3,6 +3,7 @@
 #include "Net/Core/PushModel/PushModel.h"
 #include "Hama.h"
 #include "HamaMovementComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "BaseWeapon.h"
 #include "LastStandLegacyGameState.h"
 
@@ -74,22 +75,36 @@ void UHamaComponent::SetDowned(bool NewValue)
         bIsDowned = NewValue;
         MARK_PROPERTY_DIRTY_FROM_NAME(UHamaComponent, bIsDowned, this);
 
-        if (MoveComp)
-        {
-            MoveComp->bDowned = bIsDowned;
-        }
-
         if (bIsDowned && OwnerCharacter)
         {
-            OwnerCharacter->Server_CancelRevive();
+            OwnerCharacter->CancelReviveInternal();
         }
 
-        if (bIsDowned)
+        ApplyDownedState();
+    }
+}
+
+void UHamaComponent::ApplyDownedState()
+{
+    if (MoveComp)
+    {
+        MoveComp->bDowned = bIsDowned;
+    }
+
+    if (bIsDowned)
+    {
+        SetSprinting(false);
+        SetAiming(false);
+        StopSlide();
+        StopDive();
+    }
+
+    if (OwnerCharacter)
+    {
+        if (UCapsuleComponent* Capsule = OwnerCharacter->GetCapsuleComponent())
         {
-            SetSprinting(false);
-            SetAiming(false);
-            StopSlide();
-            StopDive();
+            const ECollisionResponse TargetResponse = bIsDowned ? ECR_Block : ECR_Ignore;
+            Capsule->SetCollisionResponseToChannel(ECC_Visibility, TargetResponse);
         }
     }
 }
@@ -452,9 +467,11 @@ void UHamaComponent::OnRep_Slide()
     }
 }
 
-void UHamaComponent::OnRep_Down()
+void UHamaComponent::OnRep_IsDowned()
 {
     if (!OwnerCharacter) return;
+
+    ApplyDownedState();
 
     if (MoveComp)
     {

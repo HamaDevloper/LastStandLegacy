@@ -2121,9 +2121,10 @@ void AHama::InteractActionReleased()
 void AHama::GamepadXActionPressed(const FInputActionInstance& Instance)
 {
     if (IsDrinkingPerk()) return;
-    IInteractInterface* FocusedInterface = Cast<IInteractInterface>(FocusedInteractable.Get());
+  
     if (!bIsxButtonHolded && Instance.GetElapsedTime() >= 0.2f)
     {
+        IInteractInterface* FocusedInterface = Cast<IInteractInterface>(FocusedInteractable.Get());
         if (FocusedInterface && FocusedInterface->CanInteract(this))
         {
             bIsxButtonHolded = true;
@@ -2148,7 +2149,7 @@ void AHama::GamepadXActionReleased()
 void AHama::Server_Interact_Implementation(AActor* InteractTarget)
 {
     if (!InteractTarget) return;
-    if (bIsDead || GetDeathMachine() || IsDowned()|| IsDrinkingPerk()) return;
+    if (SetCanInteract()) return;
 
     GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, FString::Printf(TEXT("Server_Interact called for: %s"), *InteractTarget->GetName()));
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractTarget->GetActorLocation());
@@ -2411,6 +2412,7 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
     if (!DownedPlayer || !DownedPlayer->HealthComponent) return;
     if (DownedPlayer->HealthComponent->IsBeingRevived()) return;
     if (bIsDead || IsDowned() || !DownedPlayer->HealthComponent->IsDowned()) return;
+
     const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.f);
     if (FVector::DistSquared(GetActorLocation(), DownedPlayer->GetActorLocation()) > MaxAllowedDistSq)
     {
@@ -2420,7 +2422,6 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
     ClearAllReviveTimers();
 
     CurrentReviveTarget = DownedPlayer;
-
     DownedPlayer->HealthComponent->SetBeingRevived(true);
 
     float FinalReviveTime = DefaultReviveTime;
@@ -2437,14 +2438,20 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
         FinalReviveTime *= 0.5f;
     }
 
+    const float ServerTime = GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+
     ReviveTotalDuration = FinalReviveTime;
-    ReviveEndTime = GetWorld()->GetTimeSeconds() + FinalReviveTime;
+    ReviveEndTime = ServerTime + FinalReviveTime;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveTotalDuration, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveEndTime, this);
 
-    FTimerDelegate ReviveDel;
+    if (IsLocallyControlled())
+    {
+        OnRep_ReviveData();
+    }
 
+    FTimerDelegate ReviveDel;
     ReviveDel.BindUObject(this, &AHama::Server_CompleteRevive);
 
     GetWorldTimerManager().SetTimer(ReviveTimerHandle, ReviveDel, FinalReviveTime, false);
@@ -2497,10 +2504,17 @@ void AHama::ClearAllReviveTimers()
     GetWorldTimerManager().ClearTimer(ReviveTimerHandle);
     GetWorldTimerManager().ClearTimer(ReviveCheckTimerHandle);
 
+    const bool bWasReviving = (ReviveTotalDuration > 0.0f);
+
     ReviveEndTime = 0.0f;
     ReviveTotalDuration = 0.0f;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveEndTime, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveTotalDuration, this);
+
+    if (bWasReviving && IsLocallyControlled())
+    {
+        OnRep_ReviveData();
+    }
 
     if (AHama* Target = CurrentReviveTarget.Get())
     {
@@ -2513,14 +2527,19 @@ void AHama::ClearAllReviveTimers()
     CurrentReviveTarget = nullptr;
 }
 
+void AHama::OnRep_ReviveData()
+{
+    if (HealthComponent)
+    {
+        const bool bIsRevivingOthers = (ReviveTotalDuration > 0.0f && ReviveEndTime > 0.0f);
+        HealthComponent->OnReviveStateChanged.ExecuteIfBound(HealthComponent->IsBeingRevived(), bIsRevivingOthers);
+    }
+}
+
 void AHama::SetIsDead(bool bNewIsDead)
 {
     bIsDead = bNewIsDead;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
-}
-
-void AHama::OnRep_ReviveData()
-{
 }
 
 void AHama::Server_CompleteRevive()
