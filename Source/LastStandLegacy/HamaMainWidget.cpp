@@ -74,10 +74,11 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
             OldThrowableComp->OnThrowableCountChanged.Unbind();
         }
 
-        if (UHealthComponent* HealthComp = InHama->FindComponentByClass<UHealthComponent>())
+        if (UHealthComponent* OldHealthComp = CachedHamaChar->FindComponentByClass<UHealthComponent>())
         {
-            HealthComp->OnReviveProgressChanged.Unbind();
-            HealthComp->OnReviveStateChanged.Unbind();
+            OldHealthComp->OnReviveProgressChanged.Unbind();
+            OldHealthComp->OnReviveStateChanged.Unbind();
+            OldHealthComp->OnDownStateChanged.Unbind();
         }
 
         CachedHamaChar->OnAmmoUpdateEvent.Unbind();
@@ -105,10 +106,11 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
         HandleThrowableCountUpdate(ThrowableComp->GetCurrentMonkeyCount(), ThrowableComp->GetCurrentGrenadeCount());
     }
 
-    if (UHealthComponent* HealthComp = InHama->FindComponentByClass<UHealthComponent>())
+    if (UHealthComponent* HealthComp = CachedHamaChar->FindComponentByClass<UHealthComponent>())
     {
         HealthComp->OnReviveProgressChanged.BindUObject(this, &UHamaMainWidget::HandleReviveProgressUpdate);
         HealthComp->OnReviveStateChanged.BindUObject(this, &UHamaMainWidget::HandleReviveStateChanged);
+        HealthComp->OnDownStateChanged.BindUObject(this, &UHamaMainWidget::HandleDownStateChanged);
     }
 
     HandlePerksUpdate(CachedHamaChar->GetOwnedPerks());
@@ -118,6 +120,7 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
         HandleAmmoUpdate(CurrentWep->GetCurrentAmmo(), CurrentWep->GetReserveAmmo());
     }
 }
+
 
 void UHamaMainWidget::BindPlayerState(AHamaPlayerState* InPlayerState)
 {
@@ -438,7 +441,6 @@ void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRev
 {
     UWorld* World = GetWorld();
 
-    // ١. کۆنتڕۆڵکردنی Progress Bar (تەنها بۆ ئەو کەسەی کە هاوڕێکەی زیندوو دەکاتەوە - وەک BO3)
     if (ReviveProgressBar)
     {
         if (bIsRevivingOthers)
@@ -505,7 +507,48 @@ void UHamaMainWidget::NativeUpdateReviveProgress()
         if (RemainingTime <= 0.0f)
         {
             World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
+
+            if (ReviveProgressBar)
+            {
+                ReviveProgressBar->SetVisibility(ESlateVisibility::Collapsed);
+                ReviveProgressBar->SetPercent(0.0f);
+            }
         }
+    }
+    else
+    {
+        World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
+        if (ReviveProgressBar)
+        {
+            ReviveProgressBar->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+}
+
+void UHamaMainWidget::HandleDownStateChanged(bool bIsDowned)
+{
+    if (!bIsDowned)
+    {
+        ResetReviveUI();
+    }
+}
+
+void UHamaMainWidget::ResetReviveUI()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
+    }
+
+    if (ReviveProgressBar)
+    {
+        ReviveProgressBar->SetPercent(0.0f);
+        ReviveProgressBar->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    if (ReviveText)
+    {
+        ReviveText->SetVisibility(ESlateVisibility::Collapsed);
     }
 }
 
@@ -516,6 +559,13 @@ void UHamaMainWidget::UnbindAllEvents()
         if (UThrowableComponent* ThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
         {
             ThrowableComp->OnThrowableCountChanged.Unbind();
+        }
+
+        if (UHealthComponent* HealthComp = CachedHamaChar->FindComponentByClass<UHealthComponent>())
+        {
+            HealthComp->OnReviveProgressChanged.Unbind();
+            HealthComp->OnReviveStateChanged.Unbind();
+            HealthComp->OnDownStateChanged.Unbind();
         }
 
         CachedHamaChar->OnAmmoUpdateEvent.Unbind();
@@ -539,6 +589,8 @@ void UHamaMainWidget::UnbindAllEvents()
         CachedGameState->OnPowerUpAnnouncedDelegate.RemoveAll(this);
         CachedGameState = nullptr;
     }
+
+    ResetReviveUI();
 }
 
 void UHamaMainWidget::NativeDestruct()

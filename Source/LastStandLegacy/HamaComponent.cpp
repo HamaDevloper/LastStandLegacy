@@ -22,6 +22,19 @@ void UHamaComponent::BeginPlay()
     if (!OwnerCharacter) return;
 
     MoveComp = OwnerCharacter->FindComponentByClass<UHamaMovementComponent>();
+    GSCache = GetWorld() ? GetWorld()->GetGameState<ALastStandLegacyGameState>() : nullptr;
+}
+
+ALastStandLegacyGameState* UHamaComponent::GetGameStateCached()
+{
+    if (!GSCache)
+    {
+        if (UWorld* World = GetWorld())
+        {
+            GSCache = World->GetGameState<ALastStandLegacyGameState>();
+        }
+    }
+    return GSCache;
 }
 
 void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -104,7 +117,7 @@ void UHamaComponent::ApplyDownedState()
         if (UCapsuleComponent* Capsule = OwnerCharacter->GetCapsuleComponent())
         {
             const ECollisionResponse TargetResponse = bIsDowned ? ECR_Block : ECR_Ignore;
-            Capsule->SetCollisionResponseToChannel(ECC_Visibility, TargetResponse);
+            Capsule->SetCollisionResponseToChannel(ECC_Intract, TargetResponse);
         }
     }
 }
@@ -226,7 +239,17 @@ void UHamaComponent::StopDive()
 void UHamaComponent::DecreaseStamina(float Amount)
 {
     Stamina = FMath::Clamp(Stamina - Amount, 0.f, MaxStamina);
-    if (!bIsSprinting) StartStaminaRegen(NormalDelayStamina);
+
+    if (Stamina <= 0.f)
+    {
+        bIsExhausted = true;
+    }
+
+    if (!bIsSprinting)
+    {
+        const float Delay = bIsExhausted ? PenaltyStamina : NormalDelayStamina;
+        StartStaminaRegen(Delay);
+    }
 }
 
 void UHamaComponent::StartStaminaRegen(float Delay)
@@ -252,10 +275,9 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 {
     if (bIsSprinting == bNewSprinting) return;
 
-    if (UWorld* World = GetWorld())
+    if (bNewSprinting && (bIsExhausted || Stamina <= 0.f || bIsDowned || bIsSlide || bIsDiving))
     {
-        World->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
-        World->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
+        return;
     }
 
     bIsSprinting = bNewSprinting;
@@ -270,25 +292,34 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
         MoveComp->bSprinting = bIsSprinting;
     }
 
-    if (UWorld* World = GetWorld())
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    World->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
+
+    if (bIsSprinting)
     {
-        if (bIsSprinting)
+        SetAiming(false);
+        World->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
+        World->GetTimerManager().SetTimer(StaminaDrainTimerHandle, this, &UHamaComponent::DrainStamina, 0.1f, true);
+    }
+    else
+    {
+        if (OwnerCharacter)
         {
-            SetAiming(false);
-            World->GetTimerManager().ClearTimer(StaminaPenaltyTimerHandle);
-            World->GetTimerManager().SetTimer(StaminaDrainTimerHandle, this, &UHamaComponent::DrainStamina, 0.1f, true);
+            OwnerCharacter->ResetValuesAfterSprint();
         }
-        else
-        {
-            if (OwnerCharacter)
-            {
-                OwnerCharacter->ResetValuesAfterSprint();
-            }
 
-            if (World->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle)) return;
+        const float RegenDelay = bIsExhausted ? PenaltyStamina : NormalDelayStamina;
 
-            World->GetTimerManager().SetTimer(StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina, 0.1f, true, NormalDelayStamina);
-        }
+        World->GetTimerManager().SetTimer(
+            StaminaRegenTimerHandle,
+            this,
+            &UHamaComponent::RegenerateStamina,
+            0.1f,
+            true,
+            RegenDelay
+        );
     }
 }
 
@@ -296,7 +327,7 @@ void UHamaComponent::DrainStamina()
 {
     if (!OwnerCharacter || !MoveComp) return;
 
-    if (MoveComp->IsFalling())
+    if (bIsDowned || MoveComp->IsFalling())
     {
         SetSprinting(false);
         return;
@@ -313,46 +344,37 @@ void UHamaComponent::DrainStamina()
     const FVector NormalizedInput = InputVector.GetSafeNormal2D();
     const float ForwardDot = FVector::DotProduct(Forward2D, NormalizedInput);
 
-    if (ForwardDot < 0.5f || IsDowned())
+    if (ForwardDot < 0.5f)
     {
         SetSprinting(false);
         return;
     }
 
-    if (!GSCache && GetWorld())
+    if (const ALastStandLegacyGameState* GS = GetGameStateCached())
     {
-        GSCache = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-    }
-
-    const bool bInfiniteStamina = (GSCache && GSCache->IsTeamAdrenalineActive());
-    if (bInfiniteStamina) return;
-
-    if (Stamina <= 0.f)
-    {
-        SetSprinting(false);
-
-        if (UWorld* World = GetWorld())
+        if (GS->IsTeamAdrenalineActive())
         {
-            World->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
-            World->GetTimerManager().ClearTimer(StaminaDrainTimerHandle);
-            World->GetTimerManager().SetTimer(
-                StaminaRegenTimerHandle,
-                this,
-                &UHamaComponent::RegenerateStamina,
-                0.1f,
-                true,
-                PenaltyStamina
-            );
+            return;
         }
-        return;
     }
 
     Stamina = FMath::Clamp(Stamina - StaminaDrainRate * 0.1f, 0.f, MaxStamina);
+
+    if (Stamina <= 0.f)
+    {
+        bIsExhausted = true;
+        SetSprinting(false);
+        return;
+    }
 }
 
 void UHamaComponent::RegenerateStamina()
 {
     if (bIsSlide) return;
+
+    bIsExhausted = false;
+
+    Stamina = FMath::Clamp(Stamina + StaminaRegenRate * 0.1f, 0.f, MaxStamina);
 
     if (Stamina >= MaxStamina)
     {
@@ -362,8 +384,6 @@ void UHamaComponent::RegenerateStamina()
         }
         return;
     }
-
-    Stamina = FMath::Clamp(Stamina + StaminaRegenRate * 0.1f, 0.f, MaxStamina);
 }
 
 void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
@@ -378,11 +398,8 @@ void UHamaComponent::UpgradeMaxStamina(float NewMaxStamina)
         {
             if (!World->GetTimerManager().IsTimerActive(StaminaRegenTimerHandle))
             {
-                const float Delay = World->GetTimerManager().IsTimerActive(StaminaPenaltyTimerHandle) ? PenaltyStamina : NormalDelayStamina;
-                World->GetTimerManager().SetTimer(
-                    StaminaRegenTimerHandle, this, &UHamaComponent::RegenerateStamina,
-                    0.1f, true, Delay
-                );
+                const float Delay = bIsExhausted ? PenaltyStamina : NormalDelayStamina;
+                StartStaminaRegen(Delay);
             }
         }
     }
@@ -392,6 +409,7 @@ void UHamaComponent::ResetStamina()
 {
     MaxStamina = 100.f;
     Stamina = 100.f;
+    bIsExhausted = false;
 }
 
 void UHamaComponent::SyncStatesFromCMC(bool bInSlide, bool bInDiving, bool bInSprinting)
@@ -467,7 +485,7 @@ void UHamaComponent::OnRep_Slide()
     }
 }
 
-void UHamaComponent::OnRep_IsDowned()
+void UHamaComponent::OnRep_Down()
 {
     if (!OwnerCharacter) return;
 

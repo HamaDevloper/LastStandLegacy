@@ -61,6 +61,18 @@ void UHealthComponent::SetBeingRevived(bool bState)
     bIsBeingRevived = bState;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
 
+    if (UWorld* World = GetWorld())
+    {
+        if (bIsBeingRevived)
+        {
+            World->GetTimerManager().PauseTimer(DownTimerHandle);
+        }
+        else if (IsDowned())
+        {
+            World->GetTimerManager().UnPauseTimer(DownTimerHandle);
+        }
+    }
+
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
         OnRep_IsBeingRevived();
@@ -213,12 +225,6 @@ void UHealthComponent::HandlePlayerDeath()
 
     OwnerCharacter->SetIsDead(true);
 
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red,
-            FString::Printf(TEXT("[HealthComp] Player Died: %s (Authority: YES)"), *OwnerCharacter->GetName()));
-    }
-
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
@@ -254,6 +260,5 @@ void UHealthComponent::HandlePlayerDeath()
         }
     }
 
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[HealthComp] Player will be destroyed in 5 seconds."));
     OwnerCharacter->SetLifeSpan(0.2f);
 }

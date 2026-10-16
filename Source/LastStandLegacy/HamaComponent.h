@@ -5,6 +5,8 @@
 #include "Components/ActorComponent.h"
 #include "HamaComponent.generated.h"
 
+#define ECC_Intract ECC_GameTraceChannel3
+
 class AHama;
 class UHamaMovementComponent;
 class ALastStandLegacyGameState;
@@ -17,10 +19,9 @@ class LASTSTANDLEGACY_API UHamaComponent : public UActorComponent
 public:
     UHamaComponent();
 
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
 protected:
     virtual void BeginPlay() override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     /* ================================================================================================
      *                                    MOVEMENT & ACTION INPUTS
@@ -94,6 +95,8 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float NormalDelayStamina = 0.5f;
 
+    bool bIsExhausted = false;
+
 public:
     // --- REPLICATED STATES ---
     UPROPERTY(ReplicatedUsing = OnRep_Sprinting, EditAnywhere, BlueprintReadOnly, Category = "Hama|State")
@@ -118,6 +121,8 @@ protected:
     void RegenerateStamina();
     void StartStaminaRegen(float Delay);
 
+    ALastStandLegacyGameState* GetGameStateCached();
+
     // --- ONREP NOTIFIES ---
     UFUNCTION()
     void OnRep_Sprinting();
@@ -140,7 +145,6 @@ protected:
 private:
     FTimerHandle StaminaDrainTimerHandle;
     FTimerHandle StaminaRegenTimerHandle;
-    FTimerHandle StaminaPenaltyTimerHandle;
 
     UPROPERTY()
     TObjectPtr<AHama> OwnerCharacter;

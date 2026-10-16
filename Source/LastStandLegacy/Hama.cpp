@@ -153,6 +153,8 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ThirdWeapon, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsDeathMachineActive, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentlyUpgradingWeaponClass, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ReviveEndTime, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ReviveTotalDuration, Params);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -2149,7 +2151,7 @@ void AHama::GamepadXActionReleased()
 void AHama::Server_Interact_Implementation(AActor* InteractTarget)
 {
     if (!InteractTarget) return;
-    if (SetCanInteract()) return;
+    if (!SetCanInteract()) return;
 
     GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, FString::Printf(TEXT("Server_Interact called for: %s"), *InteractTarget->GetName()));
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractTarget->GetActorLocation());
@@ -2404,7 +2406,12 @@ void AHama::Interact(AHama* InteractingPlayer)
 
 bool AHama::Client_PreInteract(AHama* Player)
 {
-    return HamaComponent && !HamaComponent->IsDowned() && !bIsDead && !GetDeathMachine();
+    if (!IsValid(Player) || Player == this || !Player->HamaComponent)
+    {
+        return false;
+    }
+
+    return !Player->HamaComponent->IsDowned() && !Player->bIsDead && !Player->GetDeathMachine();
 }
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)

@@ -151,6 +151,12 @@ public:
     void NativeUpdateReviveProgress();
 
     UFUNCTION()
+    void HandleDownStateChanged(bool bIsDowned);
+    
+    UFUNCTION()
+    void ResetReviveUI();
+
+    UFUNCTION()
     void HandleThrowableCountUpdate(int32 NewMonkeyCount, int32 NewGrenadeCount);
     void EnsureThrowablePoolSize(UHorizontalBox* Container, TArray<TObjectPtr<UImage>>& Pool, UTexture2D* IconTexture, int32 TargetSize);
 

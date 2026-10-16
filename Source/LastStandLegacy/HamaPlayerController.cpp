@@ -65,20 +65,17 @@ void AHamaPlayerController::AcknowledgePossession(APawn* P)
 {
     Super::AcknowledgePossession(P);
 
-    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "Started!");
     AHama* HamaPawn = Cast<AHama>(P);
     if (!IsLocalController() || !HamaPawn) return;
-    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "Second!");
 
     bAutoManageActiveCameraTarget = true;
-    SetInputMode(FInputModeGameOnly());
     bShowMouseCursor = false;
 
+    SetInputMode(FInputModeGameOnly());
     SafeRemoveMappingContext(SpectatorMappingContext);
 
     if (HamaPawn->DefaultMappingContext)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "InsideHama!");
         ActiveGameplayContext = HamaPawn->DefaultMappingContext;
         SafeAddMappingContext(HamaPawn->DefaultMappingContext, 0);
     }
@@ -86,7 +83,7 @@ void AHamaPlayerController::AcknowledgePossession(APawn* P)
     {
         GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Red, TEXT("DefaultMappingContext is NULL on AcknowledgePossession!"));
     }
-    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "Done!");
+
     CheckAndBindUI();
 }
 
@@ -276,11 +273,7 @@ void AHamaPlayerController::Client_SetSpectateTarget_Implementation(AHama* Targe
 
 void AHamaPlayerController::SafeAddMappingContext(UInputMappingContext* Context, int32 Priority)
 {
-    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "InMapping!");
-
     if (!Context || !IsLocalController()) return;
-
-    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "StartedMapping!");
 
     if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
     {
@@ -299,7 +292,6 @@ void AHamaPlayerController::SafeAddMappingContext(UInputMappingContext* Context,
         GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "NotFoundLocalPlayer!");
 
     }
-    GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, "FinishedMapping!");
 }
 
 void AHamaPlayerController::SafeRemoveMappingContext(UInputMappingContext* Context)
