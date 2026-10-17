@@ -15,6 +15,7 @@
 #include "BasePerk.h"
 #include "NavigationSystem.h"
 #include "Components/CapsuleComponent.h"
+#include "ZombieDirectorSubsystem.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -546,60 +547,78 @@ void ALastStandLegacyGameMode::SpawnPowers(FVector SpawnLocation)
 
 void ALastStandLegacyGameMode::ActivateNuke()
 {
-    if (bIsNuking) return;
+    if (!HasAuthority() || bIsNuking) return;
 
-    bIsNuking = true;
-    ZombiesToNuke.Empty();
+    UWorld* World = GetWorld();
+    if (!World) return;
 
-    for (TActorIterator<AZombie> It(GetWorld()); It; ++It)
+    UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>();
+    if (!Director) return;
+
+
+    ZombiesToNuke.Reset();
+    for (const TWeakObjectPtr<AZombie>& Weak : Director->GetActiveZombies())
     {
-        if (*It && !(*It)->IsDead())
+        AZombie* Z = Weak.Get();
+        if (IsValid(Z) && !Z->IsDead())
         {
-            ZombiesToNuke.Add(*It);
+            ZombiesToNuke.Add(Z);
         }
     }
 
-    DynamicKillBatchSize = FMath::Max(1, FMath::CeilToInt(ZombiesToNuke.Num() / 10.0f));
-
     bool bDoublePoints = false;
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    if (const ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
     {
         bDoublePoints = GS->bIsDoublePointsActive;
     }
 
-    int32 NukeReward = bDoublePoints ? 800 : 400;
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    const int32 Reward = bDoublePoints ? NukeReward * 2 : NukeReward;
+    for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
     {
         if (APlayerController* PC = It->Get())
         {
             if (AHamaPlayerState* PS = PC->GetPlayerState<AHamaPlayerState>())
             {
-                PS->AddPoints(NukeReward);
+                PS->AddPoints(Reward);
             }
         }
     }
 
-    GetWorldTimerManager().SetTimer(NukeTimerHandle, this, &ALastStandLegacyGameMode::ProcessNukeKills, 0.05f, true);
+    if (ZombiesToNuke.IsEmpty()) return;
+
+    bIsNuking = true;
+    DynamicKillBatchSize = FMath::Max(1, FMath::CeilToInt(ZombiesToNuke.Num() / FMath::Max(1.f, (float)NukeBatchDivisor)));
+
+    GetWorldTimerManager().SetTimer(NukeTimerHandle, this, &ALastStandLegacyGameMode::ProcessNukeKills, NukeTickInterval, true, 0.f);
 }
 
 void ALastStandLegacyGameMode::ProcessNukeKills()
 {
-    for (int32 i = 0; i < DynamicKillBatchSize; i++)
+    int32 Killed = 0;
+
+    while (Killed < DynamicKillBatchSize && !ZombiesToNuke.IsEmpty())
     {
-        if (ZombiesToNuke.IsEmpty())
-        {
-            bIsNuking = false;
-            GetWorldTimerManager().ClearTimer(NukeTimerHandle);
-            return;
-        }
+        const TWeakObjectPtr<AZombie> Weak = ZombiesToNuke.Pop(EAllowShrinking::No);
+        AZombie* Z = Weak.Get();
 
-        AZombie* ZombieToKill = ZombiesToNuke.Pop();
-
-        if (ZombieToKill && !ZombieToKill->IsDead())
+        if (IsValid(Z) && !Z->IsDead())
         {
-            ZombieToKill->Die(nullptr);
+            Z->Die(nullptr);
+            ++Killed;
         }
     }
+
+    if (ZombiesToNuke.IsEmpty())
+    {
+        FinishNuke();
+    }
+}
+
+void ALastStandLegacyGameMode::FinishNuke()
+{
+    GetWorldTimerManager().ClearTimer(NukeTimerHandle);
+    ZombiesToNuke.Reset();
+    bIsNuking = false;
 }
 
 void ALastStandLegacyGameMode::CheckGameOverCondition()

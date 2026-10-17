@@ -7,79 +7,112 @@
 class AHama;
 class UHamaComponent;
 
-DECLARE_MULTICAST_DELEGATE(FOnDeathDelegate);
-DECLARE_DELEGATE_TwoParams(FOnReviveStateChanged, bool, bool);
-DECLARE_DELEGATE_OneParam(FOnReviveProgressChanged, float);
-DECLARE_DELEGATE_OneParam(FOnDownStateChanged, bool);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnDownStateChangedSignature, bool /*bIsDowned*/);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnReviveStateChangedSignature, bool /*bIsBeingRevived*/, bool /*bIsRevivingOthers*/);
+DECLARE_MULTICAST_DELEGATE(FOnDeathSignature);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
-class LASTSTANDLEGACY_API UHealthComponent : public UActorComponent
+class UHealthComponent : public UActorComponent
 {
     GENERATED_BODY()
 
 public:
     UHealthComponent();
 
-    FOnDownStateChanged OnDownStateChanged;
-    FOnDeathDelegate OnDeath;
-    FOnReviveStateChanged OnReviveStateChanged;
-    FOnReviveProgressChanged OnReviveProgressChanged;
-
-protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    UPROPERTY(ReplicatedUsing = OnRep_CurrentHealth, EditAnywhere, BlueprintReadOnly, Category = "Health")
-    float CurrentHealth = 100.f;
+    // --- Delegates (Multicast for Modular Architecture) ---
+    FOnDownStateChangedSignature OnDownStateChanged;
+    FOnReviveStateChangedSignature OnReviveStateChanged;
+    FOnDeathSignature OnDeath;
 
-    UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Health")
-    float MaxHealth = 100.f;
+    // --- Core Health & State Functions ---
+    void ApplyDamage(float Amount, AActor* DamageCauser);
+    void UpgradeHealth(float Amount);
+    void DownPlayer();
+    void Revive();
+    void HandlePlayerDeath();
+
+    // --- Revive State Management ---
+    void SetBeingRevived(bool bState, AHama* InReviver = nullptr, float InReviveDuration = 0.0f, float InReviveEndTime = 0.0f);
+
+    // --- Getters ---
+    UFUNCTION(BlueprintPure, Category = "Health")
+    bool IsDowned() const { return bIsDowned; }
+
+    UFUNCTION(BlueprintPure, Category = "Health")
+    bool IsBeingRevived() const { return bIsBeingRevived; }
+
+    UFUNCTION(BlueprintPure, Category = "Health")
+    float GetBleedOutPercent() const;
+
+    UFUNCTION(BlueprintPure, Category = "Health")
+    float GetActiveRevivePercent() const;
+
+    AHama* GetCurrentReviver() const { return CurrentReviver.Get(); }
+
+    // --- Replicated Properties ---
+    UPROPERTY(ReplicatedUsing = OnRep_CurrentHealth)
+    float CurrentHealth = 100.0f;
+
+    UPROPERTY(Replicated)
+    float MaxHealth = 100.0f;
+
+    UPROPERTY(ReplicatedUsing = OnRep_IsDowned)
+    bool bIsDowned = false;
 
     UPROPERTY(ReplicatedUsing = OnRep_IsBeingRevived)
     bool bIsBeingRevived = false;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health")
-    int32 SoloReviveTime = 3;
+    // BO3 Bleed-Out Sync Data (Zero-Tick Bandwidth)
+    UPROPERTY(Replicated)
+    float BleedOutEndTime = 0.0f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health")
-    int32 DeathTime = 10;
+    UPROPERTY(Replicated)
+    float PausedBleedOutRemaining = 0.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health")
-    float HealthGenerateDelay = 3.f;
+    // Synced so the Downed Player CAN ALSO see the Revive Progress Bar like BO3
+    UPROPERTY(Replicated)
+    float BeingRevivedTotalDuration = 0.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health")
-    float HealthTickGenerate = 0.1f;
+    UPROPERTY(Replicated)
+    float BeingRevivedEndTime = 0.0f;
 
+    UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
+    float DeathTime = 45.0f; // BO3 Standard 45s Bleed-out
+
+    UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
+    float SoloReviveTime = 10.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
+    float HealthTickGenerate = 0.2f; // 5Hz instead of spamming network
+
+    UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
+    float HealthGenerateDelay = 4.0f;
+
+protected:
     UFUNCTION()
     void OnRep_CurrentHealth(float OldHealth);
 
     UFUNCTION()
+    void OnRep_IsDowned();
+
+    UFUNCTION()
     void OnRep_IsBeingRevived();
 
-public:
-    void ApplyDamage(float Amount, AActor* DamageCauser);
-    void UpgradeHealth(float Amount);
-    void Revive();
-
-    bool IsDowned() const;
-
-     bool IsBeingRevived() const { return bIsBeingRevived; }
-     void SetBeingRevived(bool bState);
-
-protected:
-    void DownPlayer();
     void RegenerateHealth();
-    void HandlePlayerDeath();
+    float GetServerTime() const;
 
 private:
     UPROPERTY()
-    TObjectPtr<AHama> OwnerCharacter;
+    TObjectPtr<AHama> OwnerCharacter = nullptr;
 
     UPROPERTY()
-    TObjectPtr<AHama> CurrentReviver = nullptr;
+    TObjectPtr<UHamaComponent> OwnerComponent = nullptr;
 
-    UPROPERTY()
-    TObjectPtr<UHamaComponent> OwnerComponent;
+    TWeakObjectPtr<AHama> CurrentReviver = nullptr;
 
     FTimerHandle RegenerateHealthTimer;
     FTimerHandle DownTimerHandle;

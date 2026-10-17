@@ -102,14 +102,20 @@ public:
 private:
     FTimerHandle SpawnTimerHandle;
 
-    TArray<AZombie*> ZombiesToNuke;
+    UPROPERTY()
+    TArray<TObjectPtr<AZombie>> ZombiesToNuke;
+
     FTimerHandle NukeTimerHandle;
+    
     bool bIsNuking = false;
+    
     int32 DynamicKillBatchSize = 1;
+    int32 NukeBatchDivisor = 10;
 
     UFUNCTION()
     void ProcessNukeKills();
     void RespawnDeadPlayers();
+    void FinishNuke();
 
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie Spawning|Timing")
@@ -132,6 +138,12 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
     float FallbackDistance = 150.f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "PowerUps|Nuke")
+    int32 NukeReward = 400;
+
+    UPROPERTY(EditDefaultsOnly, Category = "PowerUps|Nuke")
+    float NukeTickInterval = 0.05f;
 
     float GetCalculateSpawnInterval() const;
 

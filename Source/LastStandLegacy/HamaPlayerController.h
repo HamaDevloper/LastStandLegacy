@@ -21,6 +21,7 @@ public:
 
     virtual void BeginPlay() override;
     virtual void OnRep_PlayerState() override;
+    virtual void OnRep_Pawn() override;
     virtual void SetupInputComponent() override;
     virtual void AcknowledgePossession(APawn* P) override;
     virtual void OnPossess(APawn* InPawn) override;
@@ -30,7 +31,7 @@ public:
     void OnOwnerDied();
 
     UFUNCTION(Server, Reliable)
-    void Server_SpectateNext();
+    void Server_CycleSpectateTarget(int32 Direction);
 
     UFUNCTION(Client, Reliable)
     void ClientEnterSpectating(AHama* Target);
@@ -67,9 +68,18 @@ protected:
 
 private:
     void SpectateNextActionPressed(const FInputActionValue& Value);
-    AHama* GetNextSpectatorTarget(AHama* CurrentTarget);
+    void SpectatePreviousActionPressed(const FInputActionValue& Value);
+    void RequestSpectateCycle(int32 Direction);
+
+    AHama* GetCycledSpectatorTarget(AHama* CurrentTarget, int32 Direction) const;
+    void ApplyLocalSpectateViewTarget(AHama* NewTarget);
+
     void ValidateSpectateTarget();
     void CheckAndBindUI();
     void SafeAddMappingContext(UInputMappingContext* Context, int32 Priority);
     void SafeRemoveMappingContext(UInputMappingContext* Context);
+
+    float LastClientSwitchTime = -1.0f;
+    float LastServerSwitchTime = -1.0f;
+    static constexpr float SpectateSwitchCooldown = 0.15f;
 };

@@ -42,6 +42,8 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
         GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
     }
 
+    bAlwaysRelevant = true;
+
     HamaComponent = CreateDefaultSubobject<UHamaComponent>(TEXT("HamaComponent"));
     HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
     HamaAbilityComponent = CreateDefaultSubobject<UHamaAbilityComponent>(TEXT("HamaAbilityComponent"));
@@ -96,7 +98,7 @@ void AHama::BeginPlay()
     {
         InteractSphere->OnComponentBeginOverlap.AddDynamic(this, &AHama::OnInteractSphereBeginOverlap);
         InteractSphere->OnComponentEndOverlap.AddDynamic(this, &AHama::OnInteractSphereEndOverlap);
-        HealthComponent->OnDownStateChanged.BindUObject(this, &AHama::HandleDownStateChanged);
+        HealthComponent->OnDownStateChanged.AddUObject(this, &AHama::HandleDownStateChanged);
     }
 
     if (HasAuthority())
@@ -2416,23 +2418,28 @@ bool AHama::Client_PreInteract(AHama* Player)
 
 void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 {
-    if (!DownedPlayer || !DownedPlayer->HealthComponent) return;
+    if (!IsValid(DownedPlayer) || DownedPlayer == this || !DownedPlayer->HealthComponent) return;
+    if (bIsDead || IsDowned() || DownedPlayer->bIsDead || !DownedPlayer->HealthComponent->IsDowned()) return;
     if (DownedPlayer->HealthComponent->IsBeingRevived()) return;
-    if (bIsDead || IsDowned() || !DownedPlayer->HealthComponent->IsDowned()) return;
 
-    const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.f);
+    const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.0f);
     if (FVector::DistSquared(GetActorLocation(), DownedPlayer->GetActorLocation()) > MaxAllowedDistSq)
+    {
+        return;
+    }
+
+    FHitResult Hit;
+    FCollisionQueryParams QueryParams;
+    QueryParams.AddIgnoredActor(this);
+    QueryParams.AddIgnoredActor(DownedPlayer);
+    if (GetWorld()->LineTraceSingleByChannel(Hit, GetPawnViewLocation(), DownedPlayer->GetActorLocation(), ECC_Visibility, QueryParams))
     {
         return;
     }
 
     ClearAllReviveTimers();
 
-    CurrentReviveTarget = DownedPlayer;
-    DownedPlayer->HealthComponent->SetBeingRevived(true);
-
     float FinalReviveTime = DefaultReviveTime;
-
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
     if (HasQuickRevive() || (GS && GS->IsTeamAdrenalineActive()))
@@ -2446,9 +2453,13 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
     }
 
     const float ServerTime = GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+    const float CalculatedEndTime = ServerTime + FinalReviveTime;
+
+    CurrentReviveTarget = DownedPlayer;
+    DownedPlayer->HealthComponent->SetBeingRevived(true, this, FinalReviveTime, CalculatedEndTime);
 
     ReviveTotalDuration = FinalReviveTime;
-    ReviveEndTime = ServerTime + FinalReviveTime;
+    ReviveEndTime = CalculatedEndTime;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveTotalDuration, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveEndTime, this);
@@ -2460,7 +2471,6 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 
     FTimerDelegate ReviveDel;
     ReviveDel.BindUObject(this, &AHama::Server_CompleteRevive);
-
     GetWorldTimerManager().SetTimer(ReviveTimerHandle, ReviveDel, FinalReviveTime, false);
 
     GetWorldTimerManager().SetTimer(
@@ -2481,14 +2491,13 @@ void AHama::Server_CheckReviveConditions()
     }
 
     AHama* Target = CurrentReviveTarget.Get();
-
-    if (!IsValid(Target) || !Target->HealthComponent || !Target->HealthComponent->IsDowned())
+    if (!IsValid(Target) || Target->bIsDead || !Target->HealthComponent || !Target->HealthComponent->IsDowned())
     {
         CancelReviveInternal();
         return;
     }
 
-    const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.f);
+    const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.0f);
     if (FVector::DistSquared(GetActorLocation(), Target->GetActorLocation()) > MaxAllowedDistSq)
     {
         CancelReviveInternal();
@@ -2518,20 +2527,20 @@ void AHama::ClearAllReviveTimers()
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveEndTime, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveTotalDuration, this);
 
-    if (bWasReviving && IsLocallyControlled())
-    {
-        OnRep_ReviveData();
-    }
-
     if (AHama* Target = CurrentReviveTarget.Get())
     {
-        if (Target->HealthComponent)
+        if (Target->HealthComponent && Target->HealthComponent->GetCurrentReviver() == this)
         {
             Target->HealthComponent->SetBeingRevived(false);
         }
     }
 
     CurrentReviveTarget = nullptr;
+
+    if (bWasReviving && IsLocallyControlled())
+    {
+        OnRep_ReviveData();
+    }
 }
 
 void AHama::OnRep_ReviveData()
@@ -2539,14 +2548,8 @@ void AHama::OnRep_ReviveData()
     if (HealthComponent)
     {
         const bool bIsRevivingOthers = (ReviveTotalDuration > 0.0f && ReviveEndTime > 0.0f);
-        HealthComponent->OnReviveStateChanged.ExecuteIfBound(HealthComponent->IsBeingRevived(), bIsRevivingOthers);
+        HealthComponent->OnReviveStateChanged.Broadcast(HealthComponent->IsBeingRevived(), bIsRevivingOthers);
     }
-}
-
-void AHama::SetIsDead(bool bNewIsDead)
-{
-    bIsDead = bNewIsDead;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
 }
 
 void AHama::Server_CompleteRevive()
@@ -2560,21 +2563,23 @@ void AHama::Server_CompleteRevive()
     }
 
     AHama* Target = CurrentReviveTarget.Get();
-
-    if (IsValid(Target) && Target->HealthComponent)
+    if (IsValid(Target) && !Target->bIsDead && Target->HealthComponent && Target->HealthComponent->IsDowned())
     {
-        if (Target->HealthComponent->IsDowned())
-        {
-            Target->HealthComponent->Revive();
+        Target->HealthComponent->Revive();
 
-            if (AHamaPlayerState* MyPS = GetPlayerState<AHamaPlayerState>())
-            {
-                MyPS->AddPoints(100);
-            }
+        if (AHamaPlayerState* MyPS = GetPlayerState<AHamaPlayerState>())
+        {
+            MyPS->AddPoints(100);
         }
     }
 
     ClearAllReviveTimers();
+}
+
+void AHama::SetIsDead(bool bNewIsDead)
+{
+    bIsDead = bNewIsDead;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDead, this);
 }
 
 void AHama::Client_OnStaminUpAcquired_Implementation(float NewMaxStamina)

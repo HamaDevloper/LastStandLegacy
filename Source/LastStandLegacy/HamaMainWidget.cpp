@@ -76,9 +76,8 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
 
         if (UHealthComponent* OldHealthComp = CachedHamaChar->FindComponentByClass<UHealthComponent>())
         {
-            OldHealthComp->OnReviveProgressChanged.Unbind();
-            OldHealthComp->OnReviveStateChanged.Unbind();
-            OldHealthComp->OnDownStateChanged.Unbind();
+            OldHealthComp->OnReviveStateChanged.RemoveAll(this);
+            OldHealthComp->OnDownStateChanged.RemoveAll(this);
         }
 
         CachedHamaChar->OnAmmoUpdateEvent.Unbind();
@@ -108,9 +107,8 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
 
     if (UHealthComponent* HealthComp = CachedHamaChar->FindComponentByClass<UHealthComponent>())
     {
-        HealthComp->OnReviveProgressChanged.BindUObject(this, &UHamaMainWidget::HandleReviveProgressUpdate);
-        HealthComp->OnReviveStateChanged.BindUObject(this, &UHamaMainWidget::HandleReviveStateChanged);
-        HealthComp->OnDownStateChanged.BindUObject(this, &UHamaMainWidget::HandleDownStateChanged);
+        HealthComp->OnDownStateChanged.AddUObject(this, &UHamaMainWidget::HandleDownStateChanged);
+        HealthComp->OnReviveStateChanged.AddUObject(this, &UHamaMainWidget::HandleReviveStateChanged);
     }
 
     HandlePerksUpdate(CachedHamaChar->GetOwnedPerks());
@@ -440,97 +438,102 @@ void UHamaMainWidget::HandleReviveProgressUpdate(float Percent)
 void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRevivingOthers)
 {
     UWorld* World = GetWorld();
+    const bool bIsDowned = (CachedHamaChar && CachedHamaChar->HealthComponent) ? CachedHamaChar->HealthComponent->IsDowned() : false;
+    const bool bShouldShowUI = (bIsRevivingOthers || bIsBeingRevived || bIsDowned);
 
-    if (ReviveProgressBar)
+    if (bShouldShowUI)
     {
-        if (bIsRevivingOthers)
+        if (ReviveText)
         {
-            ReviveProgressBar->SetPercent(0.0f);
-            ReviveProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
-
-            if (World)
+            if (bIsRevivingOthers)
             {
-                World->GetTimerManager().SetTimer(
-                    UIUpdateTimerHandle,
-                    this,
-                    &UHamaMainWidget::NativeUpdateReviveProgress,
-                    0.033f,
-                    true
-                );
+                ReviveText->SetText(LOCTEXT("Reviving", "REVIVING..."));
             }
-        }
-        else
-        {
-            ReviveProgressBar->SetVisibility(ESlateVisibility::Collapsed);
-            ReviveProgressBar->SetPercent(0.0f);
-
-            if (World)
+            else if (bIsBeingRevived)
             {
-                World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
+                ReviveText->SetText(LOCTEXT("BeingRevived", "BEING REVIVED..."));
             }
-        }
-    }
-
-    if (ReviveText)
-    {
-        if (bIsBeingRevived && !bIsRevivingOthers)
-        {
-            static const FText BeingRevivedMsg = LOCTEXT("BeingRevived", "BEING REVIVED...");
-            ReviveText->SetText(BeingRevivedMsg);
+            else if (bIsDowned)
+            {
+                ReviveText->SetText(LOCTEXT("BleedingOut", "BLEEDING OUT..."));
+            }
             ReviveText->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
-        else
+
+        if (ReviveProgressBar)
         {
-            ReviveText->SetVisibility(ESlateVisibility::Collapsed);
+            ReviveProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
+
+        NativeUpdateReviveProgress();
+
+        if (World && !World->GetTimerManager().IsTimerActive(UIUpdateTimerHandle))
+        {
+            World->GetTimerManager().SetTimer(
+                UIUpdateTimerHandle,
+                this,
+                &UHamaMainWidget::NativeUpdateReviveProgress,
+                0.033f,
+                true
+            );
+        }
+    }
+    else
+    {
+        ResetReviveUI();
     }
 }
 
 void UHamaMainWidget::NativeUpdateReviveProgress()
 {
     UWorld* World = GetWorld();
-    if (!CachedHamaChar || !World) return;
-
-    if (CachedHamaChar->ReviveTotalDuration > 0.0f)
+    if (!CachedHamaChar || !CachedHamaChar->HealthComponent || !World)
     {
-        const AGameStateBase* GS = World->GetGameState();
+        ResetReviveUI();
+        return;
+    }
+
+    UHealthComponent* HealthComp = CachedHamaChar->HealthComponent;
+    float Percent = 0.0f;
+
+    if (CachedHamaChar->ReviveTotalDuration > 0.0f && CachedHamaChar->ReviveEndTime > 0.0f)
+    {
+        const AGameStateBase* GS = CachedGameState ? CachedGameState.Get() : World->GetGameState();
         const float CurrentServerTime = GS ? GS->GetServerWorldTimeSeconds() : World->GetTimeSeconds();
-
         const float RemainingTime = CachedHamaChar->ReviveEndTime - CurrentServerTime;
-        const float Percent = 1.0f - FMath::Clamp(RemainingTime / CachedHamaChar->ReviveTotalDuration, 0.0f, 1.0f);
 
-        if (ReviveProgressBar)
-        {
-            ReviveProgressBar->SetPercent(Percent);
-        }
-
-        if (RemainingTime <= 0.0f)
-        {
-            World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
-
-            if (ReviveProgressBar)
-            {
-                ReviveProgressBar->SetVisibility(ESlateVisibility::Collapsed);
-                ReviveProgressBar->SetPercent(0.0f);
-            }
-        }
+        Percent = 1.0f - FMath::Clamp(RemainingTime / CachedHamaChar->ReviveTotalDuration, 0.0f, 1.0f);
+    }
+    else if (HealthComp->IsBeingRevived())
+    {
+        Percent = HealthComp->GetActiveRevivePercent();
+    }
+    else if (HealthComp->IsDowned())
+    {
+        Percent = HealthComp->GetBleedOutPercent();
     }
     else
     {
-        World->GetTimerManager().ClearTimer(UIUpdateTimerHandle);
-        if (ReviveProgressBar)
-        {
-            ReviveProgressBar->SetVisibility(ESlateVisibility::Collapsed);
-        }
+        ResetReviveUI();
+        return;
+    }
+
+    if (ReviveProgressBar)
+    {
+        ReviveProgressBar->SetPercent(Percent);
     }
 }
 
 void UHamaMainWidget::HandleDownStateChanged(bool bIsDowned)
 {
-    if (!bIsDowned)
+    if (!CachedHamaChar || !CachedHamaChar->HealthComponent)
     {
         ResetReviveUI();
+        return;
     }
+
+    const bool bIsRevivingOthers = (CachedHamaChar->ReviveTotalDuration > 0.0f && CachedHamaChar->ReviveEndTime > 0.0f);
+    HandleReviveStateChanged(CachedHamaChar->HealthComponent->IsBeingRevived(), bIsRevivingOthers);
 }
 
 void UHamaMainWidget::ResetReviveUI()
@@ -563,9 +566,8 @@ void UHamaMainWidget::UnbindAllEvents()
 
         if (UHealthComponent* HealthComp = CachedHamaChar->FindComponentByClass<UHealthComponent>())
         {
-            HealthComp->OnReviveProgressChanged.Unbind();
-            HealthComp->OnReviveStateChanged.Unbind();
-            HealthComp->OnDownStateChanged.Unbind();
+            HealthComp->OnReviveStateChanged.RemoveAll(this);
+            HealthComp->OnDownStateChanged.RemoveAll(this);
         }
 
         CachedHamaChar->OnAmmoUpdateEvent.Unbind();

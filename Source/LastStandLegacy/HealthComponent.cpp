@@ -5,7 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "GameFramework/GameStateBase.h"
-#include "LastStandLegacyGameMode.h" 
+#include "LastStandLegacyGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "LastStandLegacyGameState.h"
 
@@ -26,24 +26,73 @@ void UHealthComponent::BeginPlay()
     }
 }
 
+void UHealthComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+        World->GetTimerManager().ClearTimer(DownTimerHandle);
+        World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
+    }
+
+    Super::EndPlay(EndPlayReason);
+}
+
 void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    FDoRepLifetimeParams Params;
-    Params.bIsPushBased = true;
+    FDoRepLifetimeParams SharedParams;
+    SharedParams.bIsPushBased = true;
+    SharedParams.Condition = COND_None;
 
-    Params.Condition = COND_None;
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, bIsBeingRevived, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, bIsDowned, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, bIsBeingRevived, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, BleedOutEndTime, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, PausedBleedOutRemaining, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, BeingRevivedTotalDuration, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, BeingRevivedEndTime, SharedParams);
 
-    Params.Condition = COND_OwnerOnly;
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, CurrentHealth, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, MaxHealth, Params);
+    FDoRepLifetimeParams OwnerParams;
+    OwnerParams.bIsPushBased = true;
+    OwnerParams.Condition = COND_OwnerOnly;
+
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, CurrentHealth, OwnerParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, MaxHealth, OwnerParams);
 }
 
-bool UHealthComponent::IsDowned() const
+float UHealthComponent::GetServerTime() const
 {
-    return OwnerComponent ? OwnerComponent->IsDowned() : false;
+    if (const UWorld* World = GetWorld())
+    {
+        if (const AGameStateBase* GS = World->GetGameState())
+        {
+            return GS->GetServerWorldTimeSeconds();
+        }
+        return World->GetTimeSeconds();
+    }
+    return 0.0f;
+}
+
+float UHealthComponent::GetBleedOutPercent() const
+{
+    if (!bIsDowned || DeathTime <= 0.0f) return 0.0f;
+
+    if (bIsBeingRevived)
+    {
+        return FMath::Clamp(PausedBleedOutRemaining / DeathTime, 0.0f, 1.0f);
+    }
+
+    const float Remaining = FMath::Max(0.0f, BleedOutEndTime - GetServerTime());
+    return FMath::Clamp(Remaining / DeathTime, 0.0f, 1.0f);
+}
+
+float UHealthComponent::GetActiveRevivePercent() const
+{
+    if (!bIsBeingRevived || BeingRevivedTotalDuration <= 0.0f) return 0.0f;
+
+    const float Remaining = BeingRevivedEndTime - GetServerTime();
+    return 1.0f - FMath::Clamp(Remaining / BeingRevivedTotalDuration, 0.0f, 1.0f);
 }
 
 void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
@@ -54,22 +103,60 @@ void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
     }
 }
 
-void UHealthComponent::SetBeingRevived(bool bState)
+void UHealthComponent::OnRep_IsDowned()
+{
+    OnDownStateChanged.Broadcast(bIsDowned);
+}
+
+void UHealthComponent::OnRep_IsBeingRevived()
+{
+    const bool bIsRevivingOthers = OwnerCharacter ? (OwnerCharacter->ReviveTotalDuration > 0.0f && OwnerCharacter->ReviveEndTime > 0.0f) : false;
+    OnReviveStateChanged.Broadcast(bIsBeingRevived, bIsRevivingOthers);
+}
+
+void UHealthComponent::SetBeingRevived(bool bState, AHama* InReviver, float InReviveDuration, float InReviveEndTime)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || bIsBeingRevived == bState) return;
 
     bIsBeingRevived = bState;
+    CurrentReviver = bState ? InReviver : nullptr;
+
+    BeingRevivedTotalDuration = bState ? InReviveDuration : 0.0f;
+    BeingRevivedEndTime = bState ? InReviveEndTime : 0.0f;
+
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BeingRevivedTotalDuration, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BeingRevivedEndTime, this);
 
     if (UWorld* World = GetWorld())
     {
+        FTimerManager& TM = World->GetTimerManager();
+
         if (bIsBeingRevived)
         {
-            World->GetTimerManager().PauseTimer(DownTimerHandle);
+            if (TM.IsTimerActive(DownTimerHandle))
+            {
+                PausedBleedOutRemaining = TM.GetTimerRemaining(DownTimerHandle);
+            }
+            else if (PausedBleedOutRemaining <= 0.0f)
+            {
+                PausedBleedOutRemaining = FMath::Max(0.5f, BleedOutEndTime - GetServerTime());
+            }
+
+            TM.ClearTimer(DownTimerHandle);
+            MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
         }
-        else if (IsDowned())
+        else if (bIsDowned)
         {
-            World->GetTimerManager().UnPauseTimer(DownTimerHandle);
+            const float RemainingTime = (PausedBleedOutRemaining > 0.0f) ? PausedBleedOutRemaining : DeathTime;
+
+            BleedOutEndTime = GetServerTime() + RemainingTime;
+            PausedBleedOutRemaining = 0.0f;
+
+            MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
+            MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
+
+            TM.SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, RemainingTime, false);
         }
     }
 
@@ -79,17 +166,12 @@ void UHealthComponent::SetBeingRevived(bool bState)
     }
 }
 
-void UHealthComponent::OnRep_IsBeingRevived()
-{
-    OnReviveStateChanged.ExecuteIfBound(bIsBeingRevived, false);
-}
-
 void UHealthComponent::UpgradeHealth(float Amount)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || Amount <= 0.0f) return;
 
     MaxHealth += Amount;
-    CurrentHealth = FMath::Clamp(CurrentHealth + Amount, 0.f, MaxHealth);
+    CurrentHealth = FMath::Clamp(CurrentHealth + Amount, 0.0f, MaxHealth);
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
@@ -97,29 +179,44 @@ void UHealthComponent::UpgradeHealth(float Amount)
 
 void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 {
-    if (!GetOwner() || !GetOwner()->HasAuthority() || IsDowned()) return;
-
+    if (Amount <= 0.0f || !GetOwner() || !GetOwner()->HasAuthority() || bIsDowned || (OwnerCharacter && OwnerCharacter->bIsDead)) return;
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
 
-        CurrentHealth = FMath::Clamp(CurrentHealth - Amount, 0.f, MaxHealth);
+        CurrentHealth = FMath::Clamp(CurrentHealth - Amount, 0.0f, MaxHealth);
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 
-        if (CurrentHealth <= 0.f)
+        if (CurrentHealth <= 0.0f)
         {
             DownPlayer();
         }
         else
         {
-            World->GetTimerManager().SetTimer(RegenerateHealthTimer, this, &UHealthComponent::RegenerateHealth, HealthTickGenerate, true, HealthGenerateDelay);
+            World->GetTimerManager().SetTimer(
+                RegenerateHealthTimer,
+                this,
+                &UHealthComponent::RegenerateHealth,
+                HealthTickGenerate,
+                true,
+                HealthGenerateDelay
+            );
         }
     }
 }
 
 void UHealthComponent::RegenerateHealth()
 {
-    float HealAmountPerTick = MaxHealth / 20.0f;
+    if (bIsDowned || (OwnerCharacter && OwnerCharacter->bIsDead))
+    {
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
+        }
+        return;
+    }
+
+    const float HealAmountPerTick = MaxHealth / 20.0f;
     CurrentHealth = FMath::Min(CurrentHealth + HealAmountPerTick, MaxHealth);
 
     if (CurrentHealth >= MaxHealth)
@@ -136,84 +233,119 @@ void UHealthComponent::RegenerateHealth()
 
 void UHealthComponent::DownPlayer()
 {
-    if (!GetOwner() || !GetOwner()->HasAuthority() || IsDowned()) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority() || bIsDowned || (OwnerCharacter && OwnerCharacter->bIsDead)) return;
 
-    bIsBeingRevived = false;
-    CurrentReviver = nullptr;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
+    if (OwnerCharacter)
+    {
+        OwnerCharacter->CancelReviveInternal();
+    }
+
+    bIsDowned = true;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsDowned, this);
 
     if (OwnerComponent)
     {
         OwnerComponent->SetDowned(true);
     }
 
-    OwnerCharacter->OnPlayerDowned();
-    OnDownStateChanged.ExecuteIfBound(true);
+    if (bIsBeingRevived)
+    {
+        SetBeingRevived(false);
+    }
+
+    MaxHealth = 100.0f;
+    CurrentHealth = 0.0f;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
+
+    if (OwnerCharacter)
+    {
+        OwnerCharacter->OnPlayerDowned();
+    }
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnRep_IsDowned();
+    }
 
     if (UWorld* World = GetWorld())
     {
-        World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
-        World->GetTimerManager().ClearTimer(DownTimerHandle);
-        World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
+        FTimerManager& TM = World->GetTimerManager();
+        TM.ClearTimer(RegenerateHealthTimer);
+        TM.ClearTimer(DownTimerHandle);
+        TM.ClearTimer(QuickReviveTimerHandle);
 
-        MaxHealth = 100.f;
-        CurrentHealth = MaxHealth;
-
-        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
-        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
-
-        ALastStandLegacyGameMode* GM = World->GetAuthGameMode<ALastStandLegacyGameMode>();
-        if (GM)
+        ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
+        if (GS && GS->bIsSoloMatch)
         {
-            GM->CheckGameOverCondition();
-        }
-
-        if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
-        {
-            if (GS->bIsSoloMatch)
+            if (OwnerCharacter && OwnerCharacter->HasQuickRevive())
             {
-                if (OwnerCharacter && OwnerCharacter->HasQuickRevive())
-                {
-                    World->GetTimerManager().SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
-                    return;
-                }
+                const float ServerTime = GetServerTime();
+                BleedOutEndTime = ServerTime + SoloReviveTime;
+                MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
 
-                else
-                {
-                    HandlePlayerDeath();
-                    return;
-                }
+                SetBeingRevived(true, OwnerCharacter, SoloReviveTime, ServerTime + SoloReviveTime);
+                TM.SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
+                return;
+            }
+            else
+            {
+                HandlePlayerDeath();
+                return;
             }
         }
 
-        World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, DeathTime, false);
+        BleedOutEndTime = GetServerTime() + DeathTime;
+        PausedBleedOutRemaining = 0.0f;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
+
+        TM.SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, DeathTime, false);
+
+        if (ALastStandLegacyGameMode* GM = World->GetAuthGameMode<ALastStandLegacyGameMode>())
+        {
+            GM->CheckGameOverCondition();
+        }
     }
 }
 
 void UHealthComponent::Revive()
 {
-    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !bIsDowned) return;
 
-    bIsBeingRevived = false;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(DownTimerHandle);
+        World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
+    }
+
+    bIsDowned = false;
+    BleedOutEndTime = 0.0f;
+    PausedBleedOutRemaining = 0.0f;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsDowned, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
+
+    SetBeingRevived(false);
 
     if (OwnerComponent)
     {
         OwnerComponent->SetDowned(false);
     }
 
-    OwnerCharacter->OnPlayerRevived();
-
-    OnDownStateChanged.ExecuteIfBound(false);
-
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(DownTimerHandle);
-        World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
-    }
-
     CurrentHealth = MaxHealth;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
+
+    if (OwnerCharacter)
+    {
+        OwnerCharacter->OnPlayerRevived();
+    }
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnRep_IsDowned();
+    }
 }
 
 void UHealthComponent::HandlePlayerDeath()
@@ -223,12 +355,32 @@ void UHealthComponent::HandlePlayerDeath()
         return;
     }
 
+    if (AHama* Reviver = CurrentReviver.Get())
+    {
+        Reviver->CancelReviveInternal();
+    }
+
+    SetBeingRevived(false);
+
+    bIsDowned = false;
+    BleedOutEndTime = 0.0f;
+    PausedBleedOutRemaining = 0.0f;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsDowned, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
+
+    if (OwnerComponent)
+    {
+        OwnerComponent->SetDowned(false);
+    }
+
     OwnerCharacter->SetIsDead(true);
 
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(QuickReviveTimerHandle);
         World->GetTimerManager().ClearTimer(DownTimerHandle);
+        World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
     }
 
     OwnerCharacter->SetActorEnableCollision(false);
@@ -244,13 +396,6 @@ void UHealthComponent::HandlePlayerDeath()
     {
         HamaPC->OnOwnerDied();
     }
-    else
-    {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[HealthComp] ERROR: OwnerCharacter Controller is NOT AHamaPlayerController!"));
-        }
-    }
 
     if (UWorld* World = GetWorld())
     {
@@ -260,5 +405,5 @@ void UHealthComponent::HandlePlayerDeath()
         }
     }
 
-    OwnerCharacter->SetLifeSpan(0.2f);
+    OwnerCharacter->SetLifeSpan(3.0f);
 }

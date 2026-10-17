@@ -61,6 +61,8 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "Mystery Box")
     TSubclassOf<AMysteryBox> MysteryBoxClass;
 
+    const TArray<TWeakObjectPtr<AZombie>>& GetActiveZombies() const { return ActiveZombies; }
+
 private:
     UPROPERTY()
     TArray<TWeakObjectPtr<APawn>> ActivePlayers;
