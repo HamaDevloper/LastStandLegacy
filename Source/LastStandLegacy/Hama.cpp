@@ -1266,25 +1266,40 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &AHama::Look);
         EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &AHama::JumpActionPressed);
         EnhancedInput->BindAction(SprintAction, ETriggerEvent::Started, this, &AHama::SprintActionPressed);
+
         EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Triggered, this, &AHama::SwitchCameraPressed);
         EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Completed, this, &AHama::SwitchCameraReleased);
+
         EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Started, this, &AHama::CrouchActionPressed);
-        EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Triggered, this, &AHama::CrouchActionPressed);
         EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Completed, this, &AHama::CrouchActionReleased);
+        EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Canceled, this, &AHama::CrouchActionReleased);
+
         EnhancedInput->BindAction(AimAction, ETriggerEvent::Started, this, &AHama::AimActionPressed);
         EnhancedInput->BindAction(AimAction, ETriggerEvent::Completed, this, &AHama::AimActionReleased);
+        EnhancedInput->BindAction(AimAction, ETriggerEvent::Canceled, this, &AHama::AimActionReleased);
+
         EnhancedInput->BindAction(FireAction, ETriggerEvent::Started, this, &AHama::FireActionPressed);
         EnhancedInput->BindAction(FireAction, ETriggerEvent::Completed, this, &AHama::FireActionReleased);
+        EnhancedInput->BindAction(FireAction, ETriggerEvent::Canceled, this, &AHama::FireActionReleased);
+
         EnhancedInput->BindAction(ReloadAction, ETriggerEvent::Started, this, &AHama::ReloadActionPressed);
         EnhancedInput->BindAction(AbilityAction, ETriggerEvent::Started, this, &AHama::AbilityActionPressed);
         EnhancedInput->BindAction(SwapWeaponAction, ETriggerEvent::Started, this, &AHama::Input_SwapWeapon);
+
         EnhancedInput->BindAction(InteractAction, ETriggerEvent::Started, this, &AHama::InteractActionPressed);
+        EnhancedInput->BindAction(InteractAction, ETriggerEvent::Completed, this, &AHama::InteractActionReleased);
+        EnhancedInput->BindAction(InteractAction, ETriggerEvent::Canceled, this, &AHama::InteractActionReleased);
+
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Triggered, this, &AHama::GamepadXActionPressed);
         EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Completed, this, &AHama::GamepadXActionReleased);
+        EnhancedInput->BindAction(GamepadXAction, ETriggerEvent::Canceled, this, &AHama::GamepadXActionReleased);
+
         EnhancedInput->BindAction(MeleeAction, ETriggerEvent::Started, this, &AHama::MeleeActionPressed);
+
         EnhancedInput->BindAction(IA_ThrowGrenade, ETriggerEvent::Started, this, &AHama::Input_ThrowGrenadePressed);
         EnhancedInput->BindAction(IA_ThrowGrenade, ETriggerEvent::Completed, this, &AHama::Input_ThrowGrenadeReleased);
         EnhancedInput->BindAction(IA_ThrowGrenade, ETriggerEvent::Canceled, this, &AHama::Input_ThrowGrenadeReleased);
+
         EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Started, this, &AHama::Input_ThrowMonkeyPressed);
         EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Completed, this, &AHama::Input_ThrowMonkeyReleased);
         EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Canceled, this, &AHama::Input_ThrowMonkeyReleased);
@@ -2422,43 +2437,61 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
     if (bIsDead || IsDowned() || DownedPlayer->bIsDead || !DownedPlayer->HealthComponent->IsDowned()) return;
     if (DownedPlayer->HealthComponent->IsBeingRevived()) return;
 
-    const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.0f);
+    const float EffectiveInteractDist = FMath::Max(SetIntractDistance, 200.0f);
+    const float MaxAllowedDistSq = FMath::Square(EffectiveInteractDist + 100.0f);
     if (FVector::DistSquared(GetActorLocation(), DownedPlayer->GetActorLocation()) > MaxAllowedDistSq)
     {
         return;
     }
 
-    FHitResult Hit;
+   /* FHitResult Hit;
     FCollisionQueryParams QueryParams;
     QueryParams.AddIgnoredActor(this);
     QueryParams.AddIgnoredActor(DownedPlayer);
-    if (GetWorld()->LineTraceSingleByChannel(Hit, GetPawnViewLocation(), DownedPlayer->GetActorLocation(), ECC_Visibility, QueryParams))
+
+    TArray<AActor*> AttachedActors;
+    GetAttachedActors(AttachedActors);
+    QueryParams.AddIgnoredActors(AttachedActors);
+
+    AttachedActors.Reset();
+    DownedPlayer->GetAttachedActors(AttachedActors);
+    QueryParams.AddIgnoredActors(AttachedActors);
+
+    const FVector TargetTraceLocation = DownedPlayer->GetActorLocation() + FVector(0.0f, 0.0f, 30.0f);
+    if (GetWorld()->LineTraceSingleByChannel(Hit, GetPawnViewLocation(), TargetTraceLocation, ECC_Visibility, QueryParams))
     {
-        return;
-    }
+        if (Hit.GetActor() && !Hit.GetActor()->IsA<APawn>())
+        {
+            return;
+        }
+    }*/
 
     ClearAllReviveTimers();
 
-    float FinalReviveTime = DefaultReviveTime;
+    float FullReviveTime = (DefaultReviveTime > 0.0f) ? DefaultReviveTime : 4.0f;
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
     if (HasQuickRevive() || (GS && GS->IsTeamAdrenalineActive()))
     {
-        FinalReviveTime *= 0.5f;
+        FullReviveTime *= 0.5f;
     }
 
     if (HamaAbilityComponent && HamaAbilityComponent->GetAssignedAbility() == EHamaAbilityType::MedicalSupport)
     {
-        FinalReviveTime *= 0.5f;
+        FullReviveTime *= 0.5f;
     }
 
+    const float ExistingProgress = DownedPlayer->HealthComponent->GetActiveRevivePercent();
+    const float RemainingFraction = FMath::Clamp(1.0f - ExistingProgress, 0.02f, 1.0f);
+    const float TimeToComplete = FullReviveTime * RemainingFraction;
+
     const float ServerTime = GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
-    const float CalculatedEndTime = ServerTime + FinalReviveTime;
+    const float CalculatedEndTime = ServerTime + TimeToComplete;
 
     CurrentReviveTarget = DownedPlayer;
-    DownedPlayer->HealthComponent->SetBeingRevived(true, this, FinalReviveTime, CalculatedEndTime);
+    DownedPlayer->HealthComponent->SetBeingRevived(true, this, FullReviveTime, false);
 
-    ReviveTotalDuration = FinalReviveTime;
+    ReviveTotalDuration = FullReviveTime;
     ReviveEndTime = CalculatedEndTime;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ReviveTotalDuration, this);
@@ -2471,7 +2504,7 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
 
     FTimerDelegate ReviveDel;
     ReviveDel.BindUObject(this, &AHama::Server_CompleteRevive);
-    GetWorldTimerManager().SetTimer(ReviveTimerHandle, ReviveDel, FinalReviveTime, false);
+    GetWorldTimerManager().SetTimer(ReviveTimerHandle, ReviveDel, TimeToComplete, false);
 
     GetWorldTimerManager().SetTimer(
         ReviveCheckTimerHandle,
@@ -2497,7 +2530,8 @@ void AHama::Server_CheckReviveConditions()
         return;
     }
 
-    const float MaxAllowedDistSq = FMath::Square(SetIntractDistance + 100.0f);
+    const float EffectiveInteractDist = FMath::Max(SetIntractDistance, 200.0f);
+    const float MaxAllowedDistSq = FMath::Square(EffectiveInteractDist + 100.0f);
     if (FVector::DistSquared(GetActorLocation(), Target->GetActorLocation()) > MaxAllowedDistSq)
     {
         CancelReviveInternal();

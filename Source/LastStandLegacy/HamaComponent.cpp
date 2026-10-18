@@ -116,7 +116,9 @@ void UHamaComponent::ApplyDownedState()
     {
         if (UCapsuleComponent* Capsule = OwnerCharacter->GetCapsuleComponent())
         {
+            const ECollisionResponse OldResponse = Capsule->GetCollisionResponseToChannel(ECC_Intract);
             const ECollisionResponse TargetResponse = bIsDowned ? ECR_Block : ECR_Ignore;
+
             Capsule->SetCollisionResponseToChannel(ECC_Intract, TargetResponse);
         }
     }

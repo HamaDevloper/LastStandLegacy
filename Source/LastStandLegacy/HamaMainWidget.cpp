@@ -432,14 +432,33 @@ void UHamaMainWidget::HandleReviveProgressUpdate(float Percent)
     if (ReviveProgressBar)
     {
         ReviveProgressBar->SetPercent(Percent);
+        if (ReviveProgressBar->GetVisibility() != ESlateVisibility::HitTestInvisible)
+        {
+            ReviveProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
+    }
+
+    if (ReviveText && ReviveText->GetVisibility() != ESlateVisibility::HitTestInvisible)
+    {
+        const bool bIsBeingRevived = (CachedHamaChar && CachedHamaChar->HealthComponent) ? CachedHamaChar->HealthComponent->IsBeingRevived() : false;
+        ReviveText->SetText(bIsBeingRevived ? LOCTEXT("BeingRevived", "BEING REVIVED...") : LOCTEXT("Reviving", "REVIVING..."));
+        ReviveText->SetVisibility(ESlateVisibility::HitTestInvisible);
     }
 }
 
 void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRevivingOthers)
 {
     UWorld* World = GetWorld();
-    const bool bIsDowned = (CachedHamaChar && CachedHamaChar->HealthComponent) ? CachedHamaChar->HealthComponent->IsDowned() : false;
-    const bool bShouldShowUI = (bIsRevivingOthers || bIsBeingRevived || bIsDowned);
+    if (!CachedHamaChar || !CachedHamaChar->HealthComponent || !World)
+    {
+        ResetReviveUI();
+        return;
+    }
+
+    UHealthComponent* HealthComp = CachedHamaChar->HealthComponent;
+    const float CurrentDownedProgress = HealthComp->GetActiveRevivePercent();
+    const bool bHasActiveDecay = (!bIsBeingRevived && CurrentDownedProgress > 0.0f);
+    const bool bShouldShowUI = bIsRevivingOthers || bIsBeingRevived || bHasActiveDecay;
 
     if (bShouldShowUI)
     {
@@ -447,17 +466,18 @@ void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRev
         {
             if (bIsRevivingOthers)
             {
-                ReviveText->SetText(LOCTEXT("Reviving", "REVIVING..."));
+                ReviveText->SetText(NSLOCTEXT("ReviveUI", "RevivingText", "REVIVING..."));
+                ReviveText->SetVisibility(ESlateVisibility::HitTestInvisible);
             }
             else if (bIsBeingRevived)
             {
-                ReviveText->SetText(LOCTEXT("BeingRevived", "BEING REVIVED..."));
+                ReviveText->SetText(NSLOCTEXT("ReviveUI", "BeingRevivedText", "BEING REVIVED..."));
+                ReviveText->SetVisibility(ESlateVisibility::HitTestInvisible);
             }
-            else if (bIsDowned)
+            else
             {
-                ReviveText->SetText(LOCTEXT("BleedingOut", "BLEEDING OUT..."));
+                ReviveText->SetVisibility(ESlateVisibility::Collapsed);
             }
-            ReviveText->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
 
         if (ReviveProgressBar)
@@ -467,13 +487,13 @@ void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRev
 
         NativeUpdateReviveProgress();
 
-        if (World && !World->GetTimerManager().IsTimerActive(UIUpdateTimerHandle))
+        if (!World->GetTimerManager().IsTimerActive(UIUpdateTimerHandle))
         {
             World->GetTimerManager().SetTimer(
                 UIUpdateTimerHandle,
                 this,
                 &UHamaMainWidget::NativeUpdateReviveProgress,
-                0.033f,
+                0.02f, 
                 true
             );
         }
@@ -494,23 +514,24 @@ void UHamaMainWidget::NativeUpdateReviveProgress()
     }
 
     UHealthComponent* HealthComp = CachedHamaChar->HealthComponent;
-    float Percent = 0.0f;
 
-    if (CachedHamaChar->ReviveTotalDuration > 0.0f && CachedHamaChar->ReviveEndTime > 0.0f)
+    const bool bIsRevivingOthers = (CachedHamaChar->ReviveTotalDuration > 0.0f && CachedHamaChar->ReviveEndTime > 0.0f);
+    const bool bIsBeingRevived = HealthComp->IsBeingRevived();
+    const float DownedProgress = HealthComp->GetActiveRevivePercent();
+
+    float CurrentPercent = 0.0f;
+
+    if (bIsRevivingOthers)
     {
         const AGameStateBase* GS = CachedGameState ? CachedGameState.Get() : World->GetGameState();
-        const float CurrentServerTime = GS ? GS->GetServerWorldTimeSeconds() : World->GetTimeSeconds();
-        const float RemainingTime = CachedHamaChar->ReviveEndTime - CurrentServerTime;
+        const float ServerTime = GS ? GS->GetServerWorldTimeSeconds() : World->GetTimeSeconds();
+        const float Remaining = FMath::Max(0.0f, CachedHamaChar->ReviveEndTime - ServerTime);
 
-        Percent = 1.0f - FMath::Clamp(RemainingTime / CachedHamaChar->ReviveTotalDuration, 0.0f, 1.0f);
+        CurrentPercent = 1.0f - FMath::Clamp(Remaining / CachedHamaChar->ReviveTotalDuration, 0.0f, 1.0f);
     }
-    else if (HealthComp->IsBeingRevived())
+    else if (bIsBeingRevived || DownedProgress > 0.0f)
     {
-        Percent = HealthComp->GetActiveRevivePercent();
-    }
-    else if (HealthComp->IsDowned())
-    {
-        Percent = HealthComp->GetBleedOutPercent();
+        CurrentPercent = DownedProgress;
     }
     else
     {
@@ -520,7 +541,7 @@ void UHamaMainWidget::NativeUpdateReviveProgress()
 
     if (ReviveProgressBar)
     {
-        ReviveProgressBar->SetPercent(Percent);
+        ReviveProgressBar->SetPercent(CurrentPercent);
     }
 }
 

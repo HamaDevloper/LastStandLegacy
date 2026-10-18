@@ -35,8 +35,7 @@ public:
     void Revive();
     void HandlePlayerDeath();
 
-    // --- Revive State Management ---
-    void SetBeingRevived(bool bState, AHama* InReviver = nullptr, float InReviveDuration = 0.0f, float InReviveEndTime = 0.0f);
+    void SetBeingRevived(bool bState, AHama* InReviver = nullptr, float InFullReviveDuration = 0.0f, bool bForceResetProgress = false);
 
     // --- Getters ---
     UFUNCTION(BlueprintPure, Category = "Health")
@@ -53,7 +52,6 @@ public:
 
     AHama* GetCurrentReviver() const { return CurrentReviver.Get(); }
 
-    // --- Replicated Properties ---
     UPROPERTY(ReplicatedUsing = OnRep_CurrentHealth)
     float CurrentHealth = 100.0f;
 
@@ -66,20 +64,21 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_IsBeingRevived)
     bool bIsBeingRevived = false;
 
-    // BO3 Bleed-Out Sync Data (Zero-Tick Bandwidth)
     UPROPERTY(Replicated)
     float BleedOutEndTime = 0.0f;
 
     UPROPERTY(Replicated)
     float PausedBleedOutRemaining = 0.0f;
+    UPROPERTY(ReplicatedUsing = OnRep_IsBeingRevived)
+    float SavedReviveProgress = 0.0f;
 
-    // Synced so the Downed Player CAN ALSO see the Revive Progress Bar like BO3
-    UPROPERTY(Replicated)
-    float BeingRevivedTotalDuration = 0.0f;
+    UPROPERTY(ReplicatedUsing = OnRep_IsBeingRevived)
+    float ReviveStateChangeTime = 0.0f;
 
-    UPROPERTY(Replicated)
-    float BeingRevivedEndTime = 0.0f;
+    UPROPERTY(ReplicatedUsing = OnRep_IsBeingRevived)
+    float ActiveReviveRate = 0.0f;
 
+    // --- Configuration Defaults ---
     UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
     float DeathTime = 45.0f; // BO3 Standard 45s Bleed-out
 
@@ -91,6 +90,9 @@ public:
 
     UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
     float HealthGenerateDelay = 4.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
+    float ReviveDecayTime = 4.0f;
 
 protected:
     UFUNCTION()

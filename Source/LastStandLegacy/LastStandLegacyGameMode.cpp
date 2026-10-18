@@ -595,7 +595,6 @@ void ALastStandLegacyGameMode::ActivateNuke()
 void ALastStandLegacyGameMode::ProcessNukeKills()
 {
     int32 Killed = 0;
-
     while (Killed < DynamicKillBatchSize && !ZombiesToNuke.IsEmpty())
     {
         const TWeakObjectPtr<AZombie> Weak = ZombiesToNuke.Pop(EAllowShrinking::No);

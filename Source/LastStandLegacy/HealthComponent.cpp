@@ -50,8 +50,9 @@ void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, bIsBeingRevived, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, BleedOutEndTime, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, PausedBleedOutRemaining, SharedParams);
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, BeingRevivedTotalDuration, SharedParams);
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, BeingRevivedEndTime, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, SavedReviveProgress, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, ReviveStateChangeTime, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, ActiveReviveRate, SharedParams);
 
     FDoRepLifetimeParams OwnerParams;
     OwnerParams.bIsPushBased = true;
@@ -78,7 +79,7 @@ float UHealthComponent::GetBleedOutPercent() const
 {
     if (!bIsDowned || DeathTime <= 0.0f) return 0.0f;
 
-    if (bIsBeingRevived)
+    if (bIsBeingRevived && PausedBleedOutRemaining > 0.0f)
     {
         return FMath::Clamp(PausedBleedOutRemaining / DeathTime, 0.0f, 1.0f);
     }
@@ -89,10 +90,22 @@ float UHealthComponent::GetBleedOutPercent() const
 
 float UHealthComponent::GetActiveRevivePercent() const
 {
-    if (!bIsBeingRevived || BeingRevivedTotalDuration <= 0.0f) return 0.0f;
+    if (!bIsDowned) return 0.0f;
 
-    const float Remaining = BeingRevivedEndTime - GetServerTime();
-    return 1.0f - FMath::Clamp(Remaining / BeingRevivedTotalDuration, 0.0f, 1.0f);
+    const float Elapsed = FMath::Max(0.0f, GetServerTime() - ReviveStateChangeTime);
+
+    if (bIsBeingRevived)
+    {
+        if (ActiveReviveRate <= 0.0f) return SavedReviveProgress;
+        return FMath::Clamp(SavedReviveProgress + (Elapsed * ActiveReviveRate), 0.0f, 1.0f);
+    }
+    else if (SavedReviveProgress > 0.0f)
+    {
+        const float StandardDecayRate = (ReviveDecayTime > 0.0f) ? (1.0f / ReviveDecayTime) : 0.25f;
+        return FMath::Clamp(SavedReviveProgress - (Elapsed * StandardDecayRate), 0.0f, 1.0f);
+    }
+
+    return 0.0f;
 }
 
 void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
@@ -114,51 +127,76 @@ void UHealthComponent::OnRep_IsBeingRevived()
     OnReviveStateChanged.Broadcast(bIsBeingRevived, bIsRevivingOthers);
 }
 
-void UHealthComponent::SetBeingRevived(bool bState, AHama* InReviver, float InReviveDuration, float InReviveEndTime)
+void UHealthComponent::SetBeingRevived(bool bState, AHama* InReviver, float InFullReviveDuration, bool bForceResetProgress)
 {
-    if (!GetOwner() || !GetOwner()->HasAuthority() || bIsBeingRevived == bState) return;
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+    if (bIsBeingRevived == bState && !bForceResetProgress) return;
+
+    UWorld* World = GetWorld();
+    const float ServerTime = GetServerTime();
+
+    // ١. پێش گۆڕینی دۆخەکە، ڕێژەی ئێستای پڕۆگرێسەکە وەردەگرین (بۆ ئەوەی لەوێوە بەردەوام بێت یان دابەزێت)
+    const float CurrentProgressSnapshot = bForceResetProgress ? 0.0f : GetActiveRevivePercent();
 
     bIsBeingRevived = bState;
     CurrentReviver = bState ? InReviver : nullptr;
 
-    BeingRevivedTotalDuration = bState ? InReviveDuration : 0.0f;
-    BeingRevivedEndTime = bState ? InReviveEndTime : 0.0f;
-
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BeingRevivedTotalDuration, this);
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BeingRevivedEndTime, this);
-
-    if (UWorld* World = GetWorld())
+    if (bForceResetProgress)
     {
-        FTimerManager& TM = World->GetTimerManager();
+        SavedReviveProgress = 0.0f;
+        ReviveStateChangeTime = 0.0f;
+        ActiveReviveRate = 0.0f;
+    }
+    else if (bState)
+    {
+        // دەستپێکردن یان دەستپێکردنەوەی ڕیڤایڤ
+        SavedReviveProgress = CurrentProgressSnapshot;
+        ReviveStateChangeTime = ServerTime;
+        ActiveReviveRate = (InFullReviveDuration > 0.0f) ? (1.0f / InFullReviveDuration) : 0.25f;
 
-        if (bIsBeingRevived)
+        // وەستاندنی خوێنڕشتن (Pause Bleed-Out)
+        if (World)
         {
-            if (TM.IsTimerActive(DownTimerHandle))
-            {
-                PausedBleedOutRemaining = TM.GetTimerRemaining(DownTimerHandle);
-            }
-            else if (PausedBleedOutRemaining <= 0.0f)
-            {
-                PausedBleedOutRemaining = FMath::Max(0.5f, BleedOutEndTime - GetServerTime());
-            }
-
-            TM.ClearTimer(DownTimerHandle);
-            MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
+            World->GetTimerManager().ClearTimer(DownTimerHandle);
         }
-        else if (bIsDowned)
+        PausedBleedOutRemaining = FMath::Max(0.05f, BleedOutEndTime - ServerTime);
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
+    }
+    else
+    {
+        // کاتێک ڕیڤایڤەکە دەپچڕێت (Cancel) - پڕۆگرێسەکە لەم خاڵەوە دەست دەکات بە دابەزین
+        SavedReviveProgress = CurrentProgressSnapshot;
+        ReviveStateChangeTime = ServerTime;
+        // تێبینی: ActiveReviveRate وەک خۆی دەمێنێتەوە تا بە هەمان خێرایی دابەزێتەوە
+
+        // دەستپێکردنەوەی خوێنڕشتن ڕێک لەو شوێنەی لێی وەستابوو (Resume Bleed-Out)
+        if (bIsDowned && OwnerCharacter && !OwnerCharacter->bIsDead && World)
         {
-            const float RemainingTime = (PausedBleedOutRemaining > 0.0f) ? PausedBleedOutRemaining : DeathTime;
+            const float RemainingBleedTime = (PausedBleedOutRemaining > 0.0f)
+                ? PausedBleedOutRemaining
+                : FMath::Max(0.0f, BleedOutEndTime - ServerTime);
 
-            BleedOutEndTime = GetServerTime() + RemainingTime;
             PausedBleedOutRemaining = 0.0f;
-
-            MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
             MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
 
-            TM.SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, RemainingTime, false);
+            if (RemainingBleedTime <= 0.0f)
+            {
+                HandlePlayerDeath();
+                return;
+            }
+            else
+            {
+                BleedOutEndTime = ServerTime + RemainingBleedTime;
+                MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
+                World->GetTimerManager().SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, RemainingBleedTime, false);
+            }
         }
     }
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsBeingRevived, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, SavedReviveProgress, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, ReviveStateChangeTime, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, ActiveReviveRate, this);
 
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {
@@ -180,6 +218,7 @@ void UHealthComponent::UpgradeHealth(float Amount)
 void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 {
     if (Amount <= 0.0f || !GetOwner() || !GetOwner()->HasAuthority() || bIsDowned || (OwnerCharacter && OwnerCharacter->bIsDead)) return;
+
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(RegenerateHealthTimer);
@@ -235,23 +274,20 @@ void UHealthComponent::DownPlayer()
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || bIsDowned || (OwnerCharacter && OwnerCharacter->bIsDead)) return;
 
+    bIsDowned = true;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsDowned, this);
+
     if (OwnerCharacter)
     {
         OwnerCharacter->CancelReviveInternal();
     }
-
-    bIsDowned = true;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsDowned, this);
 
     if (OwnerComponent)
     {
         OwnerComponent->SetDowned(true);
     }
 
-    if (bIsBeingRevived)
-    {
-        SetBeingRevived(false);
-    }
+    SetBeingRevived(false, nullptr, 0.0f, true);
 
     MaxHealth = 100.0f;
     CurrentHealth = 0.0f;
@@ -261,11 +297,6 @@ void UHealthComponent::DownPlayer()
     if (OwnerCharacter)
     {
         OwnerCharacter->OnPlayerDowned();
-    }
-
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-    {
-        OnRep_IsDowned();
     }
 
     if (UWorld* World = GetWorld())
@@ -284,8 +315,13 @@ void UHealthComponent::DownPlayer()
                 BleedOutEndTime = ServerTime + SoloReviveTime;
                 MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
 
-                SetBeingRevived(true, OwnerCharacter, SoloReviveTime, ServerTime + SoloReviveTime);
+                SetBeingRevived(true, OwnerCharacter, SoloReviveTime, false);
                 TM.SetTimer(QuickReviveTimerHandle, this, &UHealthComponent::Revive, SoloReviveTime, false);
+
+                if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+                {
+                    OnRep_IsDowned();
+                }
                 return;
             }
             else
@@ -307,6 +343,11 @@ void UHealthComponent::DownPlayer()
             GM->CheckGameOverCondition();
         }
     }
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnRep_IsDowned();
+    }
 }
 
 void UHealthComponent::Revive()
@@ -327,7 +368,7 @@ void UHealthComponent::Revive()
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
 
-    SetBeingRevived(false);
+    SetBeingRevived(false, nullptr, 0.0f, true);
 
     if (OwnerComponent)
     {
@@ -355,17 +396,15 @@ void UHealthComponent::HandlePlayerDeath()
         return;
     }
 
-    if (AHama* Reviver = CurrentReviver.Get())
+    if (bIsBeingRevived && CurrentReviver.IsValid())
     {
-        Reviver->CancelReviveInternal();
+        return;
     }
 
     SetBeingRevived(false);
 
-    bIsDowned = false;
     BleedOutEndTime = 0.0f;
     PausedBleedOutRemaining = 0.0f;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, bIsDowned, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
 
