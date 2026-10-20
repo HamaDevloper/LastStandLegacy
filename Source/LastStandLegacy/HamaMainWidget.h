@@ -13,6 +13,7 @@ class ALastStandLegacyGameState;
 class UHorizontalBox;
 class UWidgetAnimation;
 class UProgressBar;
+class UMaterialInstanceDynamic;
 
 UCLASS()
 class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
@@ -57,8 +58,8 @@ protected:
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UTextBlock> ReviveText;
 
-    UPROPERTY(meta = (BindWidgetOptional))
-    TObjectPtr<UProgressBar> ReviveProgressBar;
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UImage> ReviveProgressBar;
 
     UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
     TObjectPtr<UWidgetAnimation> ReviveAnim;
@@ -169,6 +170,9 @@ private:
 
     UPROPERTY()
     TObjectPtr<ALastStandLegacyGameState> CachedGameState;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInstanceDynamic> CachedReviveMID = nullptr;
 
     FTimerHandle PingUpdateTimer;
     FTimerHandle PowerImageHideTimer;

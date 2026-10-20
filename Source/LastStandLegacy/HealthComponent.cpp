@@ -135,7 +135,6 @@ void UHealthComponent::SetBeingRevived(bool bState, AHama* InReviver, float InFu
     UWorld* World = GetWorld();
     const float ServerTime = GetServerTime();
 
-    // ١. پێش گۆڕینی دۆخەکە، ڕێژەی ئێستای پڕۆگرێسەکە وەردەگرین (بۆ ئەوەی لەوێوە بەردەوام بێت یان دابەزێت)
     const float CurrentProgressSnapshot = bForceResetProgress ? 0.0f : GetActiveRevivePercent();
 
     bIsBeingRevived = bState;
@@ -149,12 +148,10 @@ void UHealthComponent::SetBeingRevived(bool bState, AHama* InReviver, float InFu
     }
     else if (bState)
     {
-        // دەستپێکردن یان دەستپێکردنەوەی ڕیڤایڤ
         SavedReviveProgress = CurrentProgressSnapshot;
         ReviveStateChangeTime = ServerTime;
         ActiveReviveRate = (InFullReviveDuration > 0.0f) ? (1.0f / InFullReviveDuration) : 0.25f;
 
-        // وەستاندنی خوێنڕشتن (Pause Bleed-Out)
         if (World)
         {
             World->GetTimerManager().ClearTimer(DownTimerHandle);
@@ -164,12 +161,9 @@ void UHealthComponent::SetBeingRevived(bool bState, AHama* InReviver, float InFu
     }
     else
     {
-        // کاتێک ڕیڤایڤەکە دەپچڕێت (Cancel) - پڕۆگرێسەکە لەم خاڵەوە دەست دەکات بە دابەزین
         SavedReviveProgress = CurrentProgressSnapshot;
         ReviveStateChangeTime = ServerTime;
-        // تێبینی: ActiveReviveRate وەک خۆی دەمێنێتەوە تا بە هەمان خێرایی دابەزێتەوە
 
-        // دەستپێکردنەوەی خوێنڕشتن ڕێک لەو شوێنەی لێی وەستابوو (Resume Bleed-Out)
         if (bIsDowned && OwnerCharacter && !OwnerCharacter->bIsDead && World)
         {
             const float RemainingBleedTime = (PausedBleedOutRemaining > 0.0f)
