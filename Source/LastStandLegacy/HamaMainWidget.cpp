@@ -1,7 +1,8 @@
 ﻿#include "HamaMainWidget.h"
 #include "Hama.h"
+#include "CommonActionWidget.h"
 #include "LastStandLegacyGameState.h"
-#include "Components/TextBlock.h"
+#include "CommonTextBlock.h"
 #include "Components/Image.h"
 #include "HamaPlayerState.h"
 #include "HealthComponent.h"
@@ -11,6 +12,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Animation/WidgetAnimation.h"
 #include "Components/ProgressBar.h"
+#include "ThrowableComponent.h"
 
 #define LOCTEXT_NAMESPACE "HamaMainWidget"
 
@@ -44,9 +46,6 @@ void UHamaMainWidget::NativeConstruct()
     if (GrenadeContainer) GrenadeContainer->ClearChildren();
     if (MonkeyContainer) MonkeyContainer->ClearChildren();
 
-    // ---------------------------------------------------------
-    // Perk Pool Initialization (ئەمەیان لە UI بڕەکەی جێگیرە)
-    // ---------------------------------------------------------
     if (PerkContainer && PerkImagePool.Num() == 0)
     {
         PerkContainer->ClearChildren();
@@ -74,9 +73,9 @@ void UHamaMainWidget::NativeConstruct()
 
 void UHamaMainWidget::BindCharacter(AHama* InHama)
 {
-    if (!InHama || CachedHamaChar == InHama) return;
+    if (CachedHamaChar.Get() == InHama) return;
 
-    if (CachedHamaChar)
+    if (CachedHamaChar.IsValid())
     {
         if (UThrowableComponent* OldThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
         {
@@ -96,7 +95,10 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
         CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.RemoveAll(this);
     }
 
+    ResetReviveUI();
     CachedHamaChar = InHama;
+
+    if (!CachedHamaChar.IsValid()) return;
 
     CachedHamaChar->OnAmmoUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleAmmoUpdate);
     CachedHamaChar->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
@@ -126,20 +128,25 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
     {
         HandleAmmoUpdate(CurrentWep->GetCurrentAmmo(), CurrentWep->GetReserveAmmo());
     }
+    else
+    {
+        HandleAmmoUpdate(0, 0);
+    }
 }
-
 
 void UHamaMainWidget::BindPlayerState(AHamaPlayerState* InPlayerState)
 {
-    if (!InPlayerState || CachedHamaPS == InPlayerState) return;
+    if (CachedHamaPS.Get() == InPlayerState) return;
 
-    if (CachedHamaPS)
+    if (CachedHamaPS.IsValid())
     {
         CachedHamaPS->OnPointsChanged.Unbind();
         CachedHamaPS->OnKillsChanged.Unbind();
     }
 
     CachedHamaPS = InPlayerState;
+
+    if (!CachedHamaPS.IsValid()) return;
 
     CachedHamaPS->OnPointsChanged.BindUObject(this, &UHamaMainWidget::HandlePointsUpdate);
     CachedHamaPS->OnKillsChanged.BindUObject(this, &UHamaMainWidget::HandleKillsUpdate);
@@ -156,15 +163,18 @@ void UHamaMainWidget::BindPlayerState(AHamaPlayerState* InPlayerState)
 
 void UHamaMainWidget::BindGameState(ALastStandLegacyGameState* InGameState)
 {
-    if (!InGameState || CachedGameState == InGameState) return;
+    if (CachedGameState.Get() == InGameState) return;
 
-    if (CachedGameState)
+    if (CachedGameState.IsValid())
     {
         CachedGameState->OnRoundChangedDelegate.RemoveAll(this);
         CachedGameState->OnPowerUpAnnouncedDelegate.RemoveAll(this);
     }
 
     CachedGameState = InGameState;
+
+    if (!CachedGameState.IsValid()) return;
+
     CachedGameState->OnRoundChangedDelegate.AddUObject(this, &UHamaMainWidget::HandleRoundUpdate);
     CachedGameState->OnPowerUpAnnouncedDelegate.AddUObject(this, &UHamaMainWidget::ShowPowerMessage);
 
@@ -181,7 +191,7 @@ void UHamaMainWidget::HandlePointsUpdate(int32 NewPoints)
 {
     if (Points)
     {
-        static const FText PointsFormatPattern = LOCTEXT("PointsFormat", "${ 0}");
+        static const FText PointsFormatPattern = LOCTEXT("PointsFormat", "${0}");
         const FText FormattedNumber = FText::AsNumber(NewPoints, &NoGroupingOptions);
         Points->SetText(FText::Format(PointsFormatPattern, FormattedNumber));
     }
@@ -207,9 +217,8 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
 {
     if (!Ammo) return;
 
-    if (!CachedHamaChar || !CachedHamaChar->GetCurrentWeapon())
+    if (!CachedHamaChar.IsValid() || !CachedHamaChar->GetCurrentWeapon())
     {
-        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Green, "No Weapon Avalible");
         Ammo->SetText(FText::GetEmpty());
         if (AmmoWarningText)
         {
@@ -236,8 +245,8 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
     ABaseWeapon* CurrentWeapon = CachedHamaChar->GetCurrentWeapon();
     if (AmmoWarningText && CurrentWeapon)
     {
-        int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo();
-        int32 LowAmmoThreshold = FMath::RoundToInt(MaxClipSize * 0.25f);
+        const int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo();
+        const int32 LowAmmoThreshold = FMath::RoundToInt(MaxClipSize * 0.25f);
 
         if (CurrentAmmo == 0 && ReserveAmmo <= 0)
         {
@@ -289,12 +298,9 @@ void UHamaMainWidget::HandleCrosshairUpdate(bool bIsAimingAtEnemy)
 
 void UHamaMainWidget::UpdatePingDisplay()
 {
-    if (!CachedHamaPS || !PingText) return;
+    if (!CachedHamaPS.IsValid() || !PingText) return;
 
-    int32 PingValue = 0;
-
-    PingValue = FMath::RoundToInt(CachedHamaPS->GetPingInMilliseconds());
-
+    const int32 PingValue = FMath::RoundToInt(CachedHamaPS->GetPingInMilliseconds());
     const FText FormattedPing = FText::AsNumber(PingValue, &NoGroupingOptions);
     static const FText PingFormat = LOCTEXT("PingFormat", "{0} ms");
     PingText->SetText(FText::Format(PingFormat, FormattedPing));
@@ -406,12 +412,8 @@ void UHamaMainWidget::EnsureThrowablePoolSize(UHorizontalBox* Container, TArray<
     }
 }
 
-
 void UHamaMainWidget::HandleThrowableCountUpdate(int32 MonkeyCount, int32 GrenadeCount)
 {
-    // -------------------------------------------------------------------------
-    // 1. Grenade Icons Display
-    // -------------------------------------------------------------------------
     const int32 TotalGrenades = GrenadeImagePool.Num();
     for (int32 i = 0; i < TotalGrenades; ++i)
     {
@@ -422,9 +424,6 @@ void UHamaMainWidget::HandleThrowableCountUpdate(int32 MonkeyCount, int32 Grenad
         }
     }
 
-    // -------------------------------------------------------------------------
-    // 2. Monkey Bomb Icons Display
-    // -------------------------------------------------------------------------
     const int32 TotalMonkeys = MonkeyImagePool.Num();
     for (int32 i = 0; i < TotalMonkeys; ++i)
     {
@@ -450,7 +449,7 @@ void UHamaMainWidget::HandleReviveProgressUpdate(float Percent)
 
     if (ReviveText && ReviveText->GetVisibility() != ESlateVisibility::HitTestInvisible)
     {
-        const bool bIsBeingRevived = (CachedHamaChar&& CachedHamaChar->HealthComponent)
+        const bool bIsBeingRevived = (CachedHamaChar.IsValid() && CachedHamaChar->HealthComponent)
             ? CachedHamaChar->HealthComponent->IsBeingRevived()
             : false;
 
@@ -464,7 +463,7 @@ void UHamaMainWidget::HandleReviveProgressUpdate(float Percent)
 void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRevivingOthers)
 {
     UWorld* World = GetWorld();
-    if (!CachedHamaChar|| !CachedHamaChar->HealthComponent || !World)
+    if (!CachedHamaChar.IsValid() || !CachedHamaChar->HealthComponent || !World)
     {
         ResetReviveUI();
         return;
@@ -500,6 +499,11 @@ void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRev
             ReviveProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
         }
 
+        if (ReviveCenterIcon)
+        {
+            ReviveCenterIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
+
         NativeUpdateReviveProgress();
 
         if (!World->GetTimerManager().IsTimerActive(UIUpdateTimerHandle))
@@ -522,7 +526,7 @@ void UHamaMainWidget::HandleReviveStateChanged(bool bIsBeingRevived, bool bIsRev
 void UHamaMainWidget::NativeUpdateReviveProgress()
 {
     UWorld* World = GetWorld();
-    if (!CachedHamaChar|| !CachedHamaChar->HealthComponent || !World)
+    if (!CachedHamaChar.IsValid() || !CachedHamaChar->HealthComponent || !World)
     {
         ResetReviveUI();
         return;
@@ -536,7 +540,7 @@ void UHamaMainWidget::NativeUpdateReviveProgress()
 
     float CurrentPercent = 0.0f;
 
-    const float ServerTime = CachedGameState
+    const float ServerTime = CachedGameState.IsValid()
         ? CachedGameState->GetServerWorldTimeSeconds()
         : World->GetTimeSeconds();
 
@@ -563,7 +567,7 @@ void UHamaMainWidget::NativeUpdateReviveProgress()
 
 void UHamaMainWidget::HandleDownStateChanged(bool bIsDowned)
 {
-    if (!CachedHamaChar|| !CachedHamaChar->HealthComponent)
+    if (!CachedHamaChar.IsValid() || !CachedHamaChar->HealthComponent)
     {
         ResetReviveUI();
         return;
@@ -590,6 +594,11 @@ void UHamaMainWidget::ResetReviveUI()
         ReviveProgressBar->SetVisibility(ESlateVisibility::Collapsed);
     }
 
+    if (ReviveCenterIcon)
+    {
+        ReviveCenterIcon->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
     if (ReviveText)
     {
         ReviveText->SetVisibility(ESlateVisibility::Collapsed);
@@ -598,7 +607,9 @@ void UHamaMainWidget::ResetReviveUI()
 
 void UHamaMainWidget::UnbindAllEvents()
 {
-    if (CachedHamaChar)
+    ResetReviveUI();
+
+    if (CachedHamaChar.IsValid())
     {
         if (UThrowableComponent* ThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
         {
@@ -616,24 +627,22 @@ void UHamaMainWidget::UnbindAllEvents()
         CachedHamaChar->OnCrosshairUpdateEvent.Unbind();
         CachedHamaChar->OnPerksChangedEvent.Unbind();
         CachedHamaChar->OnPersonalPowerUpAcquiredDelegate.RemoveAll(this);
-        CachedHamaChar = nullptr;
     }
+    CachedHamaChar.Reset();
 
-    if (CachedHamaPS)
+    if (CachedHamaPS.IsValid())
     {
         CachedHamaPS->OnPointsChanged.Unbind();
         CachedHamaPS->OnKillsChanged.Unbind();
-        CachedHamaPS = nullptr;
     }
+    CachedHamaPS.Reset();
 
-    if (CachedGameState)
+    if (CachedGameState.IsValid())
     {
         CachedGameState->OnRoundChangedDelegate.RemoveAll(this);
         CachedGameState->OnPowerUpAnnouncedDelegate.RemoveAll(this);
-        CachedGameState = nullptr;
     }
-
-    ResetReviveUI();
+    CachedGameState.Reset();
 }
 
 void UHamaMainWidget::NativeDestruct()

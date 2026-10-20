@@ -26,6 +26,10 @@
 		{
 			"Name": "AnimationBudgetAllocator",
 			"Enabled": true
+		},
+		{
+			"Name": "CommonUI",
+			"Enabled": true
 		}
 	]
 }

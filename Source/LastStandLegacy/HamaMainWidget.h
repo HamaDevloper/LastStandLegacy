@@ -1,22 +1,22 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "CommonUserWidget.h" // یان CommonActivatableWidget.h ئەگەر سیستەمی Stack بەکاردەهێنیت
 #include "LastStandLegacyTypes.h"
 #include "HamaMainWidget.generated.h"
 
-class UTextBlock;
+class UCommonTextBlock;
+class UCommonActionWidget;
 class UImage;
+class UHorizontalBox;
+class UWidgetAnimation;
+class UMaterialInstanceDynamic;
 class AHama;
 class AHamaPlayerState;
 class ALastStandLegacyGameState;
-class UHorizontalBox;
-class UWidgetAnimation;
-class UProgressBar;
-class UMaterialInstanceDynamic;
 
-UCLASS()
-class LASTSTANDLEGACY_API UHamaMainWidget : public UUserWidget
+UCLASS(Abstract, BlueprintType, Blueprintable)
+class LASTSTANDLEGACY_API UHamaMainWidget : public UCommonUserWidget
 {
     GENERATED_BODY()
 
@@ -26,79 +26,80 @@ public:
     void BindGameState(ALastStandLegacyGameState* InGameState);
     void UnbindAllEvents();
 
+protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
-protected:
-    // --- UI Bindings ---
+    // --- Common UI Text Blocks (پشتگیری لە Text Styles و Formatting دەکەن) ---
     UPROPERTY(meta = (BindWidget))
-    TObjectPtr<UTextBlock> Points;
+    TObjectPtr<UCommonTextBlock> Points;
 
     UPROPERTY(meta = (BindWidget))
-    TObjectPtr<UTextBlock> Kills;
+    TObjectPtr<UCommonTextBlock> Kills;
 
     UPROPERTY(meta = (BindWidget))
-    TObjectPtr<UTextBlock> Round;
+    TObjectPtr<UCommonTextBlock> Round;
 
     UPROPERTY(meta = (BindWidget))
-    TObjectPtr<UTextBlock> Ammo;
+    TObjectPtr<UCommonTextBlock> Ammo;
 
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UCommonTextBlock> InteractText;
+
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UCommonTextBlock> AmmoWarningText;
+
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UCommonTextBlock> PingText;
+
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UCommonTextBlock> ReviveText;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr<UCommonActionWidget> InteractActionWidget;
+
+    // --- Images & Visuals ---
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UImage> CrosshairImage;
 
     UPROPERTY(meta = (BindWidget))
-    TObjectPtr<UTextBlock> InteractText;
-
-    UPROPERTY(meta = (BindWidget))
-    TObjectPtr<UTextBlock> AmmoWarningText;
-
-    UPROPERTY(meta = (BindWidget))
-    TObjectPtr<UTextBlock> PingText;
-
-    UPROPERTY(meta = (BindWidget))
-    TObjectPtr<UTextBlock> ReviveText;
-
-    UPROPERTY(meta = (BindWidget))
     TObjectPtr<UImage> ReviveProgressBar;
 
-    UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
-    TObjectPtr<UWidgetAnimation> ReviveAnim;
-
-    // --- Animations & PowerUps ---
-    UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
-    TObjectPtr<UWidgetAnimation> PowerUpAnim;
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UImage> ReviveCenterIcon;
 
     UPROPERTY(meta = (BindWidgetOptional))
     TObjectPtr<UImage> PowerImage;
 
-    UPROPERTY()
-    TArray<TObjectPtr<UImage>> PerkImagePool;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PowerUp Data")
-    TMap<EPowerUpType, TObjectPtr<UTexture2D>> PowerUpIcons;
-
+    // --- Containers ---
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UHorizontalBox> PerkContainer;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk Data")
-    TMap<FName, TObjectPtr<UTexture2D>> PerkIcons;
-
-    FWidgetAnimationDynamicEvent PowerUpAnimDelegate;
-
-    UPROPERTY(EditDefaultsOnly)
-    float Perksize = 128.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI | Perks")
-    int32 MaxPerkSlots = 8;
-
-
-protected:
-    // --- Throwable UI Widgets (CoD Zombies Style) ---
     UPROPERTY(meta = (BindWidgetOptional))
     TObjectPtr<UHorizontalBox> GrenadeContainer;
 
     UPROPERTY(meta = (BindWidgetOptional))
     TObjectPtr<UHorizontalBox> MonkeyContainer;
+
+    // --- Animations ---
+    UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+    TObjectPtr<UWidgetAnimation> ReviveAnim;
+
+    UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+    TObjectPtr<UWidgetAnimation> PowerUpAnim;
+
+    // --- Configuration Data ---
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI | PowerUps")
+    TMap<EPowerUpType, TObjectPtr<UTexture2D>> PowerUpIcons;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI | Perks")
+    TMap<FName, TObjectPtr<UTexture2D>> PerkIcons;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI | Perks")
+    float Perksize = 128.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI | Perks")
+    int32 MaxPerkSlots = 8;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI | Throwables")
     TObjectPtr<UTexture2D> GrenadeIconTexture;
@@ -108,13 +109,6 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI | Throwables")
     FVector2D ThrowableIconSize = FVector2D(32.0f, 32.0f);
-
-private:
-    UPROPERTY()
-    TArray<TObjectPtr<UImage>> GrenadeImagePool;
-
-    UPROPERTY()
-    TArray<TObjectPtr<UImage>> MonkeyImagePool;
 
 public:
     // --- Event Handlers ---
@@ -153,30 +147,42 @@ public:
 
     UFUNCTION()
     void HandleDownStateChanged(bool bIsDowned);
-    
+
     UFUNCTION()
     void ResetReviveUI();
 
     UFUNCTION()
     void HandleThrowableCountUpdate(int32 NewMonkeyCount, int32 NewGrenadeCount);
-    void EnsureThrowablePoolSize(UHorizontalBox* Container, TArray<TObjectPtr<UImage>>& Pool, UTexture2D* IconTexture, int32 TargetSize);
 
 private:
-    UPROPERTY()
-    TObjectPtr<AHama> CachedHamaChar;
+    void EnsureThrowablePoolSize(UHorizontalBox* Container, TArray<TObjectPtr<UImage>>& Pool, UTexture2D* IconTexture, int32 TargetSize);
 
     UPROPERTY()
-    TObjectPtr<AHamaPlayerState> CachedHamaPS;
+    TWeakObjectPtr<AHama> CachedHamaChar;
 
     UPROPERTY()
-    TObjectPtr<ALastStandLegacyGameState> CachedGameState;
+    TWeakObjectPtr<AHamaPlayerState> CachedHamaPS;
+
+    UPROPERTY()
+    TWeakObjectPtr<ALastStandLegacyGameState> CachedGameState;
 
     UPROPERTY()
     TObjectPtr<UMaterialInstanceDynamic> CachedReviveMID = nullptr;
 
+    UPROPERTY()
+    TArray<TObjectPtr<UImage>> PerkImagePool;
+
+    UPROPERTY()
+    TArray<TObjectPtr<UImage>> GrenadeImagePool;
+
+    UPROPERTY()
+    TArray<TObjectPtr<UImage>> MonkeyImagePool;
+
     FTimerHandle PingUpdateTimer;
     FTimerHandle PowerImageHideTimer;
     FTimerHandle UIUpdateTimerHandle;
+
+    FWidgetAnimationDynamicEvent PowerUpAnimDelegate;
 
     UFUNCTION()
     void HandleReviveProgressUpdate(float Percent);
