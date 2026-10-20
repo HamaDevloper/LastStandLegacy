@@ -11,8 +11,8 @@
 #include "ZombieDirectorSubsystem.h"
 #include "Engine/AssetManager.h"
 #include "Engine/DamageEvents.h"
-
-
+#include "Animation/AnimInstance.h"
+#include "TimerManager.h"
 
 AZombie::AZombie()
 {
@@ -26,7 +26,6 @@ AZombie::AZombie()
 
     SetNetUpdateFrequency(10.f);
     SetMinNetUpdateFrequency(2.f);
-
     SetNetCullDistanceSquared(1600000000.0f);
 
     MaxHealth = BaseHealth;
@@ -34,8 +33,7 @@ AZombie::AZombie()
 
     AttackDistanceSq = FMath::Square(AttackDistance);
 
-    UCapsuleComponent* Capsule = GetCapsuleComponent();
-    if (Capsule)
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
         Capsule->SetCanEverAffectNavigation(false);
         Capsule->SetGenerateOverlapEvents(false);
@@ -50,7 +48,6 @@ AZombie::AZombie()
 void AZombie::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
-
     CachedAIController = Cast<AAIController>(NewController);
 }
 
@@ -59,49 +56,78 @@ void AZombie::BeginPlay()
     Super::BeginPlay();
 
     CachedMovement = GetCharacterMovement();
-
+   
     if (CachedMovement)
     {
         CachedMovement->bEnablePhysicsInteraction = false;
         CachedMovement->bUseRVOAvoidance = false;
+
+        // ١. کوژاندنەوەی پشکنینی کەوتنە ناو ئاو و مەلەکردن
+        CachedMovement->bSweepWhileNavWalking = false;
+        CachedMovement->bAlwaysCheckFloor = false; // لە هەموو فریمێکدا پشکنینی ئەوە ناکات ئایا لەسەر زەوییە
+
+        // ٢. سووککردنی حیساباتی فیزیا بە لابردنی کێش لەسەر بەربەستە جوڵاوەکان
+        CachedMovement->bPushForceScaledToMass = false;
+        CachedMovement->bScalePushForceToVelocity = false;
+
+        // ٣. کوژاندنەوەی حیساباتی سەرکەوتن بەسەر لێژایی و پلیکانە لە کاتی ئاساییدا
+        CachedMovement->MaxStepHeight = 35.f; // کەمکردنەوەی مەودای پشکنینی هەنگاونان
+        CachedMovement->SetWalkableFloorAngle(45.f);
+
+        // ڕێکخستنی تۆڕ و سووڕانەوە
+        CachedMovement->bOrientRotationToMovement = true;
+        CachedMovement->RotationRate = FRotator(0.f, 540.f, 0.f);
+        CachedMovement->NetworkSimulatedSmoothLocationTime = 0.06f;
+        CachedMovement->NetworkSimulatedSmoothRotationTime = 0.03f;
+    }
+
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        CachedCapsuleCollisionEnabled = Capsule->GetCollisionEnabled();
     }
 
     if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
+        CachedMeshRelativeLocation = MeshComp->GetRelativeLocation();
+        CachedMeshRelativeRotation = MeshComp->GetRelativeRotation();
+        CachedMeshCollisionProfile = MeshComp->GetCollisionProfileName();
+        CachedMeshCollisionEnabled = MeshComp->GetCollisionEnabled();
+
         if (!IsRunningDedicatedServer())
         {
             MeshComp->bEnableUpdateRateOptimizations = true;
             MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
             MeshComp->bCastFarShadow = false;
             MeshComp->SetGenerateOverlapEvents(false);
-            MeshComp->bEnableUpdateRateOptimizations = true;
         }
-        if (IsRunningDedicatedServer())
+        else
         {
             MeshComp->bNoSkeletonUpdate = true;
+            MeshComp->SetComponentTickEnabled(false);
+            MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
         }
     }
 
     if (!HasAuthority()) return;
 
-    if (!MeshToSelect.IsEmpty())
-    {
-        MeshIndexSelected = static_cast<uint8>(FMath::RandRange(0, MeshToSelect.Num() - 1));
-        ApplySelectedMesh();
-    }
-
     CachedGS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     CachedDirector = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>();
 
-    if (CachedDirector)
+    if (!MeshToSelect.IsEmpty())
     {
-        CachedDirector->RegisterZombie(this);
-        bRegisteredWithDirector = true;
+        MeshIndexSelected = static_cast<uint8>(FMath::RandRange(0, MeshToSelect.Num() - 1));
+        MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, MeshIndexSelected, this);
+        ApplySelectedMesh();
     }
 }
 
 void AZombie::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TimerHandle_ReturnToPool);
+    }
+
     if (HasAuthority() && bRegisteredWithDirector && CachedDirector)
     {
         CachedDirector->UnregisterZombie(this);
@@ -119,35 +145,215 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
     Params.bIsPushBased = true;
 
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, bIsDead, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, PoolState, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, CurrentTarget, Params);
-    DOREPLIFETIME_CONDITION(AZombie, MeshIndexSelected, COND_InitialOnly);
-    DOREPLIFETIME_CONDITION(AZombie, MaxHealth, COND_InitialOnly);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, MeshIndexSelected, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, MaxHealth, Params);
+}
+
+void AZombie::InitializeForPool()
+{
+    if (!HasAuthority()) return;
+
+    bIsDead = true;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
+
+    PoolState = EZombiePoolState::Pooled;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
+
+    CurrentTarget = nullptr;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, CurrentTarget, this);
+
+    if (CachedAIController)
+    {
+        CachedAIController->StopMovement();
+    }
+
+    if (CachedMovement)
+    {
+        CachedMovement->StopMovementImmediately();
+        CachedMovement->DisableMovement();
+    }
+
+    SetReplicateMovement(false);
+    SetNetUpdateFrequency(1.f);
+
+    ApplyStateVisualsAndPhysics(EZombiePoolState::Pooled);
+}
+
+void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& SpawnRotation, int32 CurrentRound)
+{
+    if (!HasAuthority()) return;
+
+    GetWorldTimerManager().ClearTimer(TimerHandle_ReturnToPool);
+
+    CurrentTarget = nullptr;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, CurrentTarget, this);
+    LastTargetLocation = FVector::ZeroVector;
+    NextTargetSearchTime = 0.f;
+    NextForceRepathTime = 0.f;
+
+    TeleportTo(SpawnLocation, SpawnRotation, false, true);
+
+    SetStatsForRound(CurrentRound);
+
+    bIsDead = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
+
+    PoolState = EZombiePoolState::Alive;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
+
+    SetReplicateMovement(true);
+    SetNetUpdateFrequency(10.f);
+
+    if (CachedMovement)
+    {
+        CachedMovement->SetMovementMode(MOVE_Walking);
+    }
+
+    ApplyStateVisualsAndPhysics(EZombiePoolState::Alive);
+
+    if (CachedDirector && !bRegisteredWithDirector)
+    {
+        CachedDirector->RegisterZombie(this);
+        bRegisteredWithDirector = true;
+    }
+
+    ForceNetUpdate();
+}
+
+void AZombie::ReturnToPool()
+{
+    if (!HasAuthority()) return;
+
+    InitializeForPool();
+
+    if (CachedDirector)
+    {
+        CachedDirector->ReturnZombieToPool(this);
+    }
+
+    ForceNetUpdate();
+}
+
+void AZombie::OnRep_PoolState()
+{
+    bIsDead = (PoolState != EZombiePoolState::Alive);
+    ApplyStateVisualsAndPhysics(PoolState);
+}
+
+void AZombie::OnRep_IsDead()
+{
+    // بۆ پاراستنی گونجاوی ئەگەر بلوپرینتێک پشتی پێ بەستبێت
+}
+
+void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
+{
+    UCapsuleComponent* Capsule = GetCapsuleComponent();
+    USkeletalMeshComponent* CharacterMesh = GetMesh();
+
+    if (NewState == EZombiePoolState::Pooled)
+    {
+        SetActorHiddenInGame(true);
+
+        if (Capsule)
+        {
+            Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        }
+
+        if (CharacterMesh)
+        {
+            if (!IsRunningDedicatedServer())
+            {
+                CharacterMesh->SetSimulatePhysics(false);
+                CharacterMesh->PutAllRigidBodiesToSleep();
+            }
+            CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+            CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
+        }
+    }
+    else if (NewState == EZombiePoolState::Alive)
+    {
+        SetActorHiddenInGame(false);
+
+        if (Capsule)
+        {
+            Capsule->SetCollisionEnabled(CachedCapsuleCollisionEnabled);
+        }
+
+        if (CharacterMesh)
+        {
+            if (!IsRunningDedicatedServer())
+            {
+                CharacterMesh->SetSimulatePhysics(false);
+                CharacterMesh->PutAllRigidBodiesToSleep();
+                CharacterMesh->SetCollisionProfileName(CachedMeshCollisionProfile);
+                CharacterMesh->SetCollisionEnabled(CachedMeshCollisionEnabled);
+
+                if (UAnimInstance* AnimInst = CharacterMesh->GetAnimInstance())
+                {
+                    AnimInst->StopAllMontages(0.f);
+                }
+            }
+            else
+            {
+                CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            }
+
+            CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+            CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
+        }
+
+        if (CachedMovement && !HasAuthority())
+        {
+            CachedMovement->ResetPredictionData_Client();
+        }
+    }
+    else if (NewState == EZombiePoolState::Dead)
+    {
+        SetActorHiddenInGame(false);
+
+        if (Capsule)
+        {
+            Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        }
+
+        if (CharacterMesh)
+        {
+            if (!IsRunningDedicatedServer())
+            {
+                CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
+                CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+                CharacterMesh->SetSimulatePhysics(true);
+            }
+            else
+            {
+                CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            }
+        }
+    }
 }
 
 void AZombie::SetStatsForRound(int32 CurrentRound)
 {
-    if (!HasAuthority())
-    {
-        return;
-    }
+    if (!HasAuthority()) return;
 
     const float NewHealth = BaseHealth * FMath::Pow(1.12f, CurrentRound - 1);
+    const float ClampedMaxHealth = FMath::Clamp(NewHealth, BaseHealth, MaxHealthZombieReach);
 
-    MaxHealth = FMath::Clamp(NewHealth, BaseHealth, MaxHealthZombieReach);
+    if (!FMath::IsNearlyEqual(MaxHealth, ClampedMaxHealth))
+    {
+        MaxHealth = ClampedMaxHealth;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, MaxHealth, this);
+    }
+
     Health = MaxHealth;
 
     const float Alpha = FMath::Clamp((CurrentRound - 1) / 19.f, 0.f, 1.f);
     const float BaseSpeed = FMath::Lerp(MinWalkSpeed, MaxBaseWalkSpeed, Alpha);
 
-    constexpr float TierOffsets[] =
-    {
-        -40.f,
-        -20.f,
-         0.f,
-         30.f,
-         70.f
-    };
-
+    constexpr float TierOffsets[] = { -40.f, -20.f, 0.f, 30.f, 70.f };
     const int32 MaxTier = FMath::Clamp(CurrentRound, 1, 5);
     const int32 RandTier = FMath::RandRange(0, MaxTier - 1);
 
@@ -177,21 +383,24 @@ void AZombie::ApplySelectedMesh()
         {
             MeshComp->SetSkeletalMeshAsset(LoadedMesh);
         }
-
         return;
     }
 
     FStreamableManager& Streamable = UAssetManager::GetStreamableManager();
+    TWeakObjectPtr<AZombie> WeakThis(this);
 
     Streamable.RequestAsyncLoad(
         SoftMesh.ToSoftObjectPath(),
-        [this, SoftMesh]()
+        [WeakThis, SoftMesh]()
         {
-            if (USkeletalMesh* AsyncLoadedMesh = SoftMesh.Get())
+            if (AZombie* StrongThis = WeakThis.Get())
             {
-                if (USkeletalMeshComponent* MeshComp = GetMesh())
+                if (USkeletalMesh* AsyncLoadedMesh = SoftMesh.Get())
                 {
-                    MeshComp->SetSkeletalMeshAsset(AsyncLoadedMesh);
+                    if (USkeletalMeshComponent* MeshComp = StrongThis->GetMesh())
+                    {
+                        MeshComp->SetSkeletalMeshAsset(AsyncLoadedMesh);
+                    }
                 }
             }
         }
@@ -200,13 +409,9 @@ void AZombie::ApplySelectedMesh()
 
 void AZombie::ExecuteMeleeHit()
 {
-    if (!HasAuthority() || bIsDead || !CurrentTarget)
-    {
-        return;
-    }
+    if (!HasAuthority() || bIsDead || !CurrentTarget) return;
 
-    const float DistSq =
-        FVector::DistSquared(GetActorLocation(), CurrentTarget->GetActorLocation());
+    const float DistSq = FVector::DistSquared(GetActorLocation(), CurrentTarget->GetActorLocation());
 
     if (DistSq <= FMath::Square(AttackDistance + 50.f))
     {
@@ -221,17 +426,14 @@ void AZombie::ExecuteMeleeHit()
 
 float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-    // 🟢 1. Authority & Death Check
-    if (!HasAuthority() || bIsDead)
+    if (!HasAuthority() || bIsDead || PoolState != EZombiePoolState::Alive)
     {
         return 0.f;
     }
 
-    // 🟢 2. Super Call Safety Check
     float DamageApplied = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
     if (DamageApplied <= 0.f && DamageAmount > 0.f)
     {
-        // ئەگەر Super بڕی 0ی گەڕاندەوە، بەهۆی CanBeDamaged بووە، بڕە بنەڕەتیەکەی بدەرێ
         DamageApplied = DamageAmount;
     }
 
@@ -239,24 +441,18 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
         DamageEvent.DamageTypeClass->IsChildOf(UMeleeDamageType::StaticClass());
 
     bool bDoublePoints = false;
-
     if (CachedGS)
     {
         bDoublePoints = CachedGS->bIsDoublePointsActive;
-
         if (CachedGS->bHasInstaKill)
         {
-            DamageApplied = Health; 
+            DamageApplied = Health;
         }
     }
 
     Health = FMath::Clamp(Health - DamageApplied, 0.f, MaxHealth);
 
-    AHamaPlayerState* TargetPlayerState = nullptr;
-    if (EventInstigator)
-    {
-        TargetPlayerState = EventInstigator->GetPlayerState<AHamaPlayerState>();
-    }
+    AHamaPlayerState* TargetPlayerState = EventInstigator ? EventInstigator->GetPlayerState<AHamaPlayerState>() : nullptr;
 
     if (Health <= 0.f)
     {
@@ -280,7 +476,7 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 
 void AZombie::Die(AController* KillerController)
 {
-    if (bIsDead || !HasAuthority())
+    if (bIsDead || !HasAuthority() || PoolState != EZombiePoolState::Alive)
     {
         return;
     }
@@ -288,7 +484,11 @@ void AZombie::Die(AController* KillerController)
     bIsDead = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
 
-    SetNetUpdateFrequency(1.f);
+    PoolState = EZombiePoolState::Dead;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
+
+    CurrentTarget = nullptr;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, CurrentTarget, this);
 
     if (bRegisteredWithDirector && CachedDirector)
     {
@@ -299,35 +499,21 @@ void AZombie::Die(AController* KillerController)
     if (CachedAIController)
     {
         CachedAIController->StopMovement();
-        CachedAIController->UnPossess();
     }
 
-    OnRep_IsDead();
+    if (CachedMovement)
+    {
+        CachedMovement->StopMovementImmediately();
+        CachedMovement->DisableMovement();
+    }
+
+    SetReplicateMovement(false);
+
+    ApplyStateVisualsAndPhysics(EZombiePoolState::Dead);
 
     OnZombieDeath.ExecuteIfBound(this, KillerController);
-}
 
-void AZombie::OnRep_IsDead()
-{
-    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
-    {
-        Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
-    }
+    ForceNetUpdate();
 
-    if (USkeletalMeshComponent* CharacterMesh = GetMesh())
-    {
-        if (!IsRunningDedicatedServer())
-        {
-            CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
-            CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-            CharacterMesh->SetSimulatePhysics(true);
-        }
-        else
-        {
-            CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        }
-    }
-
-    SetLifeSpan(2.f);
+    GetWorldTimerManager().SetTimer(TimerHandle_ReturnToPool, this, &AZombie::ReturnToPool, 2.0f, false);
 }

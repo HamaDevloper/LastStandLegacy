@@ -63,6 +63,27 @@ public:
 
     const TArray<TWeakObjectPtr<AZombie>>& GetActiveZombies() const { return ActiveZombies; }
 
+public:
+    // ١. دروستکردن و ئامادەکردنی سەرەتایی هەموو زۆمبییەکان لەژێر زەوی لە دەستپێکی یاری
+    void InitializeZombiePool(TSubclassOf<AZombie> InZombieClass, int32 PoolSize);
+
+    // ٢. ڕاکێشانی زۆمبییەکی خەوتوو لە ناو Pool و چالاککردنەوەی لە شوێنی نوێ
+    AZombie* AcquireZombieFromPool(const FVector& SpawnLocation, const FRotator& SpawnRotation, int32 CurrentRound);
+
+    // ٣. گەڕاندنەوەی زۆمبییە مردووەکە بۆ ناو لیستەکە دوای تەواوبوونی کاتی Ragdoll
+    void ReturnZombieToPool(AZombie* Zombie);
+ 
+    bool bHasDirectLineOfSight = false;
+
+private:
+    // ئەو لیستەی کە هەموو زۆمبییە ناچالاک و شاردراوەکان دەگرێتە خۆ
+    UPROPERTY()
+    TArray<TObjectPtr<AZombie>> InactiveZombiePool;
+
+    // پاشەکەوتکردنی کلاسی زۆمبی بۆ کاتێک ئەگەر هەموو زۆمبییەکان لە یەک کاتدا سەرقاڵ بوون
+    UPROPERTY()
+    TSubclassOf<AZombie> PooledZombieClass;
+
 private:
     UPROPERTY()
     TArray<TWeakObjectPtr<APawn>> ActivePlayers;

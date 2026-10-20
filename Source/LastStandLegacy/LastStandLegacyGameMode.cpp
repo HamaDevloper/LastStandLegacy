@@ -96,6 +96,12 @@ void ALastStandLegacyGameMode::BeginPlay()
         GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("No SpawnPoint found! Add 'ZombieSpawn'"));
     }
 
+    if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+    {
+        const int32 TotalPoolSize = ZombiesSpawnLimit + 8;
+        Director->InitializeZombiePool(ZombieClass, TotalPoolSize);
+    }
+
     SpawnRandomPerks();
 
     DeadZombiesCount = 0;
@@ -267,16 +273,7 @@ void ALastStandLegacyGameMode::StartNextRound()
             FString::Printf(TEXT("Round %d Started Zombie To Kill = %d"), CurrentRound, ZombiesToKill));
     }
 
-    for (TActorIterator<AZombie> It(GetWorld()); It; ++It)
-    {
-        if (*It)
-        {
-            (*It)->SetStatsForRound(CurrentRound);
-        }
-    }
-
     const float NewInterval = GetCalculateSpawnInterval();
-
     GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, NewInterval, true);
 }
 
@@ -445,22 +442,27 @@ void ALastStandLegacyGameMode::ProcessSpawning()
 
     if (!ZombieClass || SpawnPoints.IsEmpty()) return;
 
+    UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>();
+    if (!Director) return;
+
     AActor* SpawnPoint = PickWeightedSpawnPoint();
     if (!SpawnPoint) return;
 
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-    AZombie* Zombie = GetWorld()->SpawnActor<AZombie>(
-        ZombieClass, SpawnPoint->GetActorLocation(), SpawnPoint->GetActorRotation(), SpawnParams);
+    AZombie* Zombie = Director->AcquireZombieFromPool(
+        SpawnPoint->GetActorLocation(),
+        SpawnPoint->GetActorRotation(),
+        CurrentRound
+    );
 
     if (Zombie)
     {
         ActiveZombiesCount++;
         ZombiesSpawnedThisRound++;
 
-        Zombie->SetStatsForRound(CurrentRound);
-        Zombie->OnZombieDeath.BindUObject(this, &ALastStandLegacyGameMode::HandleZombieDeath);
+        if (!Zombie->OnZombieDeath.IsBound())
+        {
+            Zombie->OnZombieDeath.BindUObject(this, &ALastStandLegacyGameMode::HandleZombieDeath);
+        }
     }
 }
 
@@ -468,7 +470,7 @@ AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
 {
     if (SpawnPoints.IsEmpty()) return nullptr;
 
-    TArray<APawn*> Players;
+    TArray<APawn*, TInlineAllocator<4>> Players;
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
     {
         if (APlayerController* PC = It->Get())
@@ -481,7 +483,7 @@ AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
     }
 
     struct FScoredPoint { AActor* Point; float Weight; };
-    TArray<FScoredPoint> ScoredPoints;
+    TArray<FScoredPoint, TInlineAllocator<32>> ScoredPoints;
     float TotalWeight = 0.f;
     const float MinSafeDistSq = FMath::Square(MinSafeDistance);
 
@@ -492,13 +494,13 @@ AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
 
         for (APawn* Player : Players)
         {
-            float DistSq = FVector::DistSquared(SP->GetActorLocation(), Player->GetActorLocation());
+            const float DistSq = FVector::DistSquared(SP->GetActorLocation(), Player->GetActorLocation());
             ClosestDistSq = FMath::Min(ClosestDistSq, DistSq);
         }
 
         if (!Players.IsEmpty() && ClosestDistSq < MinSafeDistSq) continue;
 
-        float Weight = FMath::Sqrt(ClosestDistSq) + 100.f;
+        const float Weight = FMath::Sqrt(ClosestDistSq) + 100.f;
         ScoredPoints.Add({ SP, Weight });
         TotalWeight += Weight;
     }
@@ -508,7 +510,7 @@ AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
         return SpawnPoints[FMath::RandRange(0, SpawnPoints.Num() - 1)];
     }
 
-    float RandomValue = FMath::FRandRange(0.f, TotalWeight);
+    const float RandomValue = FMath::FRandRange(0.f, TotalWeight);
     float CurrentWeight = 0.f;
 
     for (const FScoredPoint& Entry : ScoredPoints)

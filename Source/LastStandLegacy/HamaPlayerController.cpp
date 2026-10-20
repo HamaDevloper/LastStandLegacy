@@ -90,16 +90,15 @@ void AHamaPlayerController::AcknowledgePossession(APawn* P)
     bShowMouseCursor = false;
 
     SetInputMode(FInputModeGameOnly());
+
     SafeRemoveMappingContext(SpectatorMappingContext);
 
     if (HamaPawn->DefaultMappingContext)
     {
+        SafeRemoveMappingContext(ActiveGameplayContext);
+
         ActiveGameplayContext = HamaPawn->DefaultMappingContext;
         SafeAddMappingContext(HamaPawn->DefaultMappingContext, 0);
-    }
-    else if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Red, TEXT("DefaultMappingContext is NULL on AcknowledgePossession!"));
     }
 
     CheckAndBindUI();
@@ -356,20 +355,18 @@ void AHamaPlayerController::SafeAddMappingContext(UInputMappingContext* Context,
 {
     if (!Context || !IsLocalController()) return;
 
-    if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+    ULocalPlayer* LocalPlayer = GetLocalPlayer();
+    if (!LocalPlayer)
     {
-        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
+        return;
+    }
+
+    if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+    {
+        if (!Subsystem->HasMappingContext(Context))
         {
             Subsystem->AddMappingContext(Context, Priority);
         }
-        else if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, TEXT("SubSystemFailed!"));
-        }
-    }
-    else if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, TEXT("NotFoundLocalPlayer!"));
     }
 }
 

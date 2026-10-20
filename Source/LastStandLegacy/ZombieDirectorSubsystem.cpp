@@ -62,8 +62,8 @@ void UZombieDirectorSubsystem::RegisterPlayer(APawn* Player)
 {
     if (Player && !ActivePlayers.Contains(Player))
     {
-        //ActivePlayers.Add(Player);
-        //SetPlayerTargetable(Player, true);
+        ActivePlayers.Add(Player);
+        SetPlayerTargetable(Player, true);
     }
 }
 
@@ -147,11 +147,77 @@ void UZombieDirectorSubsystem::CleanInvalidAttractors()
     );
 }
 
+void UZombieDirectorSubsystem::InitializeZombiePool(TSubclassOf<AZombie> InZombieClass, int32 PoolSize)
+{
+    UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() == NM_Client || !InZombieClass) return;
+
+    PooledZombieClass = InZombieClass;
+    InactiveZombiePool.Reserve(PoolSize);
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    const FVector PoolHoldingLocation(0.f, 0.f, -10000.f);
+
+    for (int32 i = 0; i < PoolSize; ++i)
+    {
+        AZombie* NewZombie = World->SpawnActor<AZombie>(PooledZombieClass, PoolHoldingLocation, FRotator::ZeroRotator, SpawnParams);
+        if (NewZombie)
+        {
+            NewZombie->InitializeForPool();
+            InactiveZombiePool.Add(NewZombie);
+        }
+    }
+}
+
+AZombie* UZombieDirectorSubsystem::AcquireZombieFromPool(const FVector& SpawnLocation, const FRotator& SpawnRotation, int32 CurrentRound)
+{
+    UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() == NM_Client) return nullptr;
+
+    while (!InactiveZombiePool.IsEmpty())
+    {
+        AZombie* PooledZombie = InactiveZombiePool.Pop(EAllowShrinking::No);
+        if (IsValid(PooledZombie))
+        {
+            PooledZombie->ActivateFromPool(SpawnLocation, SpawnRotation, CurrentRound);
+            return PooledZombie;
+        }
+    }
+
+    if (PooledZombieClass)
+    {
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+        AZombie* ExtraZombie = World->SpawnActor<AZombie>(PooledZombieClass, SpawnLocation, SpawnRotation, SpawnParams);
+        if (ExtraZombie)
+        {
+            ExtraZombie->ActivateFromPool(SpawnLocation, SpawnRotation, CurrentRound);
+            return ExtraZombie;
+        }
+    }
+
+    return nullptr;
+}
+
+void UZombieDirectorSubsystem::ReturnZombieToPool(AZombie* Zombie)
+{
+    if (!IsValid(Zombie)) return;
+
+    if (!InactiveZombiePool.Contains(Zombie))
+    {
+        InactiveZombiePool.Add(Zombie);
+    }
+}
+
 void UZombieDirectorSubsystem::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    if (GetWorld()->GetNetMode() == NM_Client) return;
+    UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() == NM_Client) return;
     if (ActiveZombies.IsEmpty()) return;
 
     CleanInvalidAttractors();
@@ -171,6 +237,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 if (Zombie->CachedAIController)
                 {
                     Zombie->CachedAIController->StopMovement();
+                    Zombie->CachedAIController->ClearFocus(EAIFocusPriority::Gameplay);
                 }
             }
         }
@@ -178,10 +245,9 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     }
 
     PlayerCacheRefreshTimer -= DeltaTime;
-
     if (PlayerCacheRefreshTimer <= 0.f)
     {
-        PlayerCacheRefreshTimer = 0.2f;
+        PlayerCacheRefreshTimer = 0.05f;
 
         CachedPlayerMap.Reset();
         SpatialGrid.Reset();
@@ -219,14 +285,13 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         }
     }
 
-    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    const float CurrentTime = World->GetTimeSeconds();
     const int32 ZombieCount = ActiveZombies.Num();
 
-    const double DynamicTimeBudget = FMath::Clamp(DeltaTime * 0.04f, 0.0003f, 0.0015f);
+    const double DynamicTimeBudget = FMath::Clamp(DeltaTime * 0.06f, 0.0004f, 0.0020f);
     const double StartTime = FPlatformTime::Seconds();
-    static constexpr float TargetMovedThresholdSq = 180.f * 180.f;
 
-    const int32 MaxRepathRequestsThisFrame = FMath::Clamp(ActiveZombies.Num() / 5, 3, 8);
+    const int32 MaxRepathRequestsThisFrame = FMath::Clamp(ZombieCount / 4, 4, 10);
     int32 CurrentRepathCount = 0;
 
     int32 i = CurrentZombieIndex;
@@ -244,13 +309,13 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
         AActor* FinalTargetActor = nullptr;
         FVector FinalTargetLoc = FVector::ZeroVector;
+        float ClosestDistanceSq = UE_BIG_NUMBER;
 
         // =========================================================
         // A. ئەولەویەت بۆ مەیموونەکە (Attractor Priority)
         // =========================================================
         if (bHasAttractors)
         {
-            float BestAttractorDistSq = UE_BIG_NUMBER;
             for (const FAttractorData& Attractor : ActiveAttractors)
             {
                 if (AActor* AttractorActor = Attractor.AttractorActor.Get())
@@ -258,9 +323,9 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                     const FVector CurrentLoc = AttractorActor->GetActorLocation();
                     const float DistSq = FVector::DistSquared(ZombieLoc, CurrentLoc);
 
-                    if (DistSq <= Attractor.RadiusSq && DistSq < BestAttractorDistSq)
+                    if (DistSq <= Attractor.RadiusSq && DistSq < ClosestDistanceSq)
                     {
-                        BestAttractorDistSq = DistSq;
+                        ClosestDistanceSq = DistSq;
                         FinalTargetActor = AttractorActor;
                         FinalTargetLoc = CurrentLoc;
                     }
@@ -269,7 +334,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         }
 
         // =========================================================
-        // B. ئەگەر مەیموون نەبوو یان لە دەرەوەی بازنەکە بوو -> ئامانجی یاریزان بگرە
+        // B. دیاریکردنی یاریزان و وەرگرتنی شوێنی ڕاستەقینەی ئێستا (Live Location)
         // =========================================================
         if (!FinalTargetActor)
         {
@@ -279,10 +344,11 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             {
                 if (APawn* TargetPawn = Cast<APawn>(Zombie->CurrentTarget))
                 {
-                    if (const FVector* FoundLoc = CachedPlayerMap.Find(TargetPawn))
+                    if (CachedPlayerMap.Contains(TargetPawn))
                     {
-                        FinalTargetActor = Zombie->CurrentTarget;
-                        FinalTargetLoc = *FoundLoc;
+                        FinalTargetActor = TargetPawn;
+                        FinalTargetLoc = TargetPawn->GetActorLocation();
+                        ClosestDistanceSq = FVector::DistSquared(ZombieLoc, FinalTargetLoc);
                     }
                     else
                     {
@@ -297,16 +363,13 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
             if (bNeedsSearch)
             {
-                float ClosestDistanceSq = UE_BIG_NUMBER;
                 APawn* TargetPlayer = SpatialGrid.FindNearestPlayerInRadius(ZombieLoc, ClosestDistanceSq);
 
-                if (TargetPlayer)
+                if (TargetPlayer && IsValid(TargetPlayer))
                 {
-                    if (const FVector* FoundLoc = CachedPlayerMap.Find(TargetPlayer))
-                    {
-                        FinalTargetLoc = *FoundLoc;
-                        FinalTargetActor = TargetPlayer;
-                    }
+                    FinalTargetActor = TargetPlayer;
+                    FinalTargetLoc = TargetPlayer->GetActorLocation();
+                    ClosestDistanceSq = FVector::DistSquared(ZombieLoc, FinalTargetLoc);
                 }
 
                 if (!FinalTargetActor)
@@ -316,55 +379,100 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                         APawn* CandidatePlayer = Pair.Key.Get();
                         if (!IsValid(CandidatePlayer)) continue;
 
-                        const float DistSq = FVector::DistSquared(ZombieLoc, Pair.Value);
+                        const FVector RealLoc = CandidatePlayer->GetActorLocation();
+                        const float DistSq = FVector::DistSquared(ZombieLoc, RealLoc);
                         if (DistSq < ClosestDistanceSq)
                         {
                             ClosestDistanceSq = DistSq;
                             FinalTargetActor = CandidatePlayer;
-                            FinalTargetLoc = Pair.Value;
+                            FinalTargetLoc = RealLoc;
                         }
                     }
                 }
 
                 if (FinalTargetActor)
                 {
-                    float NextInterval = 0.25f;
-                    if (ClosestDistanceSq > 16000000.f) NextInterval = 1.8f;
-                    else if (ClosestDistanceSq > 1000000.f) NextInterval = 0.6f;
+                    float NextInterval = 0.2f;
+                    if (ClosestDistanceSq > 16000000.f) NextInterval = 1.2f;
+                    else if (ClosestDistanceSq > 2250000.f) NextInterval = 0.5f;
 
-                    Zombie->NextTargetSearchTime = CurrentTime + NextInterval + FMath::RandRange(0.0f, 0.1f);
+                    Zombie->NextTargetSearchTime = CurrentTime + NextInterval + FMath::RandRange(0.0f, 0.08f);
                 }
             }
         }
 
         // =========================================================
-        // C. ئەنجامدانی جوڵە (AI Repathing)
+        // C. Dynamic Network LOD & AI Repathing
         // =========================================================
         AAIController* AICon = Zombie->CachedAIController;
         if (!AICon) continue;
 
         if (FinalTargetActor)
         {
+            float DesiredNetFreq = 4.f;
+            if (ClosestDistanceSq < 1440000.f)
+            {
+                DesiredNetFreq = 30.f;
+            }
+            else if (ClosestDistanceSq < 6250000.f)
+            {
+                DesiredNetFreq = 12.f;
+            }
+
+            if (!FMath::IsNearlyEqual(Zombie->GetNetUpdateFrequency(), DesiredNetFreq))
+            {
+                Zombie->SetNetUpdateFrequency(DesiredNetFreq);
+            }
+
+            if (ClosestDistanceSq < 250000.f)
+            {
+                if (AICon->GetFocusActor() != FinalTargetActor)
+                {
+                    AICon->SetFocus(FinalTargetActor);
+                }
+            }
+            else if (AICon->GetFocusActor() != nullptr)
+            {
+                AICon->ClearFocus(EAIFocusPriority::Gameplay);
+            }
+
+            float DynamicMovedThresholdSq = 160.f * 160.f;
+            if (ClosestDistanceSq < 360000.f)
+            {
+                DynamicMovedThresholdSq = 25.f * 25.f;
+            }
+            else if (ClosestDistanceSq < 2250000.f)
+            {
+                DynamicMovedThresholdSq = 75.f * 75.f;
+            }
+
             const float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, FinalTargetLoc);
-            const bool bIsAIIdle = AICon->GetMoveStatus() == EPathFollowingStatus::Idle;
+            const bool bIsAIIdle = (AICon->GetMoveStatus() == EPathFollowingStatus::Idle);
 
             const bool bShouldRepath = (Zombie->CurrentTarget != FinalTargetActor) ||
-                (TargetMovedDistSq > TargetMovedThresholdSq) ||
+                (TargetMovedDistSq > DynamicMovedThresholdSq) ||
                 (bIsAIIdle && CurrentTime >= Zombie->NextForceRepathTime);
 
-            if (bShouldRepath && CurrentRepathCount < MaxRepathRequestsThisFrame)
+            if (bShouldRepath)
             {
+                if (CurrentRepathCount >= MaxRepathRequestsThisFrame)
+                {
+                    break;
+                }
+
                 Zombie->CurrentTarget = FinalTargetActor;
                 Zombie->LastTargetLocation = FinalTargetLoc;
 
                 if (bIsAIIdle)
                 {
-                    Zombie->NextForceRepathTime = CurrentTime + 0.5f;
+                    Zombie->NextForceRepathTime = CurrentTime + 0.12f;
                 }
 
                 FAIMoveRequest MoveReq(FinalTargetActor);
-                MoveReq.SetAcceptanceRadius(40.f);
+                MoveReq.SetAcceptanceRadius(15.f); // کەمکرایەوە لە 40 بۆ 15 بۆ ئەوەی زوو نەوەستێت
                 MoveReq.SetUsePathfinding(true);
+                MoveReq.SetAllowPartialPath(true);
+                MoveReq.SetProjectGoalLocation(true);
 
                 AICon->MoveTo(MoveReq);
 
@@ -376,6 +484,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             if (Zombie->CurrentTarget != nullptr)
             {
                 Zombie->CurrentTarget = nullptr;
+                AICon->ClearFocus(EAIFocusPriority::Gameplay);
                 AICon->StopMovement();
             }
         }

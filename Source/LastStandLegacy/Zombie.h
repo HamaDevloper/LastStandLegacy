@@ -3,14 +3,23 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "DamageableInterface.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "Zombie.generated.h"
 
 class AAIController;
 class ALastStandLegacyGameState;
 class UZombieDirectorSubsystem;
 
-// گەر ئەم Delegateـەت نەبوو پێشتر، زیادی بکە، بەڵام وادیارە لە کۆدە کۆنەکەتدا هەبووە
 DECLARE_DELEGATE_TwoParams(FOnZombieDeathSignature, AZombie*, AController*);
+
+
+UENUM(BlueprintType)
+enum class EZombiePoolState : uint8
+{
+    Pooled UMETA(DisplayName = "In Pool (Inactive)"),
+    Alive  UMETA(DisplayName = "Alive (Active)"),
+    Dead   UMETA(DisplayName = "Dead (Ragdoll)")
+};
 
 UCLASS()
 class LASTSTANDLEGACY_API AZombie : public ACharacter, public IDamageableInterface
@@ -37,6 +46,12 @@ public:
 
     FOnZombieDeathSignature OnZombieDeath;
 
+    void InitializeForPool();
+    void ActivateFromPool(const FVector& SpawnLocation, const FRotator& SpawnRotation, int32 CurrentRound);
+    void ReturnToPool();
+
+    FORCEINLINE bool IsPoolAvailable() const { return PoolState == EZombiePoolState::Pooled; }
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; // گرنگە بۆ سەلامەتی سێرڤەر
@@ -51,6 +66,10 @@ protected:
     void ApplySelectedMesh();
 
 protected:
+
+    UPROPERTY(ReplicatedUsing = OnRep_PoolState)
+    EZombiePoolState PoolState = EZombiePoolState::Alive;
+
     UPROPERTY(ReplicatedUsing = OnRep_IsDead, BlueprintReadOnly, Category = "Zombie|State")
     bool bIsDead = false;
 
@@ -110,9 +129,22 @@ private:
 
     bool bRegisteredWithDirector = false;
 
+    UFUNCTION()
+    void OnRep_PoolState();
+
+    void ApplyStateVisualsAndPhysics(EZombiePoolState NewState);
+
     virtual bool CanReceiveWeaponDamage() const override { return !bIsDead; }
 public:
     float NextTargetSearchTime = 0.0f;
     float NextForceRepathTime = 0.f;
 
+private:
+    FVector CachedMeshRelativeLocation = FVector::ZeroVector;
+    FRotator CachedMeshRelativeRotation = FRotator::ZeroRotator;
+    FName CachedMeshCollisionProfile = NAME_None;
+    ECollisionEnabled::Type CachedMeshCollisionEnabled = ECollisionEnabled::QueryOnly;
+    ECollisionEnabled::Type CachedCapsuleCollisionEnabled = ECollisionEnabled::QueryAndPhysics;
+
+    FTimerHandle TimerHandle_ReturnToPool;
 };

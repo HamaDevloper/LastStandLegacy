@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "CommonUserWidget.h" // یان CommonActivatableWidget.h ئەگەر سیستەمی Stack بەکاردەهێنیت
+#include "CommonUserWidget.h" 
 #include "LastStandLegacyTypes.h"
 #include "HamaMainWidget.generated.h"
 
@@ -30,7 +30,6 @@ protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
-    // --- Common UI Text Blocks (پشتگیری لە Text Styles و Formatting دەکەن) ---
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UCommonTextBlock> Points;
 

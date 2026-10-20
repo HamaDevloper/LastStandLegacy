@@ -186,6 +186,23 @@ void AHama::OnRep_Controller()
     StartCrossHairTimer();
 }
 
+void AHama::PawnClientRestart()
+{
+    Super::PawnClientRestart();
+
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+    {
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+        {
+            Subsystem->ClearAllMappings();
+            if (DefaultMappingContext)
+            {
+                Subsystem->AddMappingContext(DefaultMappingContext, 0);
+            }
+        }
+    }
+}
+
 void AHama::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
