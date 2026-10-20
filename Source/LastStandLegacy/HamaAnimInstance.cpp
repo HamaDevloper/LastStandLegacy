@@ -83,7 +83,7 @@ void UHamaAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
         const FVector2D Forward2D(CosYaw, SinYaw);
         const FVector2D Right2D(-SinYaw, CosYaw);
 
-        const FVector2D NormalVelocity = Velocity2D.GetSafeNormal();
+        const FVector2D NormalVelocity = Velocity2D / GroundSpeed;
         const float ForwardDot = FVector2D::DotProduct(NormalVelocity, Forward2D);
         const float RightDot = FVector2D::DotProduct(NormalVelocity, Right2D);
 
