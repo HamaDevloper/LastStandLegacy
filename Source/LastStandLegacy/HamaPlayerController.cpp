@@ -31,7 +31,6 @@ void AHamaPlayerController::BeginPlay()
         {
             World->GameStateSetEvent.AddUObject(this, &AHamaPlayerController::HandleGameStateSet);
         }
-        InitializeLocalPawn(GetPawn());
         CheckAndBindUI();
     }
 }
@@ -42,7 +41,6 @@ void AHamaPlayerController::ReceivedPlayer()
 
     if (IsLocalController())
     {
-        InitializeLocalPawn(GetPawn());
         CheckAndBindUI();
     }
 }
@@ -59,17 +57,19 @@ void AHamaPlayerController::OnRep_PlayerState()
 
 void AHamaPlayerController::OnRep_Pawn()
 {
-    APawn* CurrentPawn = GetPawn();
-    if (!CurrentPawn)
-    {
-        bAutoManageActiveCameraTarget = false;
-    }
-
     Super::OnRep_Pawn();
 
-    if (IsLocalController() && CurrentPawn)
+    APawn* CurrentPawn = GetPawn();
+    if (IsLocalController())
     {
-        InitializeLocalPawn(CurrentPawn);
+        if (CurrentPawn)
+        {
+            InitializeLocalPawn(CurrentPawn);
+        }
+        else
+        {
+            bAutoManageActiveCameraTarget = false;
+        }
     }
 }
 
@@ -95,14 +95,6 @@ void AHamaPlayerController::OnPossess(APawn* InPawn)
 {
     Super::OnPossess(InPawn);
 
-    bAutoManageActiveCameraTarget = true;
-    CurrentSpectateTarget = nullptr;
-
-    EnableInput(this);
-    bBlockInput = false;
-    ResetIgnoreMoveInput();
-    ResetIgnoreLookInput();
-
     if (HasAuthority())
     {
         GetWorldTimerManager().ClearTimer(SpectateValidationTimerHandle);
@@ -112,21 +104,34 @@ void AHamaPlayerController::OnPossess(APawn* InPawn)
             PlayerState->SetIsSpectator(false);
         }
 
-        if (IsLocalController())
+        ChangeState(NAME_Playing);
+
+        IgnoreMoveInput = 0;
+        IgnoreLookInput = 0;
+        bBlockInput = false;
+        EnableInput(this);
+
+        if (AHama* HamaPawn = Cast<AHama>(InPawn))
         {
-            InitializeLocalPawn(InPawn);
+            if (UCharacterMovementComponent* MoveComp = HamaPawn->GetCharacterMovement())
+            {
+                MoveComp->SetMovementMode(MOVE_Walking);
+            }
         }
+    }
+
+    bAutoManageActiveCameraTarget = true;
+    CurrentSpectateTarget = nullptr;
+
+    if (IsLocalController())
+    {
+        InitializeLocalPawn(InPawn);
     }
 }
 
 void AHamaPlayerController::AcknowledgePossession(APawn* P)
 {
     Super::AcknowledgePossession(P);
-
-    if (IsLocalController() && P)
-    {
-        InitializeLocalPawn(P);
-    }
 }
 
 void AHamaPlayerController::ClientRestart_Implementation(APawn* NewPawn)
@@ -134,6 +139,13 @@ void AHamaPlayerController::ClientRestart_Implementation(APawn* NewPawn)
     Super::ClientRestart_Implementation(NewPawn);
 
     if (!IsLocalController() || !NewPawn) return;
+
+    if (!IsInState(NAME_Playing))
+    {
+        ChangeState(NAME_Playing);
+    }
+
+    bAutoManageActiveCameraTarget = true;
 
     if (PlayerInput)
     {
@@ -154,27 +166,19 @@ void AHamaPlayerController::InitializeLocalPawn(APawn* InPawn)
     ULocalPlayer* LocalPlayer = GetLocalPlayer();
     if (!LocalPlayer) return;
 
-    bAutoManageActiveCameraTarget = true;
+    if (IsValid(CurrentSpectateTarget) && CurrentSpectateTarget != HamaPawn)
+    {
+        AHama* OldTarget = CurrentSpectateTarget;
+        CurrentSpectateTarget = nullptr;
+        OldTarget->UpdateCameraAndMeshVisibility();
+    }
     CurrentSpectateTarget = nullptr;
+
+    bAutoManageActiveCameraTarget = true;
 
     if (!IsInState(NAME_Playing))
     {
         ChangeState(NAME_Playing);
-    }
-
-    if (GetLocalRole() < ROLE_Authority && HamaPawn->GetController() != this)
-    {
-        HamaPawn->Controller = this;
-    }
-
-    if (!HamaPawn->InputComponent)
-    {
-        HamaPawn->PawnClientRestart();
-    }
-
-    if (AcknowledgedPawn != HamaPawn)
-    {
-        AcknowledgePossession(HamaPawn);
     }
 
     EnableInput(this);
@@ -200,6 +204,8 @@ void AHamaPlayerController::InitializeLocalPawn(APawn* InPawn)
         SetViewTarget(HamaPawn);
     }
 
+    HamaPawn->UpdateCameraAndMeshVisibility();
+
     bShowMouseCursor = false;
     SetInputMode(FInputModeGameOnly());
 
@@ -223,10 +229,9 @@ void AHamaPlayerController::OnOwnerDied()
     AHama* TargetCandidate = GetCycledSpectatorTarget(nullptr, 1);
     CurrentSpectateTarget = TargetCandidate;
 
-
-    if (IsLocalController() && TargetCandidate)
+    if (TargetCandidate)
     {
-        ApplyLocalSpectateViewTarget(TargetCandidate);
+        SetViewTarget(TargetCandidate);
     }
 
     ClientEnterSpectating(TargetCandidate);
@@ -341,11 +346,12 @@ AHama* AHamaPlayerController::GetCycledSpectatorTarget(AHama* CurrentTarget, int
 
     for (APlayerState* PS : GS->PlayerArray)
     {
-        if (!PS || PS == PlayerState) continue;
+        if (!IsValid(PS) || PS == PlayerState) continue;
 
         AHama* Candidate = Cast<AHama>(PS->GetPawn());
         if (!IsValid(Candidate) || Candidate == GetPawn()) continue;
         if (Candidate->bIsDead || Candidate->IsDowned()) continue;
+        if (!IsValid(Candidate->GetPlayerState())) continue; // پاراستن لە Null Pointer Crash لە کاتی Sort
 
         ValidTargets.Add(Candidate);
     }
@@ -355,7 +361,10 @@ AHama* AHamaPlayerController::GetCycledSpectatorTarget(AHama* CurrentTarget, int
 
     Algo::Sort(ValidTargets, [](const AHama* A, const AHama* B)
         {
-            return A->GetPlayerState()->GetPlayerId() < B->GetPlayerState()->GetPlayerId();
+            const APlayerState* PSA = A->GetPlayerState();
+            const APlayerState* PSB = B->GetPlayerState();
+            if (!PSA || !PSB) return PSA != nullptr;
+            return PSA->GetPlayerId() < PSB->GetPlayerId();
         });
 
     if (!IsValid(CurrentTarget))
@@ -417,7 +426,10 @@ void AHamaPlayerController::ClientEnterSpectating_Implementation(AHama* Target)
     }
 
     AHama* FinalTarget = IsValid(Target) ? Target : GetCycledSpectatorTarget(nullptr, 1);
-    ApplyLocalSpectateViewTarget(FinalTarget);
+    if (FinalTarget)
+    {
+        ApplyLocalSpectateViewTarget(FinalTarget);
+    }
 
     bShowMouseCursor = false;
     SetInputMode(FInputModeGameOnly());
@@ -428,7 +440,10 @@ void AHamaPlayerController::Client_SetSpectateTarget_Implementation(AHama* Targe
     if (!IsLocalController()) return;
 
     AHama* FinalTarget = IsValid(Target) ? Target : GetCycledSpectatorTarget(nullptr, 1);
-    ApplyLocalSpectateViewTarget(FinalTarget);
+    if (FinalTarget)
+    {
+        ApplyLocalSpectateViewTarget(FinalTarget);
+    }
 }
 
 void AHamaPlayerController::SafeAddMappingContext(UInputMappingContext* Context, int32 Priority)

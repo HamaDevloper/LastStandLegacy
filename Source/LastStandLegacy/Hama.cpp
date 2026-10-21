@@ -178,46 +178,26 @@ void AHama::Landed(const FHitResult& Hit)
 void AHama::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
-    StartCrossHairTimer();
 
-    if (AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(NewController))
-    {
-        if (HamaPC->IsLocalController())
-        {
-            HamaPC->InitializeLocalPawn(this);
-        }
-    }
+    OwnerController = Cast<AHamaPlayerController>(NewController);
+
+    StartCrossHairTimer();
 }
 
 void AHama::OnRep_Controller()
 {
     Super::OnRep_Controller();
-    StartCrossHairTimer();
 
-    if (AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(GetController()))
-    {
-        if (HamaPC->IsLocalController())
-        {
-            HamaPC->InitializeLocalPawn(this);
-        }
-    }
+    OwnerController = Cast<AHamaPlayerController>(GetController());
+
+    StartCrossHairTimer();
 }
 
 void AHama::PawnClientRestart()
 {
     Super::PawnClientRestart();
 
-    if (APlayerController* PC = Cast<APlayerController>(GetController()))
-    {
-        if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-        {
-            Subsystem->ClearAllMappings();
-            if (DefaultMappingContext)
-            {
-                Subsystem->AddMappingContext(DefaultMappingContext, 0);
-            }
-        }
-    }
+    OwnerController = Cast<AHamaPlayerController>(GetController());
 }
 
 void AHama::Tick(float DeltaTime)

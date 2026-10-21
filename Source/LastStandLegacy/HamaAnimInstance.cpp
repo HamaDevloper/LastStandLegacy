@@ -49,6 +49,12 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         if (!MovementComponent) return;
     }
 
+    ABaseWeapon* CurrentWeapon = HamaCharacter->GetCurrentWeapon();
+    if(CurrentWeapon != EquippedWeapon || (EquippedWeapon && CurrentWeaponIdle != CurrentWeapon->GetWeaponIdle()))
+    {
+        SetEquippedWeapon(CurrentWeapon);
+    }
+
     CachedActorRotation = HamaCharacter->GetActorRotation();
     
     const FRotator AimRotation = HamaCharacter->GetBaseAimRotation();

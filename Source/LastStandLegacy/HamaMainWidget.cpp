@@ -75,6 +75,7 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
 {
     if (CachedHamaChar.Get() == InHama) return;
 
+    // پاککردنەوەی کۆنەکان
     if (CachedHamaChar.IsValid())
     {
         if (UThrowableComponent* OldThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
@@ -100,6 +101,7 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
 
     if (!CachedHamaChar.IsValid()) return;
 
+    // بەستنەوەی ڕووداوەکانی کارەکتەر
     CachedHamaChar->OnAmmoUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleAmmoUpdate);
     CachedHamaChar->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
     CachedHamaChar->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);
@@ -124,8 +126,10 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
 
     HandlePerksUpdate(CachedHamaChar->GetOwnedPerks());
 
-    if (ABaseWeapon* CurrentWep = CachedHamaChar->GetCurrentWeapon())
+    ABaseWeapon* CurrentWep = CachedHamaChar->GetCurrentWeapon();
+    if (CurrentWep)
     {
+        CurrentWep->OnAmmoChanged.BindUObject(this, &UHamaMainWidget::HandleAmmoUpdate);
         HandleAmmoUpdate(CurrentWep->GetCurrentAmmo(), CurrentWep->GetReserveAmmo());
     }
     else

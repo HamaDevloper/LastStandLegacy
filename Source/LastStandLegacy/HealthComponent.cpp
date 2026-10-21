@@ -425,7 +425,11 @@ void UHealthComponent::HandlePlayerDeath()
 
     OnDeath.Broadcast();
 
-    if (AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(OwnerCharacter->GetController()))
+    AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(OwnerCharacter->GetController());
+
+    OwnerCharacter->SetLifeSpan(3.0f);
+
+    if (HamaPC)
     {
         HamaPC->OnOwnerDied();
     }
@@ -437,6 +441,4 @@ void UHealthComponent::HandlePlayerDeath()
             GM->CheckGameOverCondition();
         }
     }
-
-    OwnerCharacter->SetLifeSpan(3.0f);
 }
