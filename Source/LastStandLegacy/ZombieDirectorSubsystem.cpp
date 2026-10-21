@@ -155,16 +155,22 @@ void UZombieDirectorSubsystem::InitializeZombiePool(TSubclassOf<AZombie> InZombi
     PooledZombieClass = InZombieClass;
     InactiveZombiePool.Reserve(PoolSize);
 
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-    const FVector PoolHoldingLocation(0.f, 0.f, -10000.f);
+    const FTransform PoolSpawnTransform(FRotator::ZeroRotator, FVector(0.f, 0.f, -300.f));
 
     for (int32 i = 0; i < PoolSize; ++i)
     {
-        AZombie* NewZombie = World->SpawnActor<AZombie>(PooledZombieClass, PoolHoldingLocation, FRotator::ZeroRotator, SpawnParams);
+        AZombie* NewZombie = World->SpawnActorDeferred<AZombie>(
+            PooledZombieClass,
+            PoolSpawnTransform,
+            nullptr,
+            nullptr,
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn
+        );
+
         if (NewZombie)
         {
+            NewZombie->SetActorHiddenInGame(true);
+            UGameplayStatics::FinishSpawningActor(NewZombie, PoolSpawnTransform);
             NewZombie->InitializeForPool();
             InactiveZombiePool.Add(NewZombie);
         }
@@ -183,19 +189,6 @@ AZombie* UZombieDirectorSubsystem::AcquireZombieFromPool(const FVector& SpawnLoc
         {
             PooledZombie->ActivateFromPool(SpawnLocation, SpawnRotation, CurrentRound);
             return PooledZombie;
-        }
-    }
-
-    if (PooledZombieClass)
-    {
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-        AZombie* ExtraZombie = World->SpawnActor<AZombie>(PooledZombieClass, SpawnLocation, SpawnRotation, SpawnParams);
-        if (ExtraZombie)
-        {
-            ExtraZombie->ActivateFromPool(SpawnLocation, SpawnRotation, CurrentRound);
-            return ExtraZombie;
         }
     }
 

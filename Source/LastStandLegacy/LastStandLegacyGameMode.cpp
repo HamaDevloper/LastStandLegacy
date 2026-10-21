@@ -98,7 +98,7 @@ void ALastStandLegacyGameMode::BeginPlay()
 
     if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
-        const int32 TotalPoolSize = ZombiesSpawnLimit + 8;
+        const int32 TotalPoolSize = ZombiesSpawnLimit + 20;
         Director->InitializeZombiePool(ZombieClass, TotalPoolSize);
     }
 

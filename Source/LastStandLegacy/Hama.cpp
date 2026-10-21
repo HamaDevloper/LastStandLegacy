@@ -2,6 +2,7 @@
 #include "HamaMovementComponent.h"
 #include "HamaPlayerState.h"
 #include "HamaAnimInstance.h"
+#include "HamaPlayerController.h"
 #include "LastStandLegacyGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
@@ -178,12 +179,28 @@ void AHama::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
     StartCrossHairTimer();
+
+    if (AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(NewController))
+    {
+        if (HamaPC->IsLocalController())
+        {
+            HamaPC->InitializeLocalPawn(this);
+        }
+    }
 }
 
 void AHama::OnRep_Controller()
 {
     Super::OnRep_Controller();
     StartCrossHairTimer();
+
+    if (AHamaPlayerController* HamaPC = Cast<AHamaPlayerController>(GetController()))
+    {
+        if (HamaPC->IsLocalController())
+        {
+            HamaPC->InitializeLocalPawn(this);
+        }
+    }
 }
 
 void AHama::PawnClientRestart()

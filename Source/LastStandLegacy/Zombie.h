@@ -56,6 +56,7 @@ protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; // گرنگە بۆ سەلامەتی سێرڤەر
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void OnRep_ReplicatedMovement() override;
 
     UFUNCTION()
     void OnRep_IsDead();
@@ -147,4 +148,7 @@ private:
     ECollisionEnabled::Type CachedCapsuleCollisionEnabled = ECollisionEnabled::QueryAndPhysics;
 
     FTimerHandle TimerHandle_ReturnToPool;
+    FTimerHandle TimerHandle_RevealMesh;
+
+    void FinalizePoolActivationVisuals();
 };

@@ -347,10 +347,12 @@ protected:
     virtual void PossessedBy(AController* NewController) override;
     virtual void OnRep_Controller() override;
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, class AActor* DamageCauser) override;
-    virtual void PawnClientRestart() override;
 
     UFUNCTION()
     void OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon = nullptr);
+
+public:
+    virtual void PawnClientRestart() override;
 
 protected:
     UPROPERTY(ReplicatedUsing = OnRep_IsInFirstPerson)

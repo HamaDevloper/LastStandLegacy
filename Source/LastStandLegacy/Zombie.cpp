@@ -126,6 +126,7 @@ void AZombie::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(TimerHandle_ReturnToPool);
+        World->GetTimerManager().ClearTimer(TimerHandle_RevealMesh);
     }
 
     if (HasAuthority() && bRegisteredWithDirector && CachedDirector)
@@ -151,9 +152,21 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, MaxHealth, Params);
 }
 
+void AZombie::OnRep_ReplicatedMovement()
+{
+    Super::OnRep_ReplicatedMovement();
+
+    if (CachedMovement)
+    {
+        CachedMovement->bJustTeleported = true;
+    }
+}
+
 void AZombie::InitializeForPool()
 {
     if (!HasAuthority()) return;
+
+    GetWorldTimerManager().ClearTimer(TimerHandle_RevealMesh);
 
     bIsDead = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
@@ -167,11 +180,13 @@ void AZombie::InitializeForPool()
     if (CachedAIController)
     {
         CachedAIController->StopMovement();
+        CachedAIController->ClearFocus(EAIFocusPriority::Gameplay);
     }
 
     if (CachedMovement)
     {
         CachedMovement->StopMovementImmediately();
+        CachedMovement->Velocity = FVector::ZeroVector;
         CachedMovement->DisableMovement();
     }
 
@@ -186,6 +201,7 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
     if (!HasAuthority()) return;
 
     GetWorldTimerManager().ClearTimer(TimerHandle_ReturnToPool);
+    GetWorldTimerManager().ClearTimer(TimerHandle_RevealMesh);
 
     CurrentTarget = nullptr;
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, CurrentTarget, this);
@@ -193,7 +209,32 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
     NextTargetSearchTime = 0.f;
     NextForceRepathTime = 0.f;
 
-    TeleportTo(SpawnLocation, SpawnRotation, false, true);
+    if (CachedMovement)
+    {
+        CachedMovement->StopMovementImmediately();
+        CachedMovement->Velocity = FVector::ZeroVector;
+    }
+
+    FVector FinalSpawnLocation = SpawnLocation;
+    const float HalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 88.f;
+
+    FHitResult HitFloor;
+    FVector TraceStart = SpawnLocation + FVector(0.f, 0.f, 50.f);
+    FVector TraceEnd = SpawnLocation - FVector(0.f, 0.f, 300.f);
+    FCollisionQueryParams FloorParams(SCENE_QUERY_STAT(ZombieFloorSnap), false, this);
+
+    if (GetWorld()->LineTraceSingleByChannel(HitFloor, TraceStart, TraceEnd, ECC_WorldStatic, FloorParams))
+    {
+        FinalSpawnLocation = HitFloor.ImpactPoint + FVector(0.f, 0.f, HalfHeight + 2.f);
+    }
+
+    SetActorLocationAndRotation(FinalSpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
+
+    if (CachedMovement)
+    {
+        CachedMovement->bJustTeleported = true;
+        CachedMovement->SetMovementMode(MOVE_Walking);
+    }
 
     SetStatsForRound(CurrentRound);
 
@@ -204,12 +245,7 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
 
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(10.f);
-
-    if (CachedMovement)
-    {
-        CachedMovement->SetMovementMode(MOVE_Walking);
-    }
+    SetNetUpdateFrequency(16.f);
 
     ApplyStateVisualsAndPhysics(EZombiePoolState::Alive);
 
@@ -252,6 +288,11 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
     UCapsuleComponent* Capsule = GetCapsuleComponent();
     USkeletalMeshComponent* CharacterMesh = GetMesh();
 
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TimerHandle_RevealMesh);
+    }
+
     if (NewState == EZombiePoolState::Pooled)
     {
         SetActorHiddenInGame(true);
@@ -266,16 +307,17 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
             if (!IsRunningDedicatedServer())
             {
                 CharacterMesh->SetSimulatePhysics(false);
+                CharacterMesh->ResetAllBodiesSimulatePhysics();
                 CharacterMesh->PutAllRigidBodiesToSleep();
             }
             CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-            CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+            CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::KeepRelativeTransform);
             CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
         }
     }
     else if (NewState == EZombiePoolState::Alive)
     {
-        SetActorHiddenInGame(false);
+        SetActorHiddenInGame(true);
 
         if (Capsule)
         {
@@ -287,6 +329,7 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
             if (!IsRunningDedicatedServer())
             {
                 CharacterMesh->SetSimulatePhysics(false);
+                CharacterMesh->ResetAllBodiesSimulatePhysics();
                 CharacterMesh->PutAllRigidBodiesToSleep();
                 CharacterMesh->SetCollisionProfileName(CachedMeshCollisionProfile);
                 CharacterMesh->SetCollisionEnabled(CachedMeshCollisionEnabled);
@@ -303,11 +346,32 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
 
             CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
             CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
+
+            if (!IsRunningDedicatedServer())
+            {
+                CharacterMesh->RefreshBoneTransforms();
+                CharacterMesh->UpdateComponentToWorld();
+            }
         }
 
-        if (CachedMovement && !HasAuthority())
+        if (CachedMovement)
         {
-            CachedMovement->ResetPredictionData_Client();
+            CachedMovement->bJustTeleported = true;
+            if (!HasAuthority())
+            {
+                CachedMovement->ResetPredictionData_Client();
+            }
+        }
+
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().SetTimer(
+                TimerHandle_RevealMesh,
+                this,
+                &AZombie::FinalizePoolActivationVisuals,
+                0.04f,
+                false
+            );
         }
     }
     else if (NewState == EZombiePoolState::Dead)
@@ -333,6 +397,32 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
             }
         }
     }
+}
+
+void AZombie::FinalizePoolActivationVisuals()
+{
+    if (PoolState != EZombiePoolState::Alive || bIsDead) return;
+
+    if (CachedMovement)
+    {
+        CachedMovement->bJustTeleported = true;
+        if (!HasAuthority())
+        {
+            CachedMovement->ResetPredictionData_Client();
+        }
+    }
+
+    if (USkeletalMeshComponent* CharacterMesh = GetMesh())
+    {
+        CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
+        if (!IsRunningDedicatedServer())
+        {
+            CharacterMesh->RefreshBoneTransforms();
+            CharacterMesh->UpdateComponentToWorld();
+        }
+    }
+
+    SetActorHiddenInGame(false);
 }
 
 void AZombie::SetStatsForRound(int32 CurrentRound)

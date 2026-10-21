@@ -27,7 +27,6 @@ public:
     virtual void OnPossess(APawn* InPawn) override;
     virtual void ClientRestart_Implementation(APawn* NewPawn) override;
 
-    // Spectating Network API
     void OnOwnerDied();
 
     UFUNCTION(Server, Reliable)
@@ -38,6 +37,8 @@ public:
 
     UFUNCTION(Client, Reliable)
     void Client_SetSpectateTarget(AHama* Target);
+
+    void InitializeLocalPawn(APawn* InPawn);
 
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -78,6 +79,13 @@ private:
     void CheckAndBindUI();
     void SafeAddMappingContext(UInputMappingContext* Context, int32 Priority);
     void SafeRemoveMappingContext(UInputMappingContext* Context);
+
+    virtual void ReceivedPlayer() override;
+    void HandleGameStateSet(AGameStateBase* NewGameState);
+
+    TWeakObjectPtr<ALastStandLegacyGameState> BoundGameState;
+    TWeakObjectPtr<AHamaPlayerState> BoundPlayerState;
+    TWeakObjectPtr<AHama> BoundCharacter;
 
     float LastClientSwitchTime = -1.0f;
     float LastServerSwitchTime = -1.0f;
