@@ -93,9 +93,13 @@ void AHamaPlayerController::SetupInputComponent()
 
 void AHamaPlayerController::OnPossess(APawn* InPawn)
 {
+    Super::OnPossess(InPawn);
+
     bAutoManageActiveCameraTarget = true;
     CurrentSpectateTarget = nullptr;
 
+    EnableInput(this);
+    bBlockInput = false;
     ResetIgnoreMoveInput();
     ResetIgnoreLookInput();
 
@@ -107,9 +111,12 @@ void AHamaPlayerController::OnPossess(APawn* InPawn)
         {
             PlayerState->SetIsSpectator(false);
         }
-    }
 
-    Super::OnPossess(InPawn);
+        if (IsLocalController())
+        {
+            InitializeLocalPawn(InPawn);
+        }
+    }
 }
 
 void AHamaPlayerController::AcknowledgePossession(APawn* P)
@@ -168,9 +175,10 @@ void AHamaPlayerController::InitializeLocalPawn(APawn* InPawn)
     if (AcknowledgedPawn != HamaPawn)
     {
         AcknowledgePossession(HamaPawn);
-        return;
     }
 
+    EnableInput(this);
+    bBlockInput = false;
     ResetIgnoreMoveInput();
     ResetIgnoreLookInput();
 
@@ -215,9 +223,10 @@ void AHamaPlayerController::OnOwnerDied()
     AHama* TargetCandidate = GetCycledSpectatorTarget(nullptr, 1);
     CurrentSpectateTarget = TargetCandidate;
 
-    if (TargetCandidate)
+
+    if (IsLocalController() && TargetCandidate)
     {
-        SetViewTarget(TargetCandidate);
+        ApplyLocalSpectateViewTarget(TargetCandidate);
     }
 
     ClientEnterSpectating(TargetCandidate);
@@ -226,7 +235,7 @@ void AHamaPlayerController::OnOwnerDied()
         SpectateValidationTimerHandle,
         this,
         &AHamaPlayerController::ValidateSpectateTarget,
-        0.25f,
+        0.5f,
         true
     );
 }
@@ -346,13 +355,7 @@ AHama* AHamaPlayerController::GetCycledSpectatorTarget(AHama* CurrentTarget, int
 
     Algo::Sort(ValidTargets, [](const AHama* A, const AHama* B)
         {
-            const APlayerState* PSA = A->GetPlayerState();
-            const APlayerState* PSB = B->GetPlayerState();
-            if (PSA && PSB)
-            {
-                return PSA->GetPlayerId() < PSB->GetPlayerId();
-            }
-            return A->GetFName().LexicalLess(B->GetFName());
+            return A->GetPlayerState()->GetPlayerId() < B->GetPlayerState()->GetPlayerId();
         });
 
     if (!IsValid(CurrentTarget))

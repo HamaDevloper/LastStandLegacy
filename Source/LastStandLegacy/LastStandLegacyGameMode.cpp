@@ -298,18 +298,10 @@ void ALastStandLegacyGameMode::RestartPlayer(AController* NewPlayer)
 {
     if (!NewPlayer || !HasAuthority()) return;
 
-    if (APlayerController* PC = Cast<APlayerController>(NewPlayer))
-    {
-        PC->ClientGotoState(NAME_Playing);
-    }
-    NewPlayer->ChangeState(NAME_Playing);
-
     FTransform TeammateSpawnTransform;
-
     if (GetSpawnTransformNearTeammate(NewPlayer, TeammateSpawnTransform))
     {
         Super::RestartPlayerAtTransform(NewPlayer, TeammateSpawnTransform);
-        UE_LOG(LogTemp, Log, TEXT("[RestartPlayer] Spawned player %s near a teammate."), *NewPlayer->GetName());
         return;
     }
 
@@ -340,7 +332,6 @@ bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player
         return false;
     }
 
-    // Shuffle کردنی هاوڕێکان
     for (int32 i = AliveTeammates.Num() - 1; i > 0; --i)
     {
         const int32 j = FMath::RandRange(0, i);
@@ -349,7 +340,6 @@ bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player
 
     UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
 
-    // تەنها Pawn-ی کۆنی یاریزانە ڕیسپاونبووەکە ignore دەکرێت
     FCollisionQueryParams Params(SCENE_QUERY_STAT(SpawnNearTeammate), false);
     if (Player && Player->GetPawn())
     {
@@ -358,20 +348,17 @@ bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player
 
     for (AHama* Teammate : AliveTeammates)
     {
-        // ١. وەرگرتنی قەبارەی Capsule لە CDO (ڕاوەستاو) بۆ ئەوەی لە کاتی Crouch/Slide قەبارەکە بچووک نەبێتەوە
         const AHama* DefaultChar = Teammate->GetClass()->GetDefaultObject<AHama>();
         const UCapsuleComponent* DefaultCap = DefaultChar->GetCapsuleComponent();
         const float Radius = DefaultCap->GetScaledCapsuleRadius();
         const float HalfHeight = DefaultCap->GetScaledCapsuleHalfHeight();
         const FCollisionShape Shape = FCollisionShape::MakeCapsule(Radius, HalfHeight);
 
-        // ٢. حیسابکردنی شوێنی پێیەکان لەسەر Capsuleی ئێستای هاوڕێکە
         const float CurrentHalfHeight = Teammate->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
         const FVector TeammateLoc = Teammate->GetActorLocation();
         const FVector FeetLoc = TeammateLoc - FVector(0.f, 0.f, CurrentHalfHeight);
         const FRotator SpawnRot(0.f, Teammate->GetActorRotation().Yaw, 0.f);
 
-        // A) Navmesh Attempts
         if (NavSys)
         {
             for (int32 Attempt = 0; Attempt < MaxSpawnAttempts; ++Attempt)
@@ -380,7 +367,6 @@ bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player
                 if (!NavSys->GetRandomReachablePointInRadius(FeetLoc, TeammateSpawnRadius, NavLoc))
                     continue;
 
-                // پشکنینی جیاوازی نهۆم
                 if (FMath::Abs(NavLoc.Location.Z - FeetLoc.Z) > MaxSpawnHeightDiff)
                     continue;
 
@@ -405,13 +391,11 @@ bool ALastStandLegacyGameMode::GetSpawnTransformNearTeammate(AController* Player
             if (!World->LineTraceSingleByChannel(Floor, Probe, Probe - FVector(0.f, 0.f, 300.f), ECC_Visibility, LosParams))
                 continue;
 
-            // ڕێگری لە spawnبوون لەسەر Pawn (وەک زۆمبی) یان لەسەر ڕووی زۆر لێژ
             if (Cast<APawn>(Floor.GetActor()) || Floor.ImpactNormal.Z < 0.7f)
                 continue;
 
             const FVector Test = Floor.ImpactPoint + FVector(0.f, 0.f, HalfHeight + 2.f);
 
-            // ڕێگری لە spawnبوون لە پشت دیواری باریک (Line of Sight Check)
             if (World->LineTraceTestByChannel(TeammateLoc, Test, ECC_Visibility, LosParams))
                 continue;
 

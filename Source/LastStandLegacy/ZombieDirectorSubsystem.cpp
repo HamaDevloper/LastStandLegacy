@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "MysteryBox.h"
 #include "Kismet/GameplayStatics.h"
+#include "Hama.h"
 
 void UZombieDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -462,7 +463,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 }
 
                 FAIMoveRequest MoveReq(FinalTargetActor);
-                MoveReq.SetAcceptanceRadius(15.f); // کەمکرایەوە لە 40 بۆ 15 بۆ ئەوەی زوو نەوەستێت
+                MoveReq.SetAcceptanceRadius(15.f);
                 MoveReq.SetUsePathfinding(true);
                 MoveReq.SetAllowPartialPath(true);
                 MoveReq.SetProjectGoalLocation(true);

@@ -1917,6 +1917,14 @@ void AHama::OnPlayerDowned()
 {
     if (!HasAuthority()) return;
 
+    if (UWorld* World = GetWorld())
+    {
+        if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            Director->SetPlayerTargetable(this, false);
+        }
+    }
+
     GetWorldTimerManager().ClearTimer(PerkDrinkTimerHandle);
     PendingPerkID = NAME_None;
 
@@ -1962,6 +1970,14 @@ void AHama::OnPlayerDowned()
 void AHama::OnPlayerRevived()
 {
     if (!HasAuthority()) return;
+
+    if (UWorld* World = GetWorld())
+    {
+        if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            Director->SetPlayerTargetable(this, true);
+        }
+    }
 
     OwnedPerks.Empty();
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
