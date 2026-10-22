@@ -141,6 +141,8 @@ public:
     UPROPERTY()
     TObjectPtr<ABaseWeapon> DownedWeaponInstance;
 
+    void InitializeDownedWeapon();
+
 public:
     void RefillSpecificWeaponAmmo(TSubclassOf<ABaseWeapon> WeaponClassToRefill);
     ABaseWeapon* GetWeaponByClass(TSubclassOf<ABaseWeapon> WeaponClassToCheck) const;

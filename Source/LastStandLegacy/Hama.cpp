@@ -99,11 +99,15 @@ void AHama::BeginPlay()
     {
         InteractSphere->OnComponentBeginOverlap.AddDynamic(this, &AHama::OnInteractSphereBeginOverlap);
         InteractSphere->OnComponentEndOverlap.AddDynamic(this, &AHama::OnInteractSphereEndOverlap);
-        HealthComponent->OnDownStateChanged.AddUObject(this, &AHama::HandleDownStateChanged);
     }
 
     if (HasAuthority())
     {
+        if (HealthComponent)
+        {
+            HealthComponent->OnDownStateChanged.AddUObject(this, &AHama::HandleDownStateChanged);
+        }
+
         if (UWorld* World = GetWorld())
         {
             if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
@@ -113,7 +117,9 @@ void AHama::BeginPlay()
         }
 
         CreateDefaultWeapon();
+        InitializeDownedWeapon();
     }
+
     StartCrossHairTimer();
 }
 
@@ -595,7 +601,14 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
         }
     }
 
-    if (!CurrentWeapon) return;
+    if (!CurrentWeapon)
+    {
+        if (IsLocallyControlled())
+        {
+            HandleAmmoChanged(0, 0);
+        }
+        return;
+    }
 
     if (PendingWeaponForSwap == CurrentWeapon)
     {
@@ -1203,6 +1216,27 @@ bool AHama::IsWeaponCurrentlyUpgrading(TSubclassOf<ABaseWeapon> WeaponClassToChe
     return false;
 }
 
+void AHama::InitializeDownedWeapon()
+{
+    if (!HasAuthority() || !DownedPistolClass || IsValid(DownedWeaponInstance)) return;
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.Instigator = this;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    DownedWeaponInstance = GetWorld()->SpawnActor<ABaseWeapon>(DownedPistolClass, GetActorTransform(), SpawnParams);
+    if (DownedWeaponInstance)
+    {
+        DownedWeaponInstance->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+        DownedWeaponInstance->SetActorHiddenInGame(true);
+        DownedWeaponInstance->SetActorEnableCollision(false);
+        DownedWeaponInstance->SetActorTickEnabled(false);
+    }
+
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("[InitializeDownedWeapon] Downed Weapon Initialized! %s"), *DownedWeaponInstance->GetName()));
+}
+
 void AHama::HandleDownStateChanged(bool bIsDowned)
 {
     if (!HasAuthority()) return;
@@ -1219,82 +1253,95 @@ void AHama::HandleDownStateChanged(bool bIsDowned)
 
 void AHama::EquipDownedWeapon()
 {
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("[EquipDownedWeapon] Equipping Downed Weapon!"));
     if (!HasAuthority()) return;
 
+    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("H!"));
+   
+    ABaseWeapon* WeaponBeforeDown = CurrentWeapon;
     PreDownWeapon = CurrentWeapon;
 
-    if (CurrentWeapon)
-    {
-        CurrentWeapon->SetActorHiddenInGame(true);
-    }
+    static const FGameplayTag DownedTag = FGameplayTag::RequestGameplayTag(FName("Weapon.Ability.CanBeUsedWhileDowned"));
 
-    ABaseWeapon* ExistingPistol = nullptr;
+    ABaseWeapon* TargetDownedWeapon = nullptr;
 
-    if (PrimaryWeapon && PrimaryWeapon->IsA(DownedPistolClass))
+    // ١. پشکنینی ئینڤێنتۆری
+    TArray<ABaseWeapon*, TInlineAllocator<3>> InventoryWeapons = { PrimaryWeapon, SecondaryWeapon, ThirdWeapon };
+    for (ABaseWeapon* Weapon : InventoryWeapons)
     {
-        ExistingPistol = PrimaryWeapon;
-    }
-    else if (SecondaryWeapon && SecondaryWeapon->IsA(DownedPistolClass))
-    {
-        ExistingPistol = SecondaryWeapon;
-    }
-    else if (ThirdWeapon && ThirdWeapon->IsA(DownedPistolClass))
-    {
-        ExistingPistol = ThirdWeapon;
-    }
-
-    if (ExistingPistol)
-    {
-        CurrentWeapon = ExistingPistol;
-        CurrentWeapon->SetActorHiddenInGame(false);
-    }
-    else if (DownedPistolClass)
-    {
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.Owner = this;
-        SpawnParams.Instigator = GetInstigator();
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-        DownedWeaponInstance = GetWorld()->SpawnActor<ABaseWeapon>(DownedPistolClass, GetActorTransform(), SpawnParams);
-        if (DownedWeaponInstance)
+        if (IsValid(Weapon) && Weapon->GetWeaponTags().HasTag(DownedTag))
         {
-            DownedWeaponInstance->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
-            CurrentWeapon = DownedWeaponInstance;
+            TargetDownedWeapon = Weapon;
+            UE_LOG(LogTemp, Warning, TEXT("[EquipDownedWeapon] Found Tag in Inventory: %s"), *Weapon->GetName());
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("[EquipDownedWeapon] Found Tag in Inventory: %s"), *Weapon->GetName()));
+            break;
         }
+    }
+
+    // ٢. پشکنینی چەکە کاتییە سپۆنکراوەکە
+    if (!TargetDownedWeapon)
+    {
+        if (IsValid(DownedWeaponInstance))
+        {
+            TargetDownedWeapon = DownedWeaponInstance;
+            UE_LOG(LogTemp, Warning, TEXT("[EquipDownedWeapon] Using DownedWeaponInstance"));
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("[EquipDownedWeapon] Using DownedWeaponInstance"));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[EquipDownedWeapon] FAILED: DownedWeaponInstance is NULL! Check DownedPistolClass in Blueprint!"));
+            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[EquipDownedWeapon] FAILED: DownedWeaponInstance is NULL! Check DownedPistolClass in Blueprint!"));
+        }
+    }
+
+    if (TargetDownedWeapon)
+    {
+        CurrentWeapon = TargetDownedWeapon;
+
+        if (TargetDownedWeapon == DownedWeaponInstance)
+        {
+            DownedWeaponInstance->ResetDownedAmmo();
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[EquipDownedWeapon] CRITICAL: TargetDownedWeapon is completely NULL. Weapon will not change!"));
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[EquipDownedWeapon] CRITICAL: TargetDownedWeapon is completely NULL. Weapon will not change!"));
     }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
-    OnRep_CurrentWeapon(PreDownWeapon);
+    // ئەگەر لەسەر سێرڤەر/Listen-Server بوو ڕاستەوخۆ نوێی بکەرەوە
+    OnRep_CurrentWeapon(WeaponBeforeDown);
 }
 
 void AHama::RestorePreDownWeapon()
 {
     if (!HasAuthority()) return;
 
-    if (DownedWeaponInstance)
-    {
-        DownedWeaponInstance->Destroy();
-        DownedWeaponInstance = nullptr;
-    }
+    ABaseWeapon* WeaponWhileDowned = CurrentWeapon;
 
-    if (PreDownWeapon && IsValid(PreDownWeapon))
+    if (IsValid(PreDownWeapon))
     {
         CurrentWeapon = PreDownWeapon;
-        CurrentWeapon->SetActorHiddenInGame(false);
     }
-    else if (PrimaryWeapon)
+    else if (IsValid(PrimaryWeapon))
     {
         CurrentWeapon = PrimaryWeapon;
-        CurrentWeapon->SetActorHiddenInGame(false);
+    }
+    else
+    {
+        CurrentWeapon = nullptr;
     }
 
-    ABaseWeapon* OldWeapon = PreDownWeapon;
     PreDownWeapon = nullptr;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
-    OnRep_CurrentWeapon(OldWeapon);
+    if (GetNetMode() != NM_DedicatedServer)
+    {
+        OnRep_CurrentWeapon(WeaponWhileDowned);
+    }
 }
 
 void AHama::Destroyed()
@@ -1976,6 +2023,15 @@ void AHama::OnPlayerDowned()
         if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
         {
             Director->SetPlayerTargetable(this, false);
+        }
+    }
+
+    if(CurrentWeapon)
+    {
+        CurrentWeapon->StopFire();
+        if (CurrentWeapon->IsReloading())
+        {
+            CurrentWeapon->CancelReload();
         }
     }
 

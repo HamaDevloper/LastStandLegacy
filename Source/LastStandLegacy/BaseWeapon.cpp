@@ -560,6 +560,17 @@ bool ABaseWeapon::NeedsAmmo() const
     return  (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
 }
 
+void ABaseWeapon::ResetDownedAmmo()
+{
+    if (!HasAuthority()) return;
+
+    CurrentAmmo = MaxAmmoInClip;
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+
+    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+}
+
 UAnimSequence* ABaseWeapon::GetAimSequence() const
 {
     if (UAnimSequence* Anim = CurrentWeaponData.AimSequence.Get())

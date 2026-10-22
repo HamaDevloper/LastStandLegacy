@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Engine/DataTable.h"
+#include "GameplayTagContainer.h"
 #include "Camera/CameraShakeBase.h" 
 #include "BaseWeapon.generated.h"
 
@@ -118,6 +119,9 @@ struct FWeaponData : public FTableRowBase
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Animations")
     TSoftObjectPtr<UAimOffsetBlendSpace1D> AimOffsetAsset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Tags")
+    FGameplayTagContainer WeaponTags;
 };
 
 UCLASS()
@@ -291,4 +295,8 @@ private:
 
 public:
     bool IsDataInitialized() const { return bInitilize; }
+
+    void ResetDownedAmmo();
+
+   const FGameplayTagContainer& GetWeaponTags() const { return CurrentWeaponData.WeaponTags; }
 };

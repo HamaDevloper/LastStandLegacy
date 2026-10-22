@@ -15,7 +15,8 @@ public class LastStandLegacy : ModuleRules
             "Engine",
             "InputCore",
             "NetCore",
-            "EnhancedInput"
+            "EnhancedInput",
+            "GameplayTags"
         });
 
         // 🔹 مۆدیۆلانەی تەنها لە فایلی (.cpp)دا بەکاریان دەهێنیت (تایبەت بە UI و AI و Physics)
