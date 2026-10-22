@@ -40,6 +40,8 @@ public:
     void SetDowned(bool NewValue);
     void ApplyDownedState();
 
+    void SetSprinting(bool bNewSprinting);
+
     bool CanDive() const;
 
     void SyncStatesFromCMC(bool bInSlide, bool bInDiving, bool bInSprinting);
@@ -116,7 +118,6 @@ public:
 
 protected:
     // --- INTERNAL LOGIC ---
-    void SetSprinting(bool bNewSprinting);
     void DrainStamina();
     void RegenerateStamina();
     void StartStaminaRegen(float Delay);

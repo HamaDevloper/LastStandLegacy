@@ -70,6 +70,15 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 {
     Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
+    if (CharacterOwner && CharacterOwner->IsLocallyControlled() && !CharacterOwner->bClientUpdating)
+    {
+        if (UHamaComponent* HamaComp = GetHamaComp())
+        {
+            bSprinting = HamaComp->bIsSprinting;
+            bAiming = HamaComp->bIsAiming;
+        }
+    }
+
     const float SlideStopThresholdSquared = FMath::Square(60.f);
     if (bSlide && (Velocity.SizeSquared2D() < SlideStopThresholdSquared || !IsMovingOnGround()))
     {
@@ -79,6 +88,14 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
     if (bDiving && bWasDiving && MovementMode != MOVE_Falling)
     {
         bDiving = false;
+    }
+
+    if (bSprinting)
+    {
+        if (bDowned || bAiming || bSlide || bDiving || IsFalling())
+        {
+            bSprinting = false;
+        }
     }
 
     if (bSlide && !bWasSliding)
@@ -131,13 +148,18 @@ void UHamaMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector
 {
     Super::OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
 
+    if (CharacterOwner && CharacterOwner->bClientUpdating)
+    {
+        return;
+    }
+
     const bool bStateChanged = (bSlide != bPrevSlide) ||
         (bDiving != bPrevDiving) ||
         (bSprinting != bPrevSprinting);
 
     if (!bStateChanged)
     {
-        return; 
+        return;
     }
 
     bPrevSlide = bSlide;
@@ -160,6 +182,10 @@ void UHamaMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector
         if (!bDiving && HamaComp->bIsDiving)
         {
             HamaComp->StopDive();
+        }
+        if (!bSprinting && HamaComp->bIsSprinting)
+        {
+            HamaComp->SetSprinting(false);
         }
     }
 }

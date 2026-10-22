@@ -286,6 +286,7 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
 
 void AHama::CheckForInteractables()
 {
+    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, TEXT("Checking for interactables..."));
     if (!IsLocallyControlled() || !OwnerController) return;
     if (HamaComponent && HamaComponent->IsDowned())
     {
@@ -333,7 +334,6 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
 
     if (Datum.OutHits.IsEmpty() || !Datum.OutHits[0].GetActor())
     {
-        GEngine->AddOnScreenDebugMessage(1, 3.f, FColor::Red, TEXT("No interactable hit."));
         ClearInteractFocus();
         return;
     }
@@ -868,7 +868,6 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
     if (!IsValid(NewWeapon)) return;
 
-    // ئەگەر یاریزانەکە YY Cancelـی کرد و گەڕایەوە سەر هەمان CurrentWeapon
     if (PendingWeaponForSwap != nullptr && NewWeapon == CurrentWeapon)
     {
         PendingWeaponForSwap = nullptr;
@@ -931,7 +930,6 @@ void AHama::Server_CompleteWeaponSwap_Implementation()
     if (TimeElapsed < (AnimDuration * 0.15f))
     {
         PendingWeaponForSwap = nullptr;
-        // زۆر گرنگ: ئەگەر سێرڤەر گۆڕینەکەی ڕەتکردەوە، دەبێت CurrentWeapon بنێرێتەوە بۆ Client تا مێشەکەی چاک ببێتەوە
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
         return;
     }
@@ -1360,7 +1358,7 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Triggered, this, &AHama::SwitchCameraPressed);
         EnhancedInput->BindAction(SwitchCameraAction, ETriggerEvent::Completed, this, &AHama::SwitchCameraReleased);
 
-        EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Started, this, &AHama::CrouchActionPressed);
+        EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Triggered, this, &AHama::CrouchActionPressed);
         EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Completed, this, &AHama::CrouchActionReleased);
         EnhancedInput->BindAction(CrouchAction, ETriggerEvent::Canceled, this, &AHama::CrouchActionReleased);
 

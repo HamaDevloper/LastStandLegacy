@@ -56,7 +56,19 @@ void UHamaComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 void UHamaComponent::SetAiming(bool bNewAiming)
 {
-    if (bIsAiming == bNewAiming) return;
+    if (bIsAiming == bNewAiming)
+    {
+        if (MoveComp && MoveComp->bAiming != bIsAiming)
+        {
+            MoveComp->bAiming = bIsAiming;
+            if (bIsAiming)
+            {
+                MoveComp->bSprinting = false;
+            }
+        }
+        return;
+    }
+
     bIsAiming = bNewAiming;
 
     if (GetOwner() && GetOwner()->HasAuthority())
@@ -111,23 +123,13 @@ void UHamaComponent::ApplyDownedState()
         StopSlide();
         StopDive();
     }
-
-    if (OwnerCharacter)
-    {
-        if (UCapsuleComponent* Capsule = OwnerCharacter->GetCapsuleComponent())
-        {
-            const ECollisionResponse OldResponse = Capsule->GetCollisionResponseToChannel(ECC_Intract);
-            const ECollisionResponse TargetResponse = bIsDowned ? ECR_Block : ECR_Ignore;
-
-            Capsule->SetCollisionResponseToChannel(ECC_Intract, TargetResponse);
-        }
-    }
 }
 
 void UHamaComponent::StartSlide()
 {
     if (bIsSlide || !OwnerCharacter) return;
 
+    SetSprinting(false);
     bIsSlide = true;
 
     if (MoveComp)
@@ -189,6 +191,7 @@ void UHamaComponent::StartDive()
 {
     if (!CanDive()) return;
 
+    SetSprinting(false);
     DecreaseStamina(25.f);
     bIsDiving = true;
 
@@ -275,10 +278,17 @@ void UHamaComponent::StopSprinting()
 
 void UHamaComponent::SetSprinting(bool bNewSprinting)
 {
-    if (bIsSprinting == bNewSprinting) return;
-
-    if (bNewSprinting && (bIsExhausted || Stamina <= 0.f || bIsDowned || bIsSlide || bIsDiving))
+    if (bNewSprinting && (bIsExhausted || Stamina <= 0.f || bIsDowned || bIsSlide || bIsDiving || bIsAiming))
     {
+        bNewSprinting = false;
+    }
+
+    if (bIsSprinting == bNewSprinting)
+    {
+        if (MoveComp && MoveComp->bSprinting != bIsSprinting)
+        {
+            MoveComp->bSprinting = bIsSprinting;
+        }
         return;
     }
 
@@ -313,7 +323,6 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
         }
 
         const float RegenDelay = bIsExhausted ? PenaltyStamina : NormalDelayStamina;
-
         World->GetTimerManager().SetTimer(
             StaminaRegenTimerHandle,
             this,
@@ -329,7 +338,7 @@ void UHamaComponent::DrainStamina()
 {
     if (!OwnerCharacter || !MoveComp) return;
 
-    if (bIsDowned || MoveComp->IsFalling())
+    if (bIsDowned || bIsSlide || bIsDiving || bIsAiming || MoveComp->IsFalling())
     {
         SetSprinting(false);
         return;
