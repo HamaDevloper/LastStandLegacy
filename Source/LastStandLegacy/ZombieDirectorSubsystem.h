@@ -10,6 +10,12 @@ class APawn;
 class AMysteryBoxSpawnPoint;
 class AMysteryBox;
 
+struct FCachedTargetInfo
+{
+    TWeakObjectPtr<APawn> PlayerPawn;
+    FVector Location;
+};
+
 USTRUCT(BlueprintType)
 struct FAttractorData
 {
@@ -62,21 +68,17 @@ public:
     TSubclassOf<AMysteryBox> MysteryBoxClass;
 
     const TArray<TWeakObjectPtr<AZombie>>& GetActiveZombies() const { return ActiveZombies; }
-
+    TArray<FCachedTargetInfo, TInlineAllocator<4>> CachedPlayerLocations;
 public:
-    // ١. دروستکردن و ئامادەکردنی سەرەتایی هەموو زۆمبییەکان لەژێر زەوی لە دەستپێکی یاری
     void InitializeZombiePool(TSubclassOf<AZombie> InZombieClass, int32 PoolSize);
 
-    // ٢. ڕاکێشانی زۆمبییەکی خەوتوو لە ناو Pool و چالاککردنەوەی لە شوێنی نوێ
     AZombie* AcquireZombieFromPool(const FVector& SpawnLocation, const FRotator& SpawnRotation, int32 CurrentRound);
 
-    // ٣. گەڕاندنەوەی زۆمبییە مردووەکە بۆ ناو لیستەکە دوای تەواوبوونی کاتی Ragdoll
     void ReturnZombieToPool(AZombie* Zombie);
  
     bool bHasDirectLineOfSight = false;
 
 private:
-    // ئەو لیستەی کە هەموو زۆمبییە ناچالاک و شاردراوەکان دەگرێتە خۆ
     UPROPERTY()
     TArray<TObjectPtr<AZombie>> InactiveZombiePool;
 

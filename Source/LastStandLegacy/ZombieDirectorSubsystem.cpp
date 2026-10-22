@@ -27,8 +27,7 @@ void UZombieDirectorSubsystem::Deinitialize()
     ReusableMysteryBoxPoints.Empty();
     RegisteredBoxes.Empty();
     TempFireSaleBoxes.Empty();
-    CachedPlayerMap.Reset();
-    SpatialGrid.Reset();
+    CachedPlayerLocations.Reset();
 
     Super::Deinitialize();
 }
@@ -243,33 +242,30 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     {
         PlayerCacheRefreshTimer = 0.05f;
 
-        CachedPlayerMap.Reset();
-        SpatialGrid.Reset();
+        CachedPlayerLocations.Reset();
 
-        for (int32 i = ValidTargetPlayers.Num() - 1; i >= 0; --i)
+        for (int32 Idx = ValidTargetPlayers.Num() - 1; Idx >= 0; --Idx)
         {
-            if (ValidTargetPlayers[i].IsValid())
+            if (ValidTargetPlayers[Idx].IsValid())
             {
-                APawn* P = ValidTargetPlayers[i].Get();
+                APawn* P = ValidTargetPlayers[Idx].Get();
                 if (IsValid(P))
                 {
-                    const FVector Loc = P->GetActorLocation();
-                    CachedPlayerMap.Add(P, Loc);
-                    SpatialGrid.InsertPlayer(P, Loc);
+                    CachedPlayerLocations.Add({ P, P->GetActorLocation() });
                 }
             }
             else
             {
-                ValidTargetPlayers.RemoveAtSwap(i, 1, EAllowShrinking::No);
+                ValidTargetPlayers.RemoveAtSwap(Idx, 1, EAllowShrinking::No);
             }
         }
 
-        for (int32 i = ActiveZombies.Num() - 1; i >= 0; --i)
+        for (int32 Idx = ActiveZombies.Num() - 1; Idx >= 0; --Idx)
         {
-            AZombie* Z = ActiveZombies[i].Get();
+            AZombie* Z = ActiveZombies[Idx].Get();
             if (!IsValid(Z) || Z->IsDead())
             {
-                ActiveZombies.RemoveAtSwap(i, 1, EAllowShrinking::No);
+                ActiveZombies.RemoveAtSwap(Idx, 1, EAllowShrinking::No);
             }
         }
 
@@ -336,20 +332,18 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
             if (!bNeedsSearch && Zombie->CurrentTarget)
             {
-                if (APawn* TargetPawn = Cast<APawn>(Zombie->CurrentTarget))
+                for (const FCachedTargetInfo& TargetInfo : CachedPlayerLocations)
                 {
-                    if (CachedPlayerMap.Contains(TargetPawn))
+                    if (TargetInfo.PlayerPawn.Get() == Zombie->CurrentTarget)
                     {
-                        FinalTargetActor = TargetPawn;
-                        FinalTargetLoc = TargetPawn->GetActorLocation();
+                        FinalTargetActor = TargetInfo.PlayerPawn.Get();
+                        FinalTargetLoc = TargetInfo.Location;
                         ClosestDistanceSq = FVector::DistSquared(ZombieLoc, FinalTargetLoc);
-                    }
-                    else
-                    {
-                        bNeedsSearch = true;
+                        break;
                     }
                 }
-                else
+
+                if (!FinalTargetActor)
                 {
                     bNeedsSearch = true;
                 }
@@ -357,30 +351,17 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
             if (bNeedsSearch)
             {
-                APawn* TargetPlayer = SpatialGrid.FindNearestPlayerInRadius(ZombieLoc, ClosestDistanceSq);
-
-                if (TargetPlayer && IsValid(TargetPlayer))
+                for (const FCachedTargetInfo& TargetInfo : CachedPlayerLocations)
                 {
-                    FinalTargetActor = TargetPlayer;
-                    FinalTargetLoc = TargetPlayer->GetActorLocation();
-                    ClosestDistanceSq = FVector::DistSquared(ZombieLoc, FinalTargetLoc);
-                }
+                    APawn* Candidate = TargetInfo.PlayerPawn.Get();
+                    if (!IsValid(Candidate)) continue;
 
-                if (!FinalTargetActor)
-                {
-                    for (const auto& Pair : CachedPlayerMap)
+                    const float DistSq = FVector::DistSquared(ZombieLoc, TargetInfo.Location);
+                    if (DistSq < ClosestDistanceSq)
                     {
-                        APawn* CandidatePlayer = Pair.Key.Get();
-                        if (!IsValid(CandidatePlayer)) continue;
-
-                        const FVector RealLoc = CandidatePlayer->GetActorLocation();
-                        const float DistSq = FVector::DistSquared(ZombieLoc, RealLoc);
-                        if (DistSq < ClosestDistanceSq)
-                        {
-                            ClosestDistanceSq = DistSq;
-                            FinalTargetActor = CandidatePlayer;
-                            FinalTargetLoc = RealLoc;
-                        }
+                        ClosestDistanceSq = DistSq;
+                        FinalTargetActor = Candidate;
+                        FinalTargetLoc = TargetInfo.Location;
                     }
                 }
 
@@ -406,11 +387,11 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             float DesiredNetFreq = 4.f;
             if (ClosestDistanceSq < 1440000.f)
             {
-                DesiredNetFreq = 30.f;
+                DesiredNetFreq = 12.f;
             }
             else if (ClosestDistanceSq < 6250000.f)
             {
-                DesiredNetFreq = 12.f;
+                DesiredNetFreq = 8.f;
             }
 
             if (!FMath::IsNearlyEqual(Zombie->GetNetUpdateFrequency(), DesiredNetFreq))
@@ -463,7 +444,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 }
 
                 FAIMoveRequest MoveReq(FinalTargetActor);
-                MoveReq.SetAcceptanceRadius(15.f);
+                MoveReq.SetAcceptanceRadius(75.f);
                 MoveReq.SetUsePathfinding(true);
                 MoveReq.SetAllowPartialPath(true);
                 MoveReq.SetProjectGoalLocation(true);

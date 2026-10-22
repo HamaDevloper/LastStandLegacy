@@ -62,19 +62,16 @@ void AZombie::BeginPlay()
         CachedMovement->bEnablePhysicsInteraction = false;
         CachedMovement->bUseRVOAvoidance = false;
 
-        // ١. کوژاندنەوەی پشکنینی کەوتنە ناو ئاو و مەلەکردن
         CachedMovement->bSweepWhileNavWalking = false;
-        CachedMovement->bAlwaysCheckFloor = false; // لە هەموو فریمێکدا پشکنینی ئەوە ناکات ئایا لەسەر زەوییە
+        CachedMovement->bAlwaysCheckFloor = false; 
 
-        // ٢. سووککردنی حیساباتی فیزیا بە لابردنی کێش لەسەر بەربەستە جوڵاوەکان
         CachedMovement->bPushForceScaledToMass = false;
         CachedMovement->bScalePushForceToVelocity = false;
 
-        // ٣. کوژاندنەوەی حیساباتی سەرکەوتن بەسەر لێژایی و پلیکانە لە کاتی ئاساییدا
-        CachedMovement->MaxStepHeight = 35.f; // کەمکردنەوەی مەودای پشکنینی هەنگاونان
+       
+        CachedMovement->MaxStepHeight = 35.f; 
         CachedMovement->SetWalkableFloorAngle(45.f);
 
-        // ڕێکخستنی تۆڕ و سووڕانەوە
         CachedMovement->bOrientRotationToMovement = true;
         CachedMovement->RotationRate = FRotator(0.f, 540.f, 0.f);
         CachedMovement->NetworkSimulatedSmoothLocationTime = 0.06f;
@@ -100,7 +97,7 @@ void AZombie::BeginPlay()
             MeshComp->bCastFarShadow = false;
             MeshComp->SetGenerateOverlapEvents(false);
         }
-        else
+        else 
         {
             MeshComp->bNoSkeletonUpdate = true;
             MeshComp->SetComponentTickEnabled(false);
