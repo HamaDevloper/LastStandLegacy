@@ -51,6 +51,7 @@ class USphereComponent;
 class UStaticMeshComponent;
 class URecoilComponent;
 class IInteractInterface;
+class AHamaPlayerController;
 
 struct FInputActionValue;
 struct FInputActionInstance;
@@ -97,7 +98,7 @@ public:
     TObjectPtr<UStaticMeshComponent> PerkBottleMesh;
 
     UPROPERTY(BlueprintReadOnly, Category = "Hama|References")
-    TObjectPtr<APlayerController> OwnerController;
+    TObjectPtr<AHamaPlayerController> OwnerController;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
     TObjectPtr<USphereComponent> InteractSphere;

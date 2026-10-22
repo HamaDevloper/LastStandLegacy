@@ -23,7 +23,6 @@ public:
     virtual void OnRep_PlayerState() override;
     virtual void OnRep_Pawn() override;
     virtual void SetupInputComponent() override;
-    virtual void AcknowledgePossession(APawn* P) override;
     virtual void OnPossess(APawn* InPawn) override;
     virtual void ClientRestart_Implementation(APawn* NewPawn) override;
 

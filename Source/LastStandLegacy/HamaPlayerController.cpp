@@ -1,10 +1,12 @@
 ﻿#include "HamaPlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "EnhancedInputSubsystemInterface.h"
 #include "InputMappingContext.h"
 #include "Hama.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "LastStandLegacyGameState.h"
 #include "HamaPlayerState.h"
 #include "HamaMainWidget.h"
@@ -41,6 +43,15 @@ void AHamaPlayerController::ReceivedPlayer()
 
     if (IsLocalController())
     {
+        if (APawn* CurrentPawn = GetPawn())
+        {
+            InitializeLocalPawn(CurrentPawn);
+        }
+        else if (IsInState(NAME_Spectating))
+        {
+            SafeAddMappingContext(SpectatorMappingContext, 10);
+        }
+
         CheckAndBindUI();
     }
 }
@@ -110,14 +121,6 @@ void AHamaPlayerController::OnPossess(APawn* InPawn)
         IgnoreLookInput = 0;
         bBlockInput = false;
         EnableInput(this);
-
-        if (AHama* HamaPawn = Cast<AHama>(InPawn))
-        {
-            if (UCharacterMovementComponent* MoveComp = HamaPawn->GetCharacterMovement())
-            {
-                MoveComp->SetMovementMode(MOVE_Walking);
-            }
-        }
     }
 
     bAutoManageActiveCameraTarget = true;
@@ -129,33 +132,6 @@ void AHamaPlayerController::OnPossess(APawn* InPawn)
     }
 }
 
-void AHamaPlayerController::AcknowledgePossession(APawn* P)
-{
-    Super::AcknowledgePossession(P);
-}
-
-void AHamaPlayerController::ClientRestart_Implementation(APawn* NewPawn)
-{
-    Super::ClientRestart_Implementation(NewPawn);
-
-    if (!IsLocalController() || !NewPawn) return;
-
-    if (!IsInState(NAME_Playing))
-    {
-        ChangeState(NAME_Playing);
-    }
-
-    bAutoManageActiveCameraTarget = true;
-
-    if (PlayerInput)
-    {
-        PlayerInput->FlushPressedKeys();
-    }
-
-    SetControlRotation(NewPawn->GetActorRotation());
-    InitializeLocalPawn(NewPawn);
-}
-
 void AHamaPlayerController::InitializeLocalPawn(APawn* InPawn)
 {
     if (!IsLocalController()) return;
@@ -164,7 +140,7 @@ void AHamaPlayerController::InitializeLocalPawn(APawn* InPawn)
     if (!IsValid(HamaPawn)) return;
 
     ULocalPlayer* LocalPlayer = GetLocalPlayer();
-    if (!LocalPlayer) return;
+    if (!LocalPlayer || !PlayerInput) return;
 
     if (IsValid(CurrentSpectateTarget) && CurrentSpectateTarget != HamaPawn)
     {
@@ -181,10 +157,21 @@ void AHamaPlayerController::InitializeLocalPawn(APawn* InPawn)
         ChangeState(NAME_Playing);
     }
 
-    EnableInput(this);
     bBlockInput = false;
     ResetIgnoreMoveInput();
     ResetIgnoreLookInput();
+    EnableInput(this);
+    HamaPawn->bBlockInput = false;
+
+    AcknowledgePossession(HamaPawn);
+
+    HamaPawn->Controller = this;
+    SetPawn(HamaPawn);
+
+    if (!HamaPawn->InputComponent)
+    {
+        HamaPawn->PawnClientRestart();
+    }
 
     SafeRemoveMappingContext(SpectatorMappingContext);
 
@@ -207,9 +194,45 @@ void AHamaPlayerController::InitializeLocalPawn(APawn* InPawn)
     HamaPawn->UpdateCameraAndMeshVisibility();
 
     bShowMouseCursor = false;
-    SetInputMode(FInputModeGameOnly());
+    FInputModeGameOnly InputMode;
+    InputMode.SetConsumeCaptureMouseDown(false);
+    SetInputMode(InputMode);
 
     CheckAndBindUI();
+}
+
+void AHamaPlayerController::ClientRestart_Implementation(APawn* NewPawn)
+{
+    APawn* TargetPawn = NewPawn;
+    if (!TargetPawn)
+    {
+        TargetPawn = GetPawn(); 
+    }
+
+    if (!TargetPawn) return;
+
+    Super::ClientRestart_Implementation(TargetPawn);
+
+    if (IsLocalController())
+    {
+        if (!IsInState(NAME_Playing))
+        {
+            ChangeState(NAME_Playing);
+        }
+
+        bBlockInput = false;
+        ResetIgnoreMoveInput();
+        ResetIgnoreLookInput();
+        bAutoManageActiveCameraTarget = true;
+
+        if (PlayerInput)
+        {
+            PlayerInput->FlushPressedKeys();
+        }
+
+        SetControlRotation(TargetPawn->GetActorRotation());
+        InitializeLocalPawn(TargetPawn);
+    }
 }
 
 void AHamaPlayerController::OnOwnerDied()
@@ -351,7 +374,7 @@ AHama* AHamaPlayerController::GetCycledSpectatorTarget(AHama* CurrentTarget, int
         AHama* Candidate = Cast<AHama>(PS->GetPawn());
         if (!IsValid(Candidate) || Candidate == GetPawn()) continue;
         if (Candidate->bIsDead || Candidate->IsDowned()) continue;
-        if (!IsValid(Candidate->GetPlayerState())) continue; // پاراستن لە Null Pointer Crash لە کاتی Sort
+        if (!IsValid(Candidate->GetPlayerState())) continue;
 
         ValidTargets.Add(Candidate);
     }
@@ -455,10 +478,11 @@ void AHamaPlayerController::SafeAddMappingContext(UInputMappingContext* Context,
 
     if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
     {
-        if (!Subsystem->HasMappingContext(Context))
-        {
-            Subsystem->AddMappingContext(Context, Priority);
-        }
+        FModifyContextOptions Options;
+        Options.bIgnoreAllPressedKeysUntilRelease = false;
+        Options.bForceImmediately = true;
+
+        Subsystem->AddMappingContext(Context, Priority, Options);
     }
 }
 
@@ -470,7 +494,10 @@ void AHamaPlayerController::SafeRemoveMappingContext(UInputMappingContext* Conte
     {
         if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
         {
-            Subsystem->RemoveMappingContext(Context);
+            FModifyContextOptions Options;
+            Options.bForceImmediately = true;
+
+            Subsystem->RemoveMappingContext(Context, Options);
         }
     }
 }

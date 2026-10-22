@@ -93,7 +93,7 @@ void AHama::BeginPlay()
 {
     Super::BeginPlay();
 
-    OwnerController = Cast<APlayerController>(GetController());
+    OwnerController = Cast<AHamaPlayerController>(GetController());
 
     if (IsLocallyControlled())
     {
@@ -189,6 +189,11 @@ void AHama::OnRep_Controller()
     Super::OnRep_Controller();
 
     OwnerController = Cast<AHamaPlayerController>(GetController());
+
+    if(OwnerController && OwnerController->IsLocalController())
+    {
+        OwnerController->InitializeLocalPawn(this);
+    }
 
     StartCrossHairTimer();
 }
@@ -582,7 +587,6 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 {
     if (IsValid(PreviousWeapon))
     {
-        GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Black, "UnBind Called");
         PreviousWeapon->OnAmmoChanged.Unbind();
     }
 
@@ -1476,7 +1480,7 @@ void AHama::ReloadActionPressed()
 
 void AHama::Move(const FInputActionValue& Value)
 {
-    if (!OwnerController) return;
+    //if (!OwnerController) return;
     FVector2D MovementVector = Value.Get<FVector2D>();
     FRotator ControllRotation = OwnerController->GetControlRotation();
     FRotator YawRotation(0.f, ControllRotation.Yaw, 0.f);
@@ -1490,7 +1494,7 @@ void AHama::Move(const FInputActionValue& Value)
 
 void AHama::Look(const FInputActionValue& Value)
 {
-    if (!OwnerController) return;
+    //if (!OwnerController) return;
 
     FVector2D lookVector = Value.Get<FVector2D>();
     float ApplySensitivity = bIsAimButtonHold ? AimingSensitivity : NormalSensitivity;
