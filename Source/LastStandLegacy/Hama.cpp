@@ -588,17 +588,31 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
     if (IsValid(PreviousWeapon))
     {
         PreviousWeapon->OnAmmoChanged.Unbind();
+
+        if (PreviousWeapon != ActiveDeathMachine)
+        {
+            PreviousWeapon->SetActorHiddenInGame(true);
+        }
     }
 
     if (!CurrentWeapon) return;
 
+    if (PendingWeaponForSwap == CurrentWeapon)
+    {
+        PendingWeaponForSwap = nullptr;
+    }
+
+    CurrentWeapon->SetActorHiddenInGame(false);
     AttachWeaponToMesh(CurrentWeapon);
 
     if (IsLocallyControlled())
     {
         if (!CurrentWeapon->IsDataInitialized())
         {
-            GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Red, "Sync First Weapon Ammo!");
+            if (GEngine)
+            {
+                GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Red, "Sync First Weapon Ammo!");
+            }
             CurrentWeapon->InitializeWeaponData();
         }
 
@@ -755,9 +769,14 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
     if (!SwapWeaponMontage || !CurrentWeapon || bIsDead) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
     if (IsDrinkingPerk() || IsDowned()) return;
-    if (PendingWeaponForSwap != nullptr) return;
+
+    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (!AnimInstance) return;
 
     ABaseWeapon* NextWeapon = TargetWeapon;
+
+    // بۆ YY: ئەگەر لە ناوەڕاستی Swap دابین، لەسەر بنەمای چەکە چاوەڕوانکراوەکە چەکی دواتر دەدۆزینەوە
+    ABaseWeapon* ReferenceWeapon = IsValid(PendingWeaponForSwap) ? PendingWeaponForSwap : CurrentWeapon;
 
     if (!NextWeapon)
     {
@@ -765,26 +784,59 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
         {
             NextWeapon = IsValid(PreDeathMachineWeapon) ? PreDeathMachineWeapon : PrimaryWeapon;
         }
-        else if (CurrentWeapon == PrimaryWeapon)
+        else if (ReferenceWeapon == PrimaryWeapon)
         {
             NextWeapon = IsValid(SecondaryWeapon) ? SecondaryWeapon : ThirdWeapon;
         }
-        else if (CurrentWeapon == SecondaryWeapon)
+        else if (ReferenceWeapon == SecondaryWeapon)
         {
             NextWeapon = IsValid(ThirdWeapon) ? ThirdWeapon : PrimaryWeapon;
         }
-        else if (CurrentWeapon == ThirdWeapon)
+        else if (ReferenceWeapon == ThirdWeapon)
         {
             NextWeapon = IsValid(PrimaryWeapon) ? PrimaryWeapon : SecondaryWeapon;
         }
     }
 
-    if (!IsValid(NextWeapon) || NextWeapon == CurrentWeapon) return;
+    if (!IsValid(NextWeapon)) return;
 
-    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
-    if (!AnimInstance) return;
+   
+    bool bIsYYCancel = (PendingWeaponForSwap != nullptr && NextWeapon == CurrentWeapon);
+
+    if (!bIsYYCancel)
+    {
+        if (GetWorld()->GetTimeSeconds() - PendingSwapStartTime < 0.04f) return;
+    }
+
+    PendingSwapStartTime = GetWorld()->GetTimeSeconds();
+
+    if (PendingWeaponForSwap != nullptr && NextWeapon == CurrentWeapon)
+    {
+        FOnMontageEnded EmptyDelegate;
+        AnimInstance->Montage_SetEndDelegate(EmptyDelegate, SwapWeaponMontage);
+
+        if (IsValid(PendingWeaponForSwap) && PendingWeaponForSwap != CurrentWeapon)
+        {
+            PendingWeaponForSwap->SetActorHiddenInGame(true);
+        }
+
+        PendingWeaponForSwap = nullptr;
+
+        CurrentWeapon->SetActorHiddenInGame(false);
+        AttachWeaponToMesh(CurrentWeapon);
+
+        AnimInstance->Montage_Stop(0.15f, SwapWeaponMontage);
+
+        Server_SwapWeapon(CurrentWeapon);
+        return;
+    }
+
+    if (NextWeapon == ReferenceWeapon) return;
 
     float TargetPlayRate = GetSwapPlayRate();
+
+    FOnMontageEnded EmptyDelegate;
+    AnimInstance->Montage_SetEndDelegate(EmptyDelegate, SwapWeaponMontage);
 
     if (AnimInstance->Montage_Play(SwapWeaponMontage, TargetPlayRate) <= 0.0f)
     {
@@ -794,6 +846,11 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
     if (bIsFireButtonHold) CurrentWeapon->StopFire();
     if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
     if (IsSprinting()) StopSprint();
+
+    if (IsValid(PendingWeaponForSwap) && PendingWeaponForSwap != CurrentWeapon)
+    {
+        PendingWeaponForSwap->SetActorHiddenInGame(true);
+    }
 
     PendingWeaponForSwap = NextWeapon;
 
@@ -809,8 +866,17 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
     if (!SwapWeaponMontage || !CurrentWeapon || bIsDead) return;
     if (IsDrinkingPerk() || IsDowned()) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
+    if (!IsValid(NewWeapon)) return;
 
-    if (!IsValid(NewWeapon) || NewWeapon == CurrentWeapon || PendingWeaponForSwap != nullptr)
+    // ئەگەر یاریزانەکە YY Cancelـی کرد و گەڕایەوە سەر هەمان CurrentWeapon
+    if (PendingWeaponForSwap != nullptr && NewWeapon == CurrentWeapon)
+    {
+        PendingWeaponForSwap = nullptr;
+        Multicast_PlaySwapMontage(0.0f); // یان ئەگەر لە ناو Multicastـەکەتدا 0 مۆنتاژەکە ڕادەگرێت
+        return;
+    }
+
+    if (NewWeapon == CurrentWeapon || NewWeapon == PendingWeaponForSwap)
     {
         return;
     }
@@ -865,6 +931,8 @@ void AHama::Server_CompleteWeaponSwap_Implementation()
     if (TimeElapsed < (AnimDuration * 0.15f))
     {
         PendingWeaponForSwap = nullptr;
+        // زۆر گرنگ: ئەگەر سێرڤەر گۆڕینەکەی ڕەتکردەوە، دەبێت CurrentWeapon بنێرێتەوە بۆ Client تا مێشەکەی چاک ببێتەوە
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
         return;
     }
 
@@ -876,6 +944,7 @@ void AHama::CompleteWeaponSwap()
     if (!HasAuthority() || !PendingWeaponForSwap) return;
 
     ABaseWeapon* OldWeapon = CurrentWeapon;
+    const bool bWasDeathMachine = (OldWeapon && OldWeapon == ActiveDeathMachine);
 
     if (IsValid(OldWeapon))
     {
@@ -883,7 +952,7 @@ void AHama::CompleteWeaponSwap()
         if (OldWeapon->IsReloading()) OldWeapon->CancelReload();
     }
 
-    if (OldWeapon && OldWeapon == ActiveDeathMachine)
+    if (bWasDeathMachine)
     {
         bIsDeathMachineActive = false;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
@@ -891,23 +960,18 @@ void AHama::CompleteWeaponSwap()
         GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
         GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
 
-        OnRep_CurrentWeapon(OldWeapon);
-
-        OldWeapon->Destroy();
         ActiveDeathMachine = nullptr;
 
         PreDeathMachineWeapon = nullptr;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
-
     }
     else if (IsValid(OldWeapon))
     {
         OldWeapon->SetActorHiddenInGame(true);
         OldWeapon->SetActorEnableCollision(false);
-
-        OnRep_CurrentWeapon(OldWeapon);
     }
 
+    // ١. سەرەتا CurrentWeapon دەگۆڕین بۆ چەکە نوێیەکە
     CurrentWeapon = PendingWeaponForSwap;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
@@ -917,11 +981,32 @@ void AHama::CompleteWeaponSwap()
     ABaseWeapon* NewlyEquippedWeapon = PendingWeaponForSwap;
     PendingWeaponForSwap = nullptr;
 
+    // ٢. ئێستا کە CurrentWeapon بووە بە چەکە نوێیەکە، بە دەست OnRep بانگ دەکەین بۆ Host!
+    OnRep_CurrentWeapon(OldWeapon);
+
+    // ٣. ئەگەر چەکە کۆنەکە DeathMachine بوو، دوای Unbind بوونی لە ناو OnRep دەیسڕینەوە
+    if (bWasDeathMachine && IsValid(OldWeapon))
+    {
+        OldWeapon->Destroy();
+    }
+
     if (IsValid(NewlyEquippedWeapon) && NewlyEquippedWeapon->NeedsAmmo() && NewlyEquippedWeapon->CanReload())
     {
         NewlyEquippedWeapon->Reload();
     }
 }
+
+void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (AnimInstance && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+    {
+        return;
+    }
+
+    PendingWeaponForSwap = nullptr;
+}
+
 
 void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration)
 {
@@ -1013,19 +1098,6 @@ void AHama::Client_EndDeathMachineAndSwap_Implementation(ABaseWeapon* WeaponToEq
     if (!IsValid(WeaponToEquip)) return;
 
     SwapWeapon(WeaponToEquip);
-}
-
-void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
-{
-    if (IsLocallyControlled())
-    {
-        PendingWeaponForSwap = nullptr;
-
-        if (bInterrupted)
-        {
-            Server_CancelSwap();
-        }
-    }
 }
 
 void AHama::Server_CancelSwap_Implementation()

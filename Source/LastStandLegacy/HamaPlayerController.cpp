@@ -6,7 +6,6 @@
 #include "Hama.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "LastStandLegacyGameState.h"
 #include "HamaPlayerState.h"
 #include "HamaMainWidget.h"
