@@ -293,6 +293,8 @@ void UHealthComponent::DownPlayer()
         OwnerCharacter->OnPlayerDowned();
     }
 
+    OnDownStateChanged.Broadcast(true);
+
     if (UWorld* World = GetWorld())
     {
         FTimerManager& TM = World->GetTimerManager();
@@ -364,6 +366,8 @@ void UHealthComponent::Revive()
 
     SetBeingRevived(false, nullptr, 0.0f, true);
 
+    OnDownStateChanged.Broadcast(false);
+
     if (OwnerComponent)
     {
         OwnerComponent->SetDowned(false);
@@ -401,6 +405,8 @@ void UHealthComponent::HandlePlayerDeath()
     PausedBleedOutRemaining = 0.0f;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
+
+    OnDownStateChanged.Broadcast(false);
 
     if (OwnerComponent)
     {
