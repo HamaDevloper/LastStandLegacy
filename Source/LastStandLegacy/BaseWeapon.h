@@ -147,7 +147,6 @@ protected:
     virtual void OnRep_Owner() override;
     void UpdateCachedReferences();
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
     float CalculateDamageBySurface(const FHitResult& Hit);
 
 public:

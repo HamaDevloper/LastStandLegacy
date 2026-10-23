@@ -226,17 +226,20 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
         Ammo->SetText(FText::GetEmpty());
         if (AmmoWarningText)
         {
-            AmmoWarningText->SetVisibility(ESlateVisibility::Hidden);
+            Ammo->SetVisibility(ESlateVisibility::Collapsed);
+            AmmoWarningText->SetVisibility(ESlateVisibility::Collapsed);
         }
         return;
     }
+
+    Ammo->SetVisibility(ESlateVisibility::HitTestInvisible);
 
     if (CachedHamaChar->GetDeathMachine())
     {
         static const FText InfinityText = LOCTEXT("InfinityAmmo", "\u221E / \u221E");
         Ammo->SetText(InfinityText);
 
-        if (AmmoWarningText) AmmoWarningText->SetVisibility(ESlateVisibility::Hidden);
+        if (AmmoWarningText) AmmoWarningText->SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
 
@@ -247,6 +250,7 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
     Ammo->SetText(FText::Format(AmmoFormatPattern, CurrentText, ReserveText));
 
     ABaseWeapon* CurrentWeapon = CachedHamaChar->GetCurrentWeapon();
+
     if (AmmoWarningText && CurrentWeapon)
     {
         const int32 MaxClipSize = CurrentWeapon->GetMaxClipAmmo();
@@ -272,7 +276,7 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
         }
         else
         {
-            AmmoWarningText->SetVisibility(ESlateVisibility::Hidden);
+            AmmoWarningText->SetVisibility(ESlateVisibility::Collapsed);
         }
     }
 }

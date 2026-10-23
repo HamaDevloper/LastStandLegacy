@@ -622,10 +622,6 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
     {
         if (!CurrentWeapon->IsDataInitialized())
         {
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Red, "Sync First Weapon Ammo!");
-            }
             CurrentWeapon->InitializeWeaponData();
         }
 
@@ -1651,27 +1647,10 @@ void AHama::CrouchActionPressed(const FInputActionInstance& Instance)
 
     if (IsSprinting())
     {
-        if (Instance.GetElapsedTime() >= 0.25f)
+        if (!bHasPerformedDive && Instance.GetElapsedTime() >= 0.25f)
         {
             bHasPerformedDive = true;
             StartDiving();
-        }
-
-        return;
-    }
-
-    if (Instance.GetTriggerEvent() == ETriggerEvent::Started)
-    {
-        if (HamaMovementComponent)
-        {
-            if (HamaMovementComponent->IsCrouching())
-            {
-                UnCrouch();
-            }
-            else
-            {
-                Crouch();
-            }
         }
     }
 }
@@ -1679,13 +1658,40 @@ void AHama::CrouchActionPressed(const FInputActionInstance& Instance)
 void AHama::CrouchActionReleased(const FInputActionInstance& Instance)
 {
     bIsCrouchButtonHold = false;
-    bHasPerformedDive = false;
 
-    if (!HamaComponent) return;
-
-    if (IsSprinting() && Instance.GetElapsedTime() < 0.25f && !HamaComponent->IsDiving())
+    if (bHasPerformedDive)
     {
-        StartSlideRoutine();
+        bHasPerformedDive = false;
+        return;
+    }
+
+    if (GetCharacterMovement()->IsFalling()) return;
+
+    if (!HamaComponent || HamaComponent->IsSlide() || HamaComponent->IsDowned() || HamaComponent->IsDiving())
+    {
+        return;
+    }
+
+    if (Instance.GetElapsedTime() < 0.25f)
+    {
+        if (IsSprinting())
+        {
+            StartSlideRoutine();
+        }
+        else
+        {
+            if (HamaMovementComponent)
+            {
+                if (HamaMovementComponent->IsCrouching())
+                {
+                    UnCrouch();
+                }
+                else
+                {
+                    Crouch();
+                }
+            }
+        }
     }
 }
 
