@@ -190,6 +190,21 @@ void AHama::PossessedBy(AController* NewController)
     StartCrossHairTimer();
 }
 
+void AHama::UnPossessed()
+{
+    Super::UnPossessed();
+
+    // پاککردنەوەی فیزیک و هێزی مۆمێنتەم
+    if (UHamaMovementComponent* MoveComp = HamaMovementComponent)
+    {
+        MoveComp->StopMovementImmediately();
+        MoveComp->ClearAccumulatedForces();
+    }
+
+    // بەتاڵکردنەوەی هەر ئینپوتێکی Move کە پێش مردن داگیرابێت
+    ConsumeMovementInputVector();
+}
+
 void AHama::OnRep_Controller()
 {
     Super::OnRep_Controller();
@@ -266,8 +281,10 @@ void AHama::Tick(float DeltaTime)
 
 void AHama::OnInteractSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, FString::Printf(TEXT("a")));
     if (OtherActor && OtherActor != this && OtherActor->Implements<UInteractInterface>())
     {
+        GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, FString::Printf(TEXT("as")));
         NearbyInteractablesCount++;
         if (NearbyInteractablesCount >= 1)
         {
@@ -292,7 +309,7 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
 
 void AHama::CheckForInteractables()
 {
-    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, TEXT("Checking for interactables..."));
+    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, FString::Printf(TEXT("NearbyInteractablesCount: %d"), NearbyInteractablesCount));
     if (!IsLocallyControlled() || !OwnerController) return;
     if (HamaComponent && HamaComponent->IsDowned())
     {
@@ -2360,7 +2377,7 @@ bool AHama::IsMeleeing() const
 void AHama::MeleeActionPressed()
 {
     if (IsMeleeing() || IsDrinkingPerk()) return;
-
+    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess())  return;
     if (bIsAimButtonHold) AimActionReleased();
     if (IsSprinting()) StopSprint();
 
@@ -2374,7 +2391,8 @@ void AHama::MeleeActionPressed()
 
 void AHama::Server_ExecuteMelee_Implementation()
 {
-    if (IsDrinkingPerk()) return;
+    if (IsMeleeing() || IsDrinkingPerk()) return;
+    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess())  return;
 
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     if (CurrentTime - LastServerMeleeTime < (MeleeCooldown * 0.8f))
@@ -2397,7 +2415,7 @@ void AHama::Multicast_ExecuteMelee_Implementation()
 
 void AHama::PerformMeleeHitDetection()
 {
-    if (!IsLocallyControlled() && !HasAuthority()) return;
+    if (!IsLocallyControlled()) return;
     if (!GetMesh()) return;
 
     const FVector SocketLocation = GetMesh()->GetSocketLocation(MeleeSocketName);
@@ -2478,7 +2496,6 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
         return;
     }
 
-    // 🔴 RETURN 4: دووری لە ڕادەبەدەرە (Distance Exploit)
     const FVector PlayerLoc = GetActorLocation();
     const float MaxAllowedDistanceSq = FMath::Square(MeleeRange + MeleeRadius + 100.f);
     const float ActualDistSq = FVector::DistSquared(PlayerLoc, HitLocation);
@@ -2492,7 +2509,6 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
         return;
     }
 
-    // Line Trace parameters setup
     FHitResult WallHit;
     FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(MeleeLoS), false, this);
     TraceParams.AddIgnoredActor(HitActor);
@@ -2518,7 +2534,6 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
     }
 #endif
 
-    // 🔴 RETURN 5: دیواری لە نێواندا هەیە (Wallhack Reject)
     if (bBlockedByWall)
     {
         if (GEngine)
@@ -2529,7 +2544,6 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
         return;
     }
 
-    // 🟢 SUCCESS: سەرکەوتوو بوو و دیمەجەکە دەدرێت
     if (GEngine)
     {
         GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("[Server Success]: Valid Hit on %s"), *HitActor->GetName()));

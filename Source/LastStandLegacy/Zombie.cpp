@@ -56,22 +56,17 @@ void AZombie::BeginPlay()
     Super::BeginPlay();
 
     CachedMovement = GetCharacterMovement();
-   
+
     if (CachedMovement)
     {
         CachedMovement->bEnablePhysicsInteraction = false;
         CachedMovement->bUseRVOAvoidance = false;
-
         CachedMovement->bSweepWhileNavWalking = false;
-        CachedMovement->bAlwaysCheckFloor = false; 
-
+        CachedMovement->bAlwaysCheckFloor = false;
         CachedMovement->bPushForceScaledToMass = false;
         CachedMovement->bScalePushForceToVelocity = false;
-
-       
-        CachedMovement->MaxStepHeight = 35.f; 
+        CachedMovement->MaxStepHeight = 35.f;
         CachedMovement->SetWalkableFloorAngle(45.f);
-
         CachedMovement->bOrientRotationToMovement = true;
         CachedMovement->RotationRate = FRotator(0.f, 540.f, 0.f);
         CachedMovement->NetworkSimulatedSmoothLocationTime = 0.06f;
@@ -80,7 +75,10 @@ void AZombie::BeginPlay()
 
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
-        CachedCapsuleCollisionEnabled = Capsule->GetCollisionEnabled();
+        const ECollisionEnabled::Type CurrentCapCol = Capsule->GetCollisionEnabled();
+        CachedCapsuleCollisionEnabled = (CurrentCapCol != ECollisionEnabled::NoCollision)
+            ? CurrentCapCol
+            : ECollisionEnabled::QueryAndPhysics;
     }
 
     if (USkeletalMeshComponent* MeshComp = GetMesh())
@@ -88,7 +86,13 @@ void AZombie::BeginPlay()
         CachedMeshRelativeLocation = MeshComp->GetRelativeLocation();
         CachedMeshRelativeRotation = MeshComp->GetRelativeRotation();
         CachedMeshCollisionProfile = MeshComp->GetCollisionProfileName();
-        CachedMeshCollisionEnabled = MeshComp->GetCollisionEnabled();
+        CachedMeshObjectType = MeshComp->GetCollisionObjectType();
+        CachedMeshCollisionResponses = MeshComp->GetCollisionResponseToChannels();
+
+        const ECollisionEnabled::Type CurrentMeshCol = MeshComp->GetCollisionEnabled();
+        CachedMeshCollisionEnabled = (CurrentMeshCol != ECollisionEnabled::NoCollision)
+            ? CurrentMeshCol
+            : ECollisionEnabled::QueryOnly;
 
         if (!IsRunningDedicatedServer())
         {
@@ -97,7 +101,7 @@ void AZombie::BeginPlay()
             MeshComp->bCastFarShadow = false;
             MeshComp->SetGenerateOverlapEvents(false);
         }
-        else 
+        else
         {
             MeshComp->bNoSkeletonUpdate = true;
             MeshComp->SetComponentTickEnabled(false);
@@ -216,8 +220,8 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
     const float HalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 88.f;
 
     FHitResult HitFloor;
-    FVector TraceStart = SpawnLocation + FVector(0.f, 0.f, 50.f);
-    FVector TraceEnd = SpawnLocation - FVector(0.f, 0.f, 300.f);
+    const FVector TraceStart = SpawnLocation + FVector(0.f, 0.f, 50.f);
+    const FVector TraceEnd = SpawnLocation - FVector(0.f, 0.f, 300.f);
     FCollisionQueryParams FloorParams(SCENE_QUERY_STAT(ZombieFloorSnap), false, this);
 
     if (GetWorld()->LineTraceSingleByChannel(HitFloor, TraceStart, TraceEnd, ECC_WorldStatic, FloorParams))
@@ -227,6 +231,14 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
 
     SetActorLocationAndRotation(FinalSpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
 
+    bIsDead = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
+
+    PoolState = EZombiePoolState::Alive;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
+
+    ApplyStateVisualsAndPhysics(EZombiePoolState::Alive);
+
     if (CachedMovement)
     {
         CachedMovement->bJustTeleported = true;
@@ -235,16 +247,8 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
 
     SetStatsForRound(CurrentRound);
 
-    bIsDead = false;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
-
-    PoolState = EZombiePoolState::Alive;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
-
     SetReplicateMovement(true);
     SetNetUpdateFrequency(16.f);
-
-    ApplyStateVisualsAndPhysics(EZombiePoolState::Alive);
 
     if (CachedDirector && !bRegisteredWithDirector)
     {
@@ -308,7 +312,7 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
                 CharacterMesh->PutAllRigidBodiesToSleep();
             }
             CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-            CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::KeepRelativeTransform);
+            CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
             CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
         }
     }
@@ -323,13 +327,25 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
 
         if (CharacterMesh)
         {
+            CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+            CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
+
             if (!IsRunningDedicatedServer())
             {
                 CharacterMesh->SetSimulatePhysics(false);
                 CharacterMesh->ResetAllBodiesSimulatePhysics();
                 CharacterMesh->PutAllRigidBodiesToSleep();
-                CharacterMesh->SetCollisionProfileName(CachedMeshCollisionProfile);
+
+                // گەڕاندنەوەی ڕاستەقینەی پرۆفایل و هەموو کەناڵە تایبەتەکان (وەک ECC_Melee)
+                if (CachedMeshCollisionProfile != UCollisionProfile::CustomCollisionProfileName && CachedMeshCollisionProfile != TEXT("Custom"))
+                {
+                    CharacterMesh->SetCollisionProfileName(CachedMeshCollisionProfile);
+                }
+                CharacterMesh->SetCollisionObjectType(CachedMeshObjectType);
+                CharacterMesh->SetCollisionResponseToChannels(CachedMeshCollisionResponses);
                 CharacterMesh->SetCollisionEnabled(CachedMeshCollisionEnabled);
+
+                CharacterMesh->RecreatePhysicsState();
 
                 if (UAnimInstance* AnimInst = CharacterMesh->GetAnimInstance())
                 {
@@ -339,15 +355,6 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
             else
             {
                 CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-            }
-
-            CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-            CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
-
-            if (!IsRunningDedicatedServer())
-            {
-                CharacterMesh->RefreshBoneTransforms();
-                CharacterMesh->UpdateComponentToWorld();
             }
         }
 
@@ -400,6 +407,8 @@ void AZombie::FinalizePoolActivationVisuals()
 {
     if (PoolState != EZombiePoolState::Alive || bIsDead) return;
 
+    SetActorHiddenInGame(false);
+
     if (CachedMovement)
     {
         CachedMovement->bJustTeleported = true;
@@ -418,9 +427,8 @@ void AZombie::FinalizePoolActivationVisuals()
             CharacterMesh->UpdateComponentToWorld();
         }
     }
-
-    SetActorHiddenInGame(false);
 }
+
 
 void AZombie::SetStatsForRound(int32 CurrentRound)
 {

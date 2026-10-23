@@ -50,7 +50,7 @@ void ABasePowerUp::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* O
     if (!HasAuthority() || bIsConsumed) return;
 
     AHama* Player = Cast<AHama>(OtherActor);
-    if (!Player || Player->IsDowned() || Player->bIsDead) return;
+    if (!Player || Player->bIsDead) return;
 
     float DistSq = FVector::DistSquared(GetActorLocation(), Player->GetActorLocation());
     if (DistSq > FMath::Square(250.0f)) return;

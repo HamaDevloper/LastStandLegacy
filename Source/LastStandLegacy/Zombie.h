@@ -40,7 +40,6 @@ public:
     UPROPERTY(Transient)
     FVector LastTargetLocation = FVector::ZeroVector;
 
-    // فەنکشنی نوێی لێدان (Anti-Ghost Hit) کە دەبێت لە ئەنیمەیشنەوە بانگ بکرێت
     UFUNCTION(BlueprintCallable, Category = "Zombie|Combat")
     void ExecuteMeleeHit();
 
@@ -144,6 +143,8 @@ private:
     FVector CachedMeshRelativeLocation = FVector::ZeroVector;
     FRotator CachedMeshRelativeRotation = FRotator::ZeroRotator;
     FName CachedMeshCollisionProfile = NAME_None;
+    ECollisionChannel CachedMeshObjectType = ECC_Pawn;
+    FCollisionResponseContainer CachedMeshCollisionResponses;
     ECollisionEnabled::Type CachedMeshCollisionEnabled = ECollisionEnabled::QueryOnly;
     ECollisionEnabled::Type CachedCapsuleCollisionEnabled = ECollisionEnabled::QueryAndPhysics;
 

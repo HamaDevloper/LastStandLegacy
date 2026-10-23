@@ -348,6 +348,7 @@ protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual void Landed(const FHitResult& Hit) override;
     virtual void PossessedBy(AController* NewController) override;
+    virtual void UnPossessed() override;
     virtual void OnRep_Controller() override;
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, class AActor* DamageCauser) override;
 
