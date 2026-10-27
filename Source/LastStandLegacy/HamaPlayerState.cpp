@@ -19,6 +19,7 @@ void AHamaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     FDoRepLifetimeParams SharedParams;
     SharedParams.bIsPushBased = true;
 
+    SharedParams.Condition = COND_None;
     DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Points, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Kills, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, AssignedRole, SharedParams);
@@ -70,7 +71,7 @@ void AHamaPlayerState::AddPoints(int32 Amount)
 {
     if (HasAuthority() && Amount > 0)
     {
-        Points = FMath::Clamp(Points += Amount, 0, MaxPointToEarn);
+        Points = FMath::Clamp(Points + Amount, 0, MaxPointToEarn);
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
 
         OnRep_Points();

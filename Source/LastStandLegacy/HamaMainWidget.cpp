@@ -75,7 +75,6 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
 {
     if (CachedHamaChar.Get() == InHama) return;
 
-    // پاککردنەوەی کۆنەکان
     if (CachedHamaChar.IsValid())
     {
         if (UThrowableComponent* OldThrowableComp = CachedHamaChar->FindComponentByClass<UThrowableComponent>())
@@ -101,7 +100,6 @@ void UHamaMainWidget::BindCharacter(AHama* InHama)
 
     if (!CachedHamaChar.IsValid()) return;
 
-    // بەستنەوەی ڕووداوەکانی کارەکتەر
     CachedHamaChar->OnAmmoUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleAmmoUpdate);
     CachedHamaChar->OnInteractUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleInteractUpdate);
     CachedHamaChar->OnCrosshairUpdateEvent.BindUObject(this, &UHamaMainWidget::HandleCrosshairUpdate);

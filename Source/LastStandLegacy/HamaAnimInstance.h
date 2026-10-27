@@ -5,12 +5,12 @@
 #include "HamaAnimInstance.generated.h"
 
 class AHama;
+class UHamaMovementComponent;
 class ABaseWeapon;
 class UAnimSequence;
-class UHamaMovementComponent;
 class UAimOffsetBlendSpace1D;
 
-UCLASS()
+UCLASS(Transient, Blueprintable)
 class LASTSTANDLEGACY_API UHamaAnimInstance : public UAnimInstance
 {
     GENERATED_BODY()
@@ -19,64 +19,77 @@ public:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
     virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
+
     void SetEquippedWeapon(ABaseWeapon* NewWeapon);
 
-private:
-    UPROPERTY()
-    TObjectPtr<AHama> HamaCharacter;
-
-    UPROPERTY()
-    TObjectPtr<UHamaMovementComponent> MovementComponent;
-
-    UPROPERTY()
-    TObjectPtr<ABaseWeapon> EquippedWeapon;
-
-    FRotator CachedActorRotation;
-    bool bCachedHasAcceleration;
-
 protected:
-    // ── Weapon Data ───────────────────────────────
-    UPROPERTY(BlueprintReadOnly, Category = "Weapon Data")
-    TObjectPtr<UAnimSequence> CurrentWeaponIdle;
+    // =========================================================================
+    // 1. Pointers & References (UE5 TObjectPtr Standard)
+    // =========================================================================
 
-    UPROPERTY(BlueprintReadOnly, Category = "Weapon Data")
-    TObjectPtr<UAnimSequence> CurrentWeaponSprint;
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|References")
+    TObjectPtr<AHama> HamaCharacter = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Weapon Data")
-    TObjectPtr<UAnimSequence> CurrentWeaponAim;
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|References")
+    TObjectPtr<UHamaMovementComponent> MovementComponent = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Animation|Aiming")
-    TObjectPtr<UAimOffsetBlendSpace1D> CurrentAimOffset;
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Weapon")
+    TObjectPtr<ABaseWeapon> EquippedWeapon = nullptr;
 
-    // ── State Data ────────────────────────────────
-    UPROPERTY(BlueprintReadOnly, Category = "State Data")
-    bool bIsSprinting = false;
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Weapon")
+    TObjectPtr<UAnimSequence> CurrentWeaponIdle = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, Category = "State Data")
-    bool bIsAiming = false;
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Weapon")
+    TObjectPtr<UAnimSequence> CurrentWeaponSprint = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, Category = "State Data")
-    bool bIsDowned = false;
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Weapon")
+    TObjectPtr<UAnimSequence> CurrentWeaponAim = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, Category = "State Data")
-    FVector PlayerVelocity;
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Weapon")
+    TObjectPtr<UAimOffsetBlendSpace1D> CurrentAimOffset = nullptr;
 
-    // ── Movement Data ─────────────────────────────
-    UPROPERTY(BlueprintReadOnly, Category = "Movement Data")
+    // =========================================================================
+    // 2. Vectors & Rotators (Aligned together for CPU Cache efficiency)
+    // =========================================================================
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Movement")
+    FVector PlayerVelocity = FVector::ZeroVector;
+
+    FRotator CachedActorRotation = FRotator::ZeroRotator;
+    FRotator CachedAimRotation = FRotator::ZeroRotator;
+
+    // =========================================================================
+    // 3. Floats (4-Byte Aligned)
+    // =========================================================================
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Movement")
     float GroundSpeed = 0.f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Movement Data")
-    bool bShouldMove = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Movement Data")
-    bool bIsFalling = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Movement Data")
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Movement")
     float Direction = 0.f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Animation|Aim")
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Aim")
     float Pitch = 0.f;
 
-private:
-    float CachedPitch = 0.f;
+    // =========================================================================
+    // 4. Booleans (Packed at the end to prevent struct padding / memory holes)
+    // =========================================================================
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|Movement")
+    bool bShouldMove = false;
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|States")
+    bool bIsSprinting = false;
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|States")
+    bool bIsFalling = false;
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|States")
+    bool bIsDowned = false;
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Hama|States")
+    bool bIsAiming = false;
+
+    bool bCachedHasAcceleration = false;
+    bool bCachedWantsToSprint = false;
 };

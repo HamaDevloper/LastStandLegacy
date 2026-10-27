@@ -666,7 +666,8 @@ public:
         TArray<TObjectPtr<ABaseWeapon>> EquippedWeapons;
 public:
     bool SetCanInteract() const;
-
-
     void ClearInteractFocus();
+
+protected:
+    void UpdateAnimInstanceWeapon();
 };

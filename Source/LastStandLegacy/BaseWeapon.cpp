@@ -85,6 +85,8 @@ void ABaseWeapon::InitializeWeaponData()
         MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, Damage, this);
     }
 
+    OnWeaponDataInitialized.Broadcast();
+
     if (!IsRunningDedicatedServer() && WeaponMesh && !CurrentWeaponData.WeaponMeshAsset.IsNull())
     {
         USkeletalMesh* Mesh = CurrentWeaponData.WeaponMeshAsset.Get();

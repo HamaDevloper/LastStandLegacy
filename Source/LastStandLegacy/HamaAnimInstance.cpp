@@ -2,6 +2,7 @@
 #include "Hama.h"
 #include "BaseWeapon.h"
 #include "HamaMovementComponent.h"
+//#include "Animation/AimOffsetBlendSpace1D.h"
 
 void UHamaAnimInstance::NativeInitializeAnimation()
 {
@@ -11,6 +12,14 @@ void UHamaAnimInstance::NativeInitializeAnimation()
     if (HamaCharacter)
     {
         MovementComponent = Cast<UHamaMovementComponent>(HamaCharacter->GetCharacterMovement());
+
+        if (ABaseWeapon* StartingWeapon = HamaCharacter->GetCurrentWeapon())
+        {
+            if (StartingWeapon->IsDataInitialized())
+            {
+                SetEquippedWeapon(StartingWeapon);
+            }
+        }
     }
 }
 
@@ -49,37 +58,39 @@ void UHamaAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         if (!MovementComponent) return;
     }
 
-    ABaseWeapon* CurrentWeapon = HamaCharacter->GetCurrentWeapon();
-    if(CurrentWeapon != EquippedWeapon || (EquippedWeapon && CurrentWeaponIdle != CurrentWeapon->GetWeaponIdle()))
+    CachedActorRotation = HamaCharacter->GetActorRotation();
+    CachedAimRotation = HamaCharacter->GetBaseAimRotation();
+    PlayerVelocity = HamaCharacter->GetVelocity();
+
+    if (HamaCharacter->GetLocalRole() == ROLE_SimulatedProxy)
     {
-        SetEquippedWeapon(CurrentWeapon);
+        bCachedHasAcceleration = PlayerVelocity.SizeSquared2D() > 9.f;
+    }
+    else
+    {
+        bCachedHasAcceleration = !MovementComponent->GetCurrentAcceleration().IsNearlyZero();
     }
 
-    CachedActorRotation = HamaCharacter->GetActorRotation();
-    
-    const FRotator AimRotation = HamaCharacter->GetBaseAimRotation();
-    const FRotator DeltaRot = (AimRotation - CachedActorRotation).GetNormalized();
-    CachedPitch = DeltaRot.Pitch;
-
-    PlayerVelocity = HamaCharacter->GetVelocity();
-    bCachedHasAcceleration = !MovementComponent->GetCurrentAcceleration().IsNearlyZero();
-
-    bIsSprinting = MovementComponent->bSprinting;
+    bCachedWantsToSprint = MovementComponent->bSprinting;
     bIsFalling = MovementComponent->IsFalling();
     bIsDowned = MovementComponent->bDowned;
+    bIsAiming = MovementComponent->bAiming;
 }
 
 void UHamaAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
     Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 
-    Pitch = FMath::Clamp(CachedPitch, -90.f, 90.f);
+    const float DeltaPitch = FRotator::NormalizeAxis(CachedAimRotation.Pitch - CachedActorRotation.Pitch);
+    Pitch = FMath::Clamp(DeltaPitch, -90.f, 90.f);
 
     const FVector2D Velocity2D(PlayerVelocity.X, PlayerVelocity.Y);
     const float SpeedSq = Velocity2D.SizeSquared();
 
     GroundSpeed = FMath::Sqrt(SpeedSq);
     bShouldMove = (SpeedSq > 9.f) && bCachedHasAcceleration;
+
+    bIsSprinting = bCachedWantsToSprint && bShouldMove && !bIsFalling && !bIsDowned;
 
     if (bShouldMove)
     {
@@ -94,9 +105,5 @@ void UHamaAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
         const float RightDot = FVector2D::DotProduct(NormalVelocity, Right2D);
 
         Direction = FMath::RadiansToDegrees(FMath::Atan2(RightDot, ForwardDot));
-    }
-    else
-    {
-        Direction = 0.f;
     }
 }

@@ -546,6 +546,7 @@ void AHama::CreateDefaultWeapon()
 
         CurrentWeapon->EquipWeapon(this);
         OnRep_CurrentWeapon();
+        UpdateAnimInstanceWeapon();
     }
 }
 
@@ -645,11 +646,23 @@ void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
     }
 }
 
+void AHama::UpdateAnimInstanceWeapon()
+{
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        if (UHamaAnimInstance* HamaAnim = Cast<UHamaAnimInstance>(MeshComp->GetAnimInstance()))
+        {
+            HamaAnim->SetEquippedWeapon(CurrentWeapon);
+        }
+    }
+}
+
 void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 {
     if (IsValid(PreviousWeapon))
     {
         PreviousWeapon->OnAmmoChanged.Unbind();
+        PreviousWeapon->OnWeaponDataInitialized.RemoveAll(this);
 
         if (PreviousWeapon != ActiveDeathMachine)
         {
@@ -659,6 +672,7 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 
     if (!CurrentWeapon)
     {
+        UpdateAnimInstanceWeapon();
         if (IsLocallyControlled())
         {
             HandleAmmoChanged(0, 0);
@@ -674,13 +688,26 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
     CurrentWeapon->SetActorHiddenInGame(false);
     AttachWeaponToMesh(CurrentWeapon);
 
-    if (IsLocallyControlled())
+    // =========================================================================
+    // چارەسەری سەرەکی: هەموو لایەک دەبێت داتای چەکیان هەبێت (نەک تەنها Local)
+    // =========================================================================
+    if (!CurrentWeapon->IsDataInitialized())
     {
-        if (!CurrentWeapon->IsDataInitialized())
+        // ئەگەر چەکەکە هێشتا داتاکەی نەگەیشتووە لە نێتۆرکەوە، چاوەڕێ بکە تا OnRep_WeaponRowName لێدەدات
+        CurrentWeapon->OnWeaponDataInitialized.AddUObject(this, &AHama::UpdateAnimInstanceWeapon);
+
+        if (IsLocallyControlled())
         {
             CurrentWeapon->InitializeWeaponData();
         }
+    }
+    else
+    {
+        UpdateAnimInstanceWeapon();
+    }
 
+    if (IsLocallyControlled())
+    {
         CurrentWeapon->OnAmmoChanged.Unbind();
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
@@ -2426,7 +2453,11 @@ void AHama::MeleeActionPressed()
     if (IsSprinting()) StopSprint();
     if (CurrentWeapon) CurrentWeapon->StopFire();
     if (CurrentWeapon && CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
-    if (bIsAimButtonHold) OnAim(false);
+    if (bIsAimButtonHold)
+    {
+        HamaComponent->SetAiming(false);
+        OnAim(false);
+    }
 
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
     if (!AnimInstance) return;
@@ -2450,7 +2481,8 @@ void AHama::OnMeleeMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
     {
         if (!bInterrupted && bIsAimButtonHold)
         {
-            OnAim(true);
+                HamaComponent->SetAiming(true);
+                OnAim(true);
         }
     }
 }
@@ -2700,7 +2732,7 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
         return;
     }
 
-   /* FHitResult Hit;
+    FHitResult Hit;
     FCollisionQueryParams QueryParams;
     QueryParams.AddIgnoredActor(this);
     QueryParams.AddIgnoredActor(DownedPlayer);
@@ -2720,7 +2752,7 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
         {
             return;
         }
-    }*/
+    }
 
     ClearAllReviveTimers();
 

@@ -21,6 +21,7 @@ class URecoilComponent;
 class UAimOffsetBlendSpace1D;
 
 DECLARE_DELEGATE_TwoParams(FOnAmmoChangedSignature, int32, int32);
+DECLARE_MULTICAST_DELEGATE(FOnWeaponDataInitializedSignature);
 
 UENUM(BlueprintType)
 enum class EWeaponFireMode : uint8
@@ -133,6 +134,7 @@ public:
     ABaseWeapon();
 
     FOnAmmoChangedSignature OnAmmoChanged;
+    FOnWeaponDataInitializedSignature OnWeaponDataInitialized;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Mesh")
     TObjectPtr<USkeletalMeshComponent> WeaponMesh;
