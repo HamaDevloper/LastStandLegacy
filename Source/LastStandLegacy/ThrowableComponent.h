@@ -26,6 +26,7 @@ class LASTSTANDLEGACY_API UThrowableComponent : public UActorComponent
 public:
     UThrowableComponent();
 
+
 protected:
     virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -190,7 +191,6 @@ protected:
     FTimerHandle TimerHandle_LocalCookExplosion;
 
 private:
-    void Debug_RenderNetworkDesync();
     void PlayThrowMontageWithDelegate(UAnimMontage* MontageToPlay, FName SectionName = NAME_None);
     uint8 PendingGrenadeThrows = 0;
     uint8 PendingMonkeyThrows = 0;

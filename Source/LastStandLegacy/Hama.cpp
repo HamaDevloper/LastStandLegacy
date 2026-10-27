@@ -637,15 +637,6 @@ void AHama::GiveWeapon(TSubclassOf<ABaseWeapon> WeaponClassToGive)
     OnRep_CurrentWeapon(OldWeapon);
 }
 
-void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
-{
-    if (WeaponToAttach && GetMesh())
-    {
-        FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
-        WeaponToAttach->AttachToComponent(GetMesh(), AttachRules, SocketName);
-    }
-}
-
 void AHama::UpdateAnimInstanceWeapon()
 {
     if (USkeletalMeshComponent* MeshComp = GetMesh())
@@ -663,11 +654,7 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
     {
         PreviousWeapon->OnAmmoChanged.Unbind();
         PreviousWeapon->OnWeaponDataInitialized.RemoveAll(this);
-
-        if (PreviousWeapon != ActiveDeathMachine)
-        {
-            PreviousWeapon->SetActorHiddenInGame(true);
-        }
+        PreviousWeapon->SetActorHiddenInGame(true);
     }
 
     if (!CurrentWeapon)
@@ -711,6 +698,15 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
         CurrentWeapon->OnAmmoChanged.Unbind();
         CurrentWeapon->OnAmmoChanged.BindUObject(this, &AHama::HandleAmmoChanged);
         HandleAmmoChanged(CurrentWeapon->GetCurrentAmmo(), CurrentWeapon->GetReserveAmmo());
+    }
+}
+
+void AHama::AttachWeaponToMesh(ABaseWeapon* WeaponToAttach)
+{
+    if (WeaponToAttach && GetMesh())
+    {
+        FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
+        WeaponToAttach->AttachToComponent(GetMesh(), AttachRules, SocketName);
     }
 }
 
@@ -999,12 +995,13 @@ void AHama::HandleWeaponSwapNotify()
     {
         if (PendingWeaponForSwap)
         {
-            if (IsValid(CurrentWeapon) && CurrentWeapon != ActiveDeathMachine)
+            if (IsValid(CurrentWeapon))
             {
                 CurrentWeapon->SetActorHiddenInGame(true);
             }
 
-            PendingWeaponForSwap->SetActorHiddenInGame(false);
+            const bool bIsThrowing = ThrowableComponent && ThrowableComponent->IsThrowingInProcess();
+            PendingWeaponForSwap->SetActorHiddenInGame(bIsThrowing);
             AttachWeaponToMesh(PendingWeaponForSwap);
         }
 
@@ -1104,6 +1101,7 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
     if (HamaComponent && HamaComponent->IsDowned()) return;
 
     PendingWeaponForSwap = nullptr;
+    GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
 
     if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
     {
@@ -1117,21 +1115,21 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 
     Multicast_StopSwapMontage();
 
-    if (bIsDeathMachineActive && ActiveDeathMachine)
+    if (bIsDeathMachineActive && IsValid(ActiveDeathMachine))
     {
         GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
         return;
     }
 
-    if (IsValid(CurrentWeapon) && CurrentWeapon != ActiveDeathMachine)
+    ABaseWeapon* OldWeapon = CurrentWeapon;
+
+    if (IsValid(OldWeapon) && OldWeapon != ActiveDeathMachine)
     {
-        CurrentWeapon->StopFire();
-        if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+        OldWeapon->StopFire();
+        if (OldWeapon->IsReloading()) OldWeapon->CancelReload();
 
-        PreDeathMachineWeapon = CurrentWeapon;
+        PreDeathMachineWeapon = OldWeapon;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
-
-        PreDeathMachineWeapon->SetActorHiddenInGame(true);
     }
 
     FActorSpawnParameters SpawnParams;
@@ -1150,9 +1148,11 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
         CurrentWeapon->EquipWeapon(this);
-        AttachWeaponToMesh(CurrentWeapon);
 
-        OnRep_CurrentWeapon(nullptr);
+        if (GetNetMode() != NM_DedicatedServer)
+        {
+            OnRep_CurrentWeapon(OldWeapon);
+        }
     }
 
     GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
@@ -1162,7 +1162,52 @@ void AHama::RemoveDeathMachine()
 {
     if (!HasAuthority()) return;
 
+    if (HamaComponent && (HamaComponent->IsDowned() || bIsDead))
+    {
+        if (IsValid(ActiveDeathMachine))
+        {
+            ActiveDeathMachine->StopFire();
+            ActiveDeathMachine->Destroy();
+            ActiveDeathMachine = nullptr;
+        }
+        bIsDeathMachineActive = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
+        return;
+    }
+
     ABaseWeapon* WeaponToEquip = IsValid(PreDeathMachineWeapon) ? PreDeathMachineWeapon : PrimaryWeapon;
+
+    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess())
+    {
+        ABaseWeapon* OldDeathMachine = ActiveDeathMachine;
+        ActiveDeathMachine = nullptr;
+
+        bIsDeathMachineActive = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
+
+        PreDeathMachineWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
+
+        if (IsValid(WeaponToEquip))
+        {
+            CurrentWeapon = WeaponToEquip;
+            CurrentWeapon->EquipWeapon(this);
+            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+
+            if (GetNetMode() != NM_DedicatedServer)
+            {
+                OnRep_CurrentWeapon(OldDeathMachine);
+            }
+        }
+
+        if (IsValid(OldDeathMachine))
+        {
+            OldDeathMachine->StopFire();
+            OldDeathMachine->Destroy();
+        }
+        return;
+    }
+
     if (!IsValid(WeaponToEquip)) return;
 
     Client_EndDeathMachineAndSwap(WeaponToEquip);
@@ -1332,11 +1377,12 @@ void AHama::HandleDownStateChanged(bool bIsDowned)
 
 void AHama::EquipDownedWeapon()
 {
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("[EquipDownedWeapon] Equipping Downed Weapon!"));
     if (!HasAuthority()) return;
-
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("H!"));
    
+    PendingWeaponForSwap = nullptr;
+    GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
+    Multicast_StopSwapMontage();
+
     ABaseWeapon* WeaponBeforeDown = CurrentWeapon;
     PreDownWeapon = CurrentWeapon;
 
@@ -1344,32 +1390,21 @@ void AHama::EquipDownedWeapon()
 
     ABaseWeapon* TargetDownedWeapon = nullptr;
 
-    // ١. پشکنینی ئینڤێنتۆری
     TArray<ABaseWeapon*, TInlineAllocator<3>> InventoryWeapons = { PrimaryWeapon, SecondaryWeapon, ThirdWeapon };
     for (ABaseWeapon* Weapon : InventoryWeapons)
     {
         if (IsValid(Weapon) && Weapon->GetWeaponTags().HasTag(DownedTag))
         {
             TargetDownedWeapon = Weapon;
-            UE_LOG(LogTemp, Warning, TEXT("[EquipDownedWeapon] Found Tag in Inventory: %s"), *Weapon->GetName());
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("[EquipDownedWeapon] Found Tag in Inventory: %s"), *Weapon->GetName()));
             break;
         }
     }
 
-    // ٢. پشکنینی چەکە کاتییە سپۆنکراوەکە
     if (!TargetDownedWeapon)
     {
         if (IsValid(DownedWeaponInstance))
         {
             TargetDownedWeapon = DownedWeaponInstance;
-            UE_LOG(LogTemp, Warning, TEXT("[EquipDownedWeapon] Using DownedWeaponInstance"));
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("[EquipDownedWeapon] Using DownedWeaponInstance"));
-        }
-        else
-        {
-            UE_LOG(LogTemp, Error, TEXT("[EquipDownedWeapon] FAILED: DownedWeaponInstance is NULL! Check DownedPistolClass in Blueprint!"));
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[EquipDownedWeapon] FAILED: DownedWeaponInstance is NULL! Check DownedPistolClass in Blueprint!"));
         }
     }
 
@@ -1382,15 +1417,9 @@ void AHama::EquipDownedWeapon()
             DownedWeaponInstance->ResetDownedAmmo();
         }
     }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("[EquipDownedWeapon] CRITICAL: TargetDownedWeapon is completely NULL. Weapon will not change!"));
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("[EquipDownedWeapon] CRITICAL: TargetDownedWeapon is completely NULL. Weapon will not change!"));
-    }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
 
-    // ئەگەر لەسەر سێرڤەر/Listen-Server بوو ڕاستەوخۆ نوێی بکەرەوە
     OnRep_CurrentWeapon(WeaponBeforeDown);
 }
 
@@ -2110,6 +2139,35 @@ void AHama::AddPerkByID(FName PerkID)
 void AHama::OnPlayerDowned()
 {
     if (!HasAuthority()) return;
+
+    if (bIsDeathMachineActive || IsValid(ActiveDeathMachine))
+    {
+        GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
+        GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
+
+        if (IsValid(ActiveDeathMachine))
+        {
+            ActiveDeathMachine->StopFire();
+            ActiveDeathMachine->Destroy();
+            ActiveDeathMachine = nullptr;
+        }
+
+        bIsDeathMachineActive = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
+
+        if (IsValid(PreDeathMachineWeapon))
+        {
+            CurrentWeapon = PreDeathMachineWeapon;
+            PreDeathMachineWeapon = nullptr;
+            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
+            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+        }
+    }
+
+    if (ThrowableComponent)
+    {
+        ThrowableComponent->HandleOwnerDowned();
+    }
 
     if (UWorld* World = GetWorld())
     {

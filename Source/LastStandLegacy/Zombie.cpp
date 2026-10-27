@@ -79,6 +79,7 @@ void AZombie::BeginPlay()
         CachedCapsuleCollisionEnabled = (CurrentCapCol != ECollisionEnabled::NoCollision)
             ? CurrentCapCol
             : ECollisionEnabled::QueryAndPhysics;
+        GetCapsuleComponent()->SetGenerateOverlapEvents(false);
     }
 
     if (USkeletalMeshComponent* MeshComp = GetMesh())
