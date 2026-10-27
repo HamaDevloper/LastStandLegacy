@@ -182,36 +182,20 @@ bool UHamaComponent::CanDive() const
 {
     if (!OwnerCharacter || !MoveComp) return false;
     if (bIsDiving || bIsDowned || bIsSlide || MoveComp->IsFalling()) return false;
-    if (Stamina < 25.f) return false;
+    if (Stamina < 20.f) return false;
 
     return true;
 }
 
 void UHamaComponent::StartDive()
 {
-    if (!CanDive()) return;
-
     SetSprinting(false);
-    DecreaseStamina(25.f);
+    DecreaseStamina(20.f);
     bIsDiving = true;
 
     if (MoveComp)
     {
         MoveComp->bDiving = true;
-    }
-
-    if (OwnerCharacter->IsLocallyControlled() && GetNetMode() != NM_DedicatedServer)
-    {
-        if (USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh())
-        {
-            if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
-            {
-                if (OwnerCharacter->DiveMontage)
-                {
-                    AnimInstance->Montage_Play(OwnerCharacter->DiveMontage);
-                }
-            }
-        }
     }
 }
 
@@ -224,20 +208,6 @@ void UHamaComponent::StopDive()
     if (MoveComp)
     {
         MoveComp->bDiving = false;
-    }
-
-    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled() && GetNetMode() != NM_DedicatedServer)
-    {
-        if (USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh())
-        {
-            if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
-            {
-                if (OwnerCharacter->DiveMontage)
-                {
-                    AnimInstance->Montage_Stop(0.2f, OwnerCharacter->DiveMontage);
-                }
-            }
-        }
     }
 }
 

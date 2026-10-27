@@ -93,14 +93,6 @@ void AHama::BeginPlay()
 {
     Super::BeginPlay();
 
-    OwnerController = Cast<AHamaPlayerController>(GetController());
-
-    if (IsLocallyControlled())
-    {
-        InteractSphere->OnComponentBeginOverlap.AddDynamic(this, &AHama::OnInteractSphereBeginOverlap);
-        InteractSphere->OnComponentEndOverlap.AddDynamic(this, &AHama::OnInteractSphereEndOverlap);
-    }
-
     if (HasAuthority())
     {
         if (HealthComponent)
@@ -119,8 +111,6 @@ void AHama::BeginPlay()
         CreateDefaultWeapon();
         InitializeDownedWeapon();
     }
-
-    StartCrossHairTimer();
 }
 
 void AHama::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -164,6 +154,9 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentlyUpgradingWeaponClass, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ReviveEndTime, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ReviveTotalDuration, Params);
+
+    Params.Condition = COND_SkipOwner;
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, MeleeCounter, Params);
 }
 
 void AHama::Landed(const FHitResult& Hit)
@@ -194,14 +187,12 @@ void AHama::UnPossessed()
 {
     Super::UnPossessed();
 
-    // پاککردنەوەی فیزیک و هێزی مۆمێنتەم
     if (UHamaMovementComponent* MoveComp = HamaMovementComponent)
     {
         MoveComp->StopMovementImmediately();
         MoveComp->ClearAccumulatedForces();
     }
 
-    // بەتاڵکردنەوەی هەر ئینپوتێکی Move کە پێش مردن داگیرابێت
     ConsumeMovementInputVector();
 }
 
@@ -224,6 +215,40 @@ void AHama::PawnClientRestart()
     Super::PawnClientRestart();
 
     OwnerController = Cast<AHamaPlayerController>(GetController());
+
+    if (IsLocallyControlled() && InteractSphere)
+    {
+        InteractSphere->OnComponentBeginOverlap.RemoveDynamic(this, &AHama::OnInteractSphereBeginOverlap);
+        InteractSphere->OnComponentEndOverlap.RemoveDynamic(this, &AHama::OnInteractSphereEndOverlap);
+
+        InteractSphere->OnComponentBeginOverlap.AddDynamic(this, &AHama::OnInteractSphereBeginOverlap);
+        InteractSphere->OnComponentEndOverlap.AddDynamic(this, &AHama::OnInteractSphereEndOverlap);
+
+        NearbyInteractables.Empty();
+
+        TArray<AActor*> InitialOverlaps;
+        InteractSphere->GetOverlappingActors(InitialOverlaps);
+
+        for (AActor* Actor : InitialOverlaps)
+        {
+            if (Actor && Actor != this && Actor->Implements<UInteractInterface>())
+            {
+                NearbyInteractables.Add(Actor);
+            }
+        }
+
+        if (!NearbyInteractables.IsEmpty())
+        {
+            GetWorldTimerManager().SetTimer(InteractTimerHandle, this, &AHama::CheckForInteractables, 0.1f, true);
+        }
+        else
+        {
+            GetWorldTimerManager().ClearTimer(InteractTimerHandle);
+            ClearInteractFocus();
+        }
+
+        StartCrossHairTimer();
+    }
 }
 
 void AHama::Tick(float DeltaTime)
@@ -281,14 +306,13 @@ void AHama::Tick(float DeltaTime)
 
 void AHama::OnInteractSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, FString::Printf(TEXT("a")));
     if (OtherActor && OtherActor != this && OtherActor->Implements<UInteractInterface>())
     {
-        GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, FString::Printf(TEXT("as")));
-        NearbyInteractablesCount++;
-        if (NearbyInteractablesCount >= 1)
+        NearbyInteractables.Add(OtherActor);
+
+        if (!GetWorldTimerManager().IsTimerActive(InteractTimerHandle))
         {
-            GetWorld()->GetTimerManager().SetTimer(InteractTimerHandle, this, &AHama::CheckForInteractables, 0.1f, true);
+            GetWorldTimerManager().SetTimer(InteractTimerHandle, this, &AHama::CheckForInteractables, 0.1f, true);
         }
     }
 }
@@ -297,11 +321,17 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
 {
     if (OtherActor && OtherActor != this && OtherActor->Implements<UInteractInterface>())
     {
-        NearbyInteractablesCount--;
-        if (NearbyInteractablesCount <= 0)
+        NearbyInteractables.Remove(OtherActor);
+        NearbyInteractables.Remove(nullptr);
+
+        if (FocusedInteractable.Get() == OtherActor)
         {
-            NearbyInteractablesCount = 0;
-            GetWorld()->GetTimerManager().ClearTimer(InteractTimerHandle);
+            ClearInteractFocus();
+        }
+
+        if (NearbyInteractables.IsEmpty())
+        {
+            GetWorldTimerManager().ClearTimer(InteractTimerHandle);
             ClearInteractFocus();
         }
     }
@@ -309,8 +339,9 @@ void AHama::OnInteractSphereEndOverlap(UPrimitiveComponent* OverlappedComponent,
 
 void AHama::CheckForInteractables()
 {
-    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, FString::Printf(TEXT("NearbyInteractablesCount: %d"), NearbyInteractablesCount));
+    GEngine->AddOnScreenDebugMessage(-1, 0.1f, FColor::Green, FString::Printf(TEXT("Nearby Interactables: %d"), NearbyInteractables.Num()));
     if (!IsLocallyControlled() || !OwnerController) return;
+
     if (HamaComponent && HamaComponent->IsDowned())
     {
         ClearInteractFocus();
@@ -321,6 +352,7 @@ void AHama::CheckForInteractables()
     FRotator ViewRotation;
     OwnerController->GetPlayerViewPoint(CameraLocation, ViewRotation);
 
+
     FVector StartLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f);
     FVector EndLocation = StartLocation + (ViewRotation.Vector() * SetIntractDistance);
 
@@ -329,6 +361,13 @@ void AHama::CheckForInteractables()
     Params.bReturnPhysicalMaterial = false;
 
     FCollisionShape Sphere = FCollisionShape::MakeSphere(45.f);
+
+    DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Yellow, false, 0.1f, 0, 1.5f);
+
+    // ٢. کێشانی بازنەی دەستپێک لە ئاستی کارەکتەر
+    DrawDebugSphere(GetWorld(), StartLocation, Sphere.GetSphereRadius(), 12, FColor::Red, false, 0.1f);
+
+    // ٣. کێشانی بازنەی کۆتایی لە پێشەوە
     DrawDebugSphere(GetWorld(), EndLocation, Sphere.GetSphereRadius(), 12, FColor::Green, false, 0.1f);
 
     FTraceDelegate TraceDelegate;
@@ -349,7 +388,7 @@ void AHama::CheckForInteractables()
 
 void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Datum)
 {
-    if (NearbyInteractablesCount <= 0)
+    if (NearbyInteractables.IsEmpty())
     {
         ClearInteractFocus();
         return;
@@ -1462,6 +1501,7 @@ void AHama::FireActionPressed()
     if (!HamaComponent || !CurrentWeapon) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
     if (IsDrinkingPerk()) return;
+    if(IsMeleeing()) return;
     bIsFireButtonHold = true;
     CurrentWeapon->StartFire();
 }
@@ -1477,6 +1517,7 @@ void AHama::AimActionPressed()
 {
     if (!HamaComponent || !CurrentWeapon) return;
     if (IsDrinkingPerk()) return;
+    if (IsMeleeing()) return;
 
     if (HamaComponent->IsSprinting())
     {
@@ -1741,10 +1782,12 @@ void AHama::StopSlideRoutine()
 void AHama::StartDiving()
 {
     if (!HamaComponent) return;
+    if (!HamaComponent->CanDive()) return;
     if (IsSprinting())  HamaComponent->StopSprinting();
-    PlayAnimMontage(DiveMontage);
+
     HamaComponent->StartDive();
 
+    PlayAnimMontage(DiveMontage);
     if (GetMesh() && GetMesh()->GetAnimInstance() && DiveMontage)
     {
         FOnMontageEnded MontageEndedDelegate;
@@ -2294,16 +2337,16 @@ void AHama::InteractActionPressed()
             }
             else
             {
-                if (FocusedInterface->ShouldCancelReloadOnInteract())
-                {
-                    if (CurrentWeapon && CurrentWeapon->IsReloading())
-                    {
-                        CurrentWeapon->CancelReload();
-                    }
-                }
-
                 if (FocusedInterface->Client_PreInteract(this))
                 {
+                    if (FocusedInterface->ShouldCancelReloadOnInteract())
+                    {
+                        if (CurrentWeapon && CurrentWeapon->IsReloading())
+                        {
+                            CurrentWeapon->CancelReload();
+                        }
+                    }
+
                     Server_Interact(InteractActor);
                 }
             }
@@ -2377,22 +2420,45 @@ bool AHama::IsMeleeing() const
 void AHama::MeleeActionPressed()
 {
     if (IsMeleeing() || IsDrinkingPerk()) return;
-    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess())  return;
-    if (bIsAimButtonHold) AimActionReleased();
-    if (IsSprinting()) StopSprint();
+    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
+    if (!MeleeAttackMontage) return;
 
-    if (MeleeAttackMontage)
+    if (IsSprinting()) StopSprint();
+    if (CurrentWeapon) CurrentWeapon->StopFire();
+    if (CurrentWeapon && CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+    if (bIsAimButtonHold) OnAim(false);
+
+    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (!AnimInstance) return;
+
+    const float Duration = PlayAnimMontage(MeleeAttackMontage);
+    if (Duration <= 0.0f)
     {
-        PlayAnimMontage(MeleeAttackMontage);
+        return;
     }
+
+    FOnMontageBlendingOutStarted BlendingOutDelegate;
+    BlendingOutDelegate.BindUObject(this, &AHama::OnMeleeMontageBlendingOut);
+    AnimInstance->Montage_SetBlendingOutDelegate(BlendingOutDelegate, MeleeAttackMontage);
 
     Server_ExecuteMelee();
 }
 
+void AHama::OnMeleeMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+    if (Montage == MeleeAttackMontage)
+    {
+        if (!bInterrupted && bIsAimButtonHold)
+        {
+            OnAim(true);
+        }
+    }
+}
+
 void AHama::Server_ExecuteMelee_Implementation()
 {
-    if (IsMeleeing() || IsDrinkingPerk()) return;
-    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess())  return;
+    if (IsDrinkingPerk()) return;
+    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
 
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     if (CurrentTime - LastServerMeleeTime < (MeleeCooldown * 0.8f))
@@ -2402,12 +2468,22 @@ void AHama::Server_ExecuteMelee_Implementation()
 
     LastServerMeleeTime = CurrentTime;
 
-    Multicast_ExecuteMelee();
+    if (IsSprinting()) StopSprint();
+    if (CurrentWeapon) CurrentWeapon->StopFire();
+    if (CurrentWeapon && CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+
+    MeleeCounter++;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, MeleeCounter, this);
+
+    if (GetNetMode() != NM_DedicatedServer && !IsLocallyControlled() && MeleeAttackMontage)
+    {
+        PlayAnimMontage(MeleeAttackMontage);
+    }
 }
 
-void AHama::Multicast_ExecuteMelee_Implementation()
+void AHama::OnRep_MeleeCounter()
 {
-    if (MeleeAttackMontage && !IsLocallyControlled())
+    if (!IsLocallyControlled() && MeleeAttackMontage)
     {
         PlayAnimMontage(MeleeAttackMontage);
     }
@@ -2821,6 +2897,7 @@ void AHama::Input_ThrowGrenadePressed()
     if (IsMeleeing()) return;
     if (IsDiving()) return;
     if (IsDowned() || bIsDead) return;
+    if (IsSprinting()) StopSprint();
        
     ThrowableComponent->StartGrenadeCharge();
 }
@@ -2832,7 +2909,7 @@ void AHama::Input_ThrowGrenadeReleased()
     if (IsMeleeing()) return;
     if (IsDiving()) return;
     if (IsDowned() || bIsDead) return;
-    
+
     ThrowableComponent->ReleaseGrenadeThrow();
 }
 
@@ -2844,6 +2921,7 @@ void AHama::Input_ThrowMonkeyPressed()
     if (IsMeleeing()) return;
     if (IsDiving()) return;
     if (IsDowned() || bIsDead) return;
+    if (IsSprinting()) StopSprint();
     
     ThrowableComponent->StartMonkeyCharge();
 }
@@ -2861,7 +2939,7 @@ void AHama::Input_ThrowMonkeyReleased()
 
 bool AHama::SetCanInteract() const
 {
-   if(bIsDeathMachineActive || bIsDead || IsDowned() || IsDrinkingPerk())
+   if(bIsDeathMachineActive || bIsDead || IsDowned() || IsDrinkingPerk() || IsMeleeing())
    {
        return false;
    }

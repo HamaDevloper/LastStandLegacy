@@ -67,8 +67,6 @@ void AHamaPlayerController::OnRep_PlayerState()
 
 void AHamaPlayerController::OnRep_Pawn()
 {
-    // گرنگ: Super::OnRep_Pawn خۆی لە ناوخۆی UE5 دا ئەگەر پێویست بکات ClientRestart بانگ دەکات!
-    // بۆیە لێرە هەرگیز InitializeLocalPawn بانگ مەکەرەوە تاکو دووبارە نەبێتەوە.
     Super::OnRep_Pawn();
 
     if (IsLocalController())
@@ -113,7 +111,6 @@ void AHamaPlayerController::OnPossess(APawn* InPawn)
             PlayerState->SetIsSpectator(false);
         }
 
-        // ١. پێش بانگکردنی Super دەبێت ستەیت و کامێرا بگەڕێنەوە دۆخی ئاسایی
         bAutoManageActiveCameraTarget = true;
         CurrentSpectateTarget = nullptr;
         ChangeState(NAME_Playing);
@@ -124,7 +121,6 @@ void AHamaPlayerController::OnPossess(APawn* InPawn)
         EnableInput(this);
     }
 
-    // ٢. ئێستا Super::OnPossess بە دروستی کار دەکات و خۆی ClientRestart بانگ دەکات
     Super::OnPossess(InPawn);
 }
 
@@ -149,10 +145,8 @@ void AHamaPlayerController::InitializeLocalPawn(APawn* InPawn)
     EnableInput(this);
     HamaPawn->bBlockInput = false;
 
-    // لابردنی کۆنتێکستی سپێکتەیت
     SafeRemoveMappingContext(SpectatorMappingContext);
 
-    // ڕیسێتکردنی تەواوەتیی کۆنتێکستی یاریکردن بۆ ڕێگری لە گیرخواردنی دوگمەی W
     if (ActiveGameplayContext)
     {
         SafeRemoveMappingContext(ActiveGameplayContext);
@@ -192,7 +186,6 @@ void AHamaPlayerController::ClientRestart_Implementation(APawn* NewPawn)
 
     if (IsLocalController())
     {
-        // ١. پاککردنەوەی هەموو دوگمە گیرخواردووەکان پێش ئەوەی Pawnـی نوێ ئینپوت وەربگرێت
         if (PlayerInput)
         {
             PlayerInput->FlushPressedKeys();
@@ -209,12 +202,10 @@ void AHamaPlayerController::ClientRestart_Implementation(APawn* NewPawn)
         }
     }
 
-    // ٢. ئێنجنەکە لێرەدا خۆی AcknowledgePossession, SetPawn, PawnClientRestart جێبەجێ دەکات
     Super::ClientRestart_Implementation(TargetPawn);
 
     if (IsLocalController())
     {
-        // ٣. ڕێکخستنەوەی ControlRotation ڕاستەوخۆ دوای Super
         SetControlRotation(TargetPawn->GetActorRotation());
         InitializeLocalPawn(TargetPawn);
     }

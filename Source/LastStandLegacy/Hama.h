@@ -418,6 +418,15 @@ protected:
     void Input_ThrowMonkeyPressed();
     void Input_ThrowMonkeyReleased();
 
+    UFUNCTION()
+    void OnMeleeMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
+
+    UPROPERTY(ReplicatedUsing = OnRep_MeleeCounter)
+    uint8 MeleeCounter = 0;
+
+    UFUNCTION()
+    void OnRep_MeleeCounter();
+
 protected:
     static const float CrossHairTimer;
 
@@ -568,9 +577,6 @@ public:
         UFUNCTION(Server, Reliable)
         void Server_ValidateMeleeHit(AActor * HitActor, FVector_NetQuantize HitLocation);
 
-        UFUNCTION(NetMulticast, Unreliable)
-        void Multicast_ExecuteMelee();
-
         UPROPERTY(EditDefaultsOnly, Category = "Hama|Melee")
         float MeleeDamage = 150.0f;
 
@@ -643,7 +649,7 @@ public:
         UFUNCTION()
         void OnInteractSphereEndOverlap(UPrimitiveComponent * OverlappedComponent, AActor * OtherActor, UPrimitiveComponent * OtherComp, int32 OtherBodyIndex);
 
-        int32 NearbyInteractablesCount = 0;
+        TSet<TWeakObjectPtr<AActor>> NearbyInteractables;
 
         UFUNCTION(Client, Reliable)
         void Client_OnStaminUpAcquired(float NewMaxStamina);

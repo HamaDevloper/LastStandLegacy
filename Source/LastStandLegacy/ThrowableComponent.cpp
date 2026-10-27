@@ -125,12 +125,6 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
         return;
     }
 
-    if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
-        CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
-    {
-        return;
-    }
-
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
@@ -199,6 +193,11 @@ void UThrowableComponent::ExecuteStartCharge_Server(bool bIsMonkey)
         ResetThrowState_Server();
         Client_RejectThrow();
         return;
+    }
+
+    if(CharacterOwner->IsSprinting())
+    {
+        CharacterOwner->StopSprint();
     }
 
     bIsMonkeyThrow = bIsMonkey;
