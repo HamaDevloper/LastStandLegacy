@@ -364,12 +364,6 @@ void AHama::CheckForInteractables()
 
     DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Yellow, false, 0.1f, 0, 1.5f);
 
-    // ٢. کێشانی بازنەی دەستپێک لە ئاستی کارەکتەر
-    DrawDebugSphere(GetWorld(), StartLocation, Sphere.GetSphereRadius(), 12, FColor::Red, false, 0.1f);
-
-    // ٣. کێشانی بازنەی کۆتایی لە پێشەوە
-    DrawDebugSphere(GetWorld(), EndLocation, Sphere.GetSphereRadius(), 12, FColor::Green, false, 0.1f);
-
     FTraceDelegate TraceDelegate;
     TraceDelegate.BindUObject(this, &AHama::OnInteractTraceCompleted);
 
@@ -553,11 +547,12 @@ void AHama::CreateDefaultWeapon()
 TArray<TSubclassOf<ABaseWeapon>> AHama::GetOwnedWeaponClasses() const
 {
     TArray<TSubclassOf<ABaseWeapon>> OwnedClasses;
-    OwnedClasses.Reserve(3);
+    OwnedClasses.Reserve(4);
 
-    if (IsValid(PrimaryWeapon))   OwnedClasses.Add(PrimaryWeapon->GetClass());
-    if (IsValid(SecondaryWeapon)) OwnedClasses.Add(SecondaryWeapon->GetClass());
-    if (IsValid(ThirdWeapon))     OwnedClasses.Add(ThirdWeapon->GetClass());
+    if (IsValid(PrimaryWeapon))          OwnedClasses.Add(PrimaryWeapon->GetClass());
+    if (IsValid(SecondaryWeapon))        OwnedClasses.Add(SecondaryWeapon->GetClass());
+    if (IsValid(ThirdWeapon))            OwnedClasses.Add(ThirdWeapon->GetClass());
+    if (CurrentlyUpgradingWeaponClass)   OwnedClasses.Add(CurrentlyUpgradingWeaponClass);
 
     return OwnedClasses;
 }
@@ -650,14 +645,14 @@ void AHama::UpdateAnimInstanceWeapon()
 
 void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 {
-    if (IsValid(PreviousWeapon))
+    if (IsValid(PreviousWeapon) && PreviousWeapon != CurrentWeapon)
     {
         PreviousWeapon->OnAmmoChanged.Unbind();
         PreviousWeapon->OnWeaponDataInitialized.RemoveAll(this);
         PreviousWeapon->SetActorHiddenInGame(true);
     }
 
-    if (!CurrentWeapon)
+    if (!IsValid(CurrentWeapon))
     {
         UpdateAnimInstanceWeapon();
         if (IsLocallyControlled())
@@ -672,15 +667,14 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
         PendingWeaponForSwap = nullptr;
     }
 
-    CurrentWeapon->SetActorHiddenInGame(false);
+    const bool bIsThrowing = (ThrowableComponent && ThrowableComponent->IsThrowingInProcess());
+    CurrentWeapon->SetActorHiddenInGame(bIsThrowing);
     AttachWeaponToMesh(CurrentWeapon);
 
-    // =========================================================================
-    // چارەسەری سەرەکی: هەموو لایەک دەبێت داتای چەکیان هەبێت (نەک تەنها Local)
-    // =========================================================================
+    CurrentWeapon->OnWeaponDataInitialized.RemoveAll(this);
+
     if (!CurrentWeapon->IsDataInitialized())
     {
-        // ئەگەر چەکەکە هێشتا داتاکەی نەگەیشتووە لە نێتۆرکەوە، چاوەڕێ بکە تا OnRep_WeaponRowName لێدەدات
         CurrentWeapon->OnWeaponDataInitialized.AddUObject(this, &AHama::UpdateAnimInstanceWeapon);
 
         if (IsLocallyControlled())
@@ -959,7 +953,13 @@ void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
     if (PendingWeaponForSwap != nullptr && NewWeapon == CurrentWeapon)
     {
         PendingWeaponForSwap = nullptr;
-        Multicast_PlaySwapMontage(0.0f); // یان ئەگەر لە ناو Multicastـەکەتدا 0 مۆنتاژەکە ڕادەگرێت
+
+        if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+        {
+            AnimInstance->Montage_Stop(0.15f, SwapWeaponMontage);
+        }
+
+        Multicast_StopSwapMontage();
         return;
     }
 
@@ -993,7 +993,7 @@ void AHama::HandleWeaponSwapNotify()
 {
     if (IsLocallyControlled())
     {
-        if (PendingWeaponForSwap)
+        if (IsValid(PendingWeaponForSwap))
         {
             if (IsValid(CurrentWeapon))
             {
@@ -1011,17 +1011,7 @@ void AHama::HandleWeaponSwapNotify()
 
 void AHama::Server_CompleteWeaponSwap_Implementation()
 {
-    if (!PendingWeaponForSwap) return;
-
-    float AnimDuration = (SwapWeaponMontage ? SwapWeaponMontage->GetPlayLength() : 1.0f) / GetSwapPlayRate();
-    float TimeElapsed = GetWorld()->GetTimeSeconds() - PendingSwapStartTime;
-
-    if (TimeElapsed < (AnimDuration * 0.15f))
-    {
-        PendingWeaponForSwap = nullptr;
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
-        return;
-    }
+    if (!IsValid(PendingWeaponForSwap)) return;
 
     CompleteWeaponSwap();
 }
@@ -1097,7 +1087,7 @@ void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 
 void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration)
 {
-    if (!HasAuthority() || !WeaponClass) return;
+    if (!HasAuthority() || !WeaponClass || bIsDead) return;
     if (HamaComponent && HamaComponent->IsDowned()) return;
 
     PendingWeaponForSwap = nullptr;
@@ -1127,6 +1117,8 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
     {
         OldWeapon->StopFire();
         if (OldWeapon->IsReloading()) OldWeapon->CancelReload();
+        OldWeapon->SetActorHiddenInGame(true);
+        OldWeapon->SetActorEnableCollision(false);
 
         PreDeathMachineWeapon = OldWeapon;
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
@@ -1149,10 +1141,7 @@ void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duratio
 
         CurrentWeapon->EquipWeapon(this);
 
-        if (GetNetMode() != NM_DedicatedServer)
-        {
-            OnRep_CurrentWeapon(OldWeapon);
-        }
+        OnRep_CurrentWeapon(OldWeapon);
     }
 
     GetWorldTimerManager().SetTimer(DeathMachineTimerHandle, this, &AHama::RemoveDeathMachine, Duration, false);
@@ -1378,13 +1367,42 @@ void AHama::HandleDownStateChanged(bool bIsDowned)
 void AHama::EquipDownedWeapon()
 {
     if (!HasAuthority()) return;
-   
+
     PendingWeaponForSwap = nullptr;
     GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
     Multicast_StopSwapMontage();
 
     ABaseWeapon* WeaponBeforeDown = CurrentWeapon;
-    PreDownWeapon = CurrentWeapon;
+
+    if (IsValid(WeaponBeforeDown))
+    {
+        WeaponBeforeDown->StopFire();
+        if (WeaponBeforeDown->IsReloading()) WeaponBeforeDown->CancelReload();
+    }
+
+    if (bIsDeathMachineActive || (IsValid(ActiveDeathMachine) && WeaponBeforeDown == ActiveDeathMachine))
+    {
+        PreDownWeapon = IsValid(PreDeathMachineWeapon) ? PreDeathMachineWeapon : PrimaryWeapon;
+
+        GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
+
+        if (IsValid(ActiveDeathMachine))
+        {
+            ActiveDeathMachine->StopFire();
+            ActiveDeathMachine->Destroy();
+            ActiveDeathMachine = nullptr;
+        }
+
+        bIsDeathMachineActive = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
+
+        PreDeathMachineWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
+    }
+    else
+    {
+        PreDownWeapon = WeaponBeforeDown;
+    }
 
     static const FGameplayTag DownedTag = FGameplayTag::RequestGameplayTag(FName("Weapon.Ability.CanBeUsedWhileDowned"));
 
@@ -1400,17 +1418,15 @@ void AHama::EquipDownedWeapon()
         }
     }
 
-    if (!TargetDownedWeapon)
+    if (!TargetDownedWeapon && IsValid(DownedWeaponInstance))
     {
-        if (IsValid(DownedWeaponInstance))
-        {
-            TargetDownedWeapon = DownedWeaponInstance;
-        }
+        TargetDownedWeapon = DownedWeaponInstance;
     }
 
     if (TargetDownedWeapon)
     {
         CurrentWeapon = TargetDownedWeapon;
+        CurrentWeapon->EquipWeapon(this);
 
         if (TargetDownedWeapon == DownedWeaponInstance)
         {
@@ -1419,7 +1435,6 @@ void AHama::EquipDownedWeapon()
     }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
-
     OnRep_CurrentWeapon(WeaponBeforeDown);
 }
 
@@ -1428,6 +1443,11 @@ void AHama::RestorePreDownWeapon()
     if (!HasAuthority()) return;
 
     ABaseWeapon* WeaponWhileDowned = CurrentWeapon;
+    if (IsValid(WeaponWhileDowned))
+    {
+        WeaponWhileDowned->StopFire();
+        if (WeaponWhileDowned->IsReloading()) WeaponWhileDowned->CancelReload();
+    }
 
     if (IsValid(PreDownWeapon))
     {
@@ -1437,6 +1457,10 @@ void AHama::RestorePreDownWeapon()
     {
         CurrentWeapon = PrimaryWeapon;
     }
+    else if (IsValid(SecondaryWeapon))
+    {
+        CurrentWeapon = SecondaryWeapon;
+    }
     else
     {
         CurrentWeapon = nullptr;
@@ -1444,12 +1468,13 @@ void AHama::RestorePreDownWeapon()
 
     PreDownWeapon = nullptr;
 
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
-
-    if (GetNetMode() != NM_DedicatedServer)
+    if (IsValid(CurrentWeapon))
     {
-        OnRep_CurrentWeapon(WeaponWhileDowned);
+        CurrentWeapon->EquipWeapon(this);
     }
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
+    OnRep_CurrentWeapon(WeaponWhileDowned);
 }
 
 void AHama::Destroyed()
@@ -2140,30 +2165,6 @@ void AHama::OnPlayerDowned()
 {
     if (!HasAuthority()) return;
 
-    if (bIsDeathMachineActive || IsValid(ActiveDeathMachine))
-    {
-        GetWorldTimerManager().ClearTimer(DeathMachineTimerHandle);
-        GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
-
-        if (IsValid(ActiveDeathMachine))
-        {
-            ActiveDeathMachine->StopFire();
-            ActiveDeathMachine->Destroy();
-            ActiveDeathMachine = nullptr;
-        }
-
-        bIsDeathMachineActive = false;
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, bIsDeathMachineActive, this);
-
-        if (IsValid(PreDeathMachineWeapon))
-        {
-            CurrentWeapon = PreDeathMachineWeapon;
-            PreDeathMachineWeapon = nullptr;
-            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
-            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
-        }
-    }
-
     if (ThrowableComponent)
     {
         ThrowableComponent->HandleOwnerDowned();
@@ -2195,37 +2196,64 @@ void AHama::OnPlayerDowned()
         PerkBottleMesh->SetStaticMesh(nullptr);
     }
 
-    if (CurrentWeapon)
-    {
-        CurrentWeapon->StopFire();
-        if (CurrentWeapon->IsReloading())
-        {
-            CurrentWeapon->CancelReload();
-        }
-    }
-
     if (HamaComponent)
     {
         HamaComponent->ResetStamina();
     }
 
-    FName QuickReviveId = FName(TEXT("QuickRevive"));
-    bool bHadQuickRevivePerk = OwnedPerks.Contains(QuickReviveId);
-
     OwnedPerks.Empty();
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
-
-    if (bHadQuickRevivePerk)
-    {
-        OwnedPerks.Add(QuickReviveId);
-    }
 
     if (IsLocallyControlled())
     {
         OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
     }
 
+    // Bo Srenawai Chaki seyam Agar Pewest Bu
+    /*if (IsValid(ThirdWeapon))
+    {
+        if (CurrentWeapon == ThirdWeapon)
+        {
+            CurrentWeapon = PrimaryWeapon ? PrimaryWeapon : SecondaryWeapon;
+        }
+        if (PreDeathMachineWeapon == ThirdWeapon)
+        {
+            PreDeathMachineWeapon = PrimaryWeapon ? PrimaryWeapon : SecondaryWeapon;
+            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
+        }
+
+        ThirdWeapon->StopFire();
+        ThirdWeapon->Destroy();
+        ThirdWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
+    }*/
+
     ForceNetUpdate();
+}
+
+void AHama::HandleDownedStateClient(bool bDowned)
+{
+    if (bDowned)
+    {
+        if (IsSprinting())
+        {
+            StopSprint();
+        }
+
+        if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+        {
+            AnimInstance->Montage_Stop(0.1f);
+        }
+
+        if (CurrentWeapon)
+        {
+            FireActionReleased();
+            if (CurrentWeapon->IsReloading())
+            {
+                CurrentWeapon->CancelReload();
+            }
+        }
+    }
 }
 
 void AHama::OnPlayerRevived()

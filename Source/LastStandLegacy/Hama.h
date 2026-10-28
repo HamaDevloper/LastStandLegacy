@@ -668,6 +668,8 @@ public:
     bool SetCanInteract() const;
     void ClearInteractFocus();
 
+    void HandleDownedStateClient(bool bDowned);
+
 protected:
     void UpdateAnimInstanceWeapon();
 };

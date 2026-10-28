@@ -118,6 +118,11 @@ void UHealthComponent::OnRep_CurrentHealth(float OldHealth)
 
 void UHealthComponent::OnRep_IsDowned()
 {
+    if (OwnerCharacter)
+    {
+        OwnerCharacter->HandleDownedStateClient(bIsDowned);
+    }
+
     OnDownStateChanged.Broadcast(bIsDowned);
 }
 
@@ -288,6 +293,27 @@ void UHealthComponent::DownPlayer()
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 
+    // =========================================================================
+    // هەنگاوی یەکەم: پێش سڕینەوەی پێرکەکان بپشکنە ئایا لە Solo دا مافی هەستانەوەی هەیە
+    // =========================================================================
+    bool bCanSoloRevive = false;
+    bool bIsSoloMatch = false;
+
+    if (UWorld* World = GetWorld())
+    {
+        if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+        {
+            bIsSoloMatch = GS->bIsSoloMatch;
+            if (bIsSoloMatch && OwnerCharacter && OwnerCharacter->HasQuickRevive())
+            {
+                bCanSoloRevive = true;
+            }
+        }
+    }
+
+    // =========================================================================
+    // هەنگاوی دووەم: کاتێک دەست دەکەوێتە سەر زەوی، هەموو پێرکەکان یەکسەر دەسڕێنەوە
+    // =========================================================================
     if (OwnerCharacter)
     {
         OwnerCharacter->OnPlayerDowned();
@@ -302,10 +328,9 @@ void UHealthComponent::DownPlayer()
         TM.ClearTimer(DownTimerHandle);
         TM.ClearTimer(QuickReviveTimerHandle);
 
-        ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>();
-        if (GS && GS->bIsSoloMatch)
+        if (bIsSoloMatch)
         {
-            if (OwnerCharacter && OwnerCharacter->HasQuickRevive())
+            if (bCanSoloRevive)
             {
                 const float ServerTime = GetServerTime();
                 BleedOutEndTime = ServerTime + SoloReviveTime;
@@ -327,6 +352,7 @@ void UHealthComponent::DownPlayer()
             }
         }
 
+        // دۆخی Multiplayer: یاریزانەکە ڕادەکشێت تا هاوڕێکەی دێت یان دەمرێت
         BleedOutEndTime = GetServerTime() + DeathTime;
         PausedBleedOutRemaining = 0.0f;
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);

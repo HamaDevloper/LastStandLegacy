@@ -8,6 +8,10 @@
 #include "BasePerk.generated.h"
 
 class AHama;
+class UBoxComponent;
+class UStaticMeshComponent;
+class UPointLightComponent;
+class USoundBase;
 
 UCLASS(Abstract, Blueprintable)
 class LASTSTANDLEGACY_API ABasePerk : public AActor, public IInteractInterface
@@ -18,16 +22,26 @@ public:
     ABasePerk();
 
 protected:
-    virtual void BeginPlay() override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    // --- بەشی پێکهاتە فیزیکییەکان (Components) ---
+    // --- پێکهاتە فیزیکی و بینراوەکان (Components) ---
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Perk|Components")
-    class UBoxComponent* TriggerBox;
+    TObjectPtr<UBoxComponent> TriggerBox;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Perk|Components")
-    class UStaticMeshComponent* PerkMachineMesh;
+    TObjectPtr<UStaticMeshComponent> PerkMachineMesh;
 
-    // --- داتای پێرک (Perk Configuration) ---
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Perk|Components")
+    TObjectPtr<UPointLightComponent> MachineLight;
+
+    // --- دۆخی تۆڕ (Push Model State) ---
+    UPROPERTY(ReplicatedUsing = OnRep_IsDepleted)
+    bool bIsDepleted = false;
+
+    UFUNCTION()
+    void OnRep_IsDepleted();
+
+    // --- ڕێکخستنەکانی پێرک (Perk Configuration) ---
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk|Settings")
     FName PerkID;
 
@@ -35,13 +49,15 @@ protected:
     int32 PerkCost;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk|Settings")
-    UStaticMesh* BottleMesh;
+    TObjectPtr<UStaticMesh> BottleMesh;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Perk|Settings")
-    int32 SoloUsesLeftForQuickRevive = 3;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
+    UPROPERTY(EditDefaultsOnly, Category = "Perk|Audio")
     TObjectPtr<USoundBase> RejectSound;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Perk|Audio")
+    TObjectPtr<USoundBase> PowerDownSound;
+
+    int32 SoloUsesLeftForQuickRevive = 3;
 
 public:
     virtual void Interact(AHama* HamaChar) override;
@@ -53,4 +69,7 @@ public:
     FName GetPerkID() const { return PerkID; }
     int32 GetPerkCost() const { return PerkCost; }
     UStaticMesh* GetBottleMesh() const { return BottleMesh; }
+
+private:
+    static constexpr float MaxInteractDistanceSq = 250.0f * 250.0f;
 };
