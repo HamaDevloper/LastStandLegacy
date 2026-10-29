@@ -457,12 +457,12 @@ private:
 
 public:
     void StopSprint();
-    FORCEINLINE bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
-    FORCEINLINE bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
+    bool IsSprinting() const { return HamaComponent && HamaComponent->IsSprinting(); }
+    bool IsAiming() const { return HamaComponent && HamaComponent->IsAiming(); }
     FORCEINLINE ABaseWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
     FORCEINLINE bool GetDeathMachine() const { return bIsDeathMachineActive; }
     FORCEINLINE UThrowableComponent* GetThrowableComponent() const { return ThrowableComponent; }
-    bool IsGhost() const { return HamaAbilityComponent && HamaAbilityComponent->GetGhost(); }
+    UHamaAbilityComponent* GetAbilityComponent() const { return HamaAbilityComponent; }
     const TArray<FName>& GetOwnedPerks() const { return OwnedPerks; }
     bool DrinkingPerkTimer() const { return GetWorldTimerManager().IsTimerActive(PerkDrinkTimerHandle); }
     FORCEINLINE bool IsDowned() const { return HamaComponent && HamaComponent->IsDowned(); }
@@ -507,7 +507,7 @@ public:
         FName PendingPerkID;
 
         UPROPERTY()
-        class AStaticMeshActor* CurrentSpawnedBottle;
+        TObjectPtr<AStaticMeshActor> CurrentSpawnedBottle;
 
 public:
         UPROPERTY(Replicated)

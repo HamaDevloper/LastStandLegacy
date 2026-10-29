@@ -31,7 +31,6 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player State")
     int32 MaxPointToEarn = 1000000;
 
-    // گۆڕدرا بۆ ReplicatedUsing بۆ ئەوەی کڵایەنتەکان بتوانن مەشەکەیان ئەپدەیت بکەن
     UPROPERTY(ReplicatedUsing = OnRep_AssignedRole, BlueprintReadOnly, Category = "Player State")
     EHamaAbilityType AssignedRole = EHamaAbilityType::None;
 

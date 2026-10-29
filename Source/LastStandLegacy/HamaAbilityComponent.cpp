@@ -172,9 +172,9 @@ void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
     case EHamaAbilityType::GhostMode:
         ActivateGhostMode();
         break;
-    case EHamaAbilityType::Blitz:
-        ActivateBlitz();
-        break;
+    //case EHamaAbilityType::Blitz:
+        //ActivateBlitz();
+        //break;
     default:
         UE_LOG(LogTemp, Warning, TEXT("Player tried to activate ability but has NONE assigned!"));
         break;
@@ -189,36 +189,6 @@ void UHamaAbilityComponent::ActivateBulletStorm()
         StartAbilityCooldown(AbilityDuration);
     }
 }
-
-bool UHamaAbilityComponent::CanActivateMedicalSupportLocal() const
-{
-    ALastStandLegacyGameState* GS = GetGameState();
-    if (!GS || !CachedOwner) return false;
-
-    const FVector CenterLocation = CachedOwner->GetActorLocation();
-    const float SphereRadiusSq = FMath::Square(SphereRadius);
-
-    DrawDebugSphere(GetWorld(), CenterLocation, SphereRadius, 12, FColor::Yellow, false, 0.1f, 0, 1.0f);
-
-    for (APlayerState* PS : GS->PlayerArray)
-    {
-        if (!PS) continue;
-
-        AHama* TargetHama = Cast<AHama>(PS->GetPawn());
-        if (!TargetHama || TargetHama == CachedOwner) continue;
-
-        if (TargetHama->HealthComponent && TargetHama->HealthComponent->IsDowned())
-        {
-            if (FVector::DistSquared(CenterLocation, TargetHama->GetActorLocation()) <= SphereRadiusSq)
-            {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
 
 void UHamaAbilityComponent::ActivateMedicalSupport()
 {

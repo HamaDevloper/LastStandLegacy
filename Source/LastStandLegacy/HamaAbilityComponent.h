@@ -19,7 +19,7 @@ enum class EHamaAbilityType : uint8
     BulletStorm    UMETA(DisplayName = "BulletStorm"),
     MedicalSupport UMETA(DisplayName = "MedicalSupport"),
     GhostMode      UMETA(DisplayName = "GhostMode"),
-    Blitz          UMETA(DisplayName = "Blitz"),
+    RingOfFire     UMETA(DisplayName = "RingOfFire")
 };
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
@@ -120,6 +120,5 @@ private:
 
 
 public:
-    bool CanActivateMedicalSupportLocal() const;
     bool IsAbilityActive() const;
 };

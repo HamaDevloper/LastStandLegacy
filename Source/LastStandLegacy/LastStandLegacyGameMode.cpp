@@ -30,7 +30,7 @@ void ALastStandLegacyGameMode::InitGame(const FString& MapName, const FString& O
     ActiveAbilities.Add(EHamaAbilityType::BulletStorm);
     ActiveAbilities.Add(EHamaAbilityType::MedicalSupport);
     ActiveAbilities.Add(EHamaAbilityType::GhostMode);
-    ActiveAbilities.Add(EHamaAbilityType::Blitz);
+    //ActiveAbilities.Add(EHamaAbilityType::Blitz);
 
     for (int32 i = 0; i < ActiveAbilities.Num(); ++i)
     {
@@ -182,14 +182,12 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
 {
     if (KillerController)
     {
-        APawn* KillerPawn = KillerController->GetPawn();
-        if (KillerPawn)
+        if (AHama* KillerHama = Cast<AHama>(KillerController->GetPawn()))
         {
-            UHamaAbilityComponent* AbilityComp = KillerPawn->FindComponentByClass<UHamaAbilityComponent>();
-            if (AbilityComp)
+            if (UHamaAbilityComponent* AbilityComp = KillerHama->GetAbilityComponent())
             {
-                float BasePowerReward = 15.0f / (1.0f + (CurrentRound * 0.15f));
-                float PowerReward = FMath::Max(BasePowerReward, 2.0f);
+                const float BasePowerReward = 15.0f / (1.0f + (CurrentRound * 0.15f));
+                const float PowerReward = FMath::Max(BasePowerReward, 1.0f);
 
                 AbilityComp->AddPower(PowerReward);
             }

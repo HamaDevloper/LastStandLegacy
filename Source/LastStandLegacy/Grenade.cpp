@@ -119,17 +119,16 @@ void AGrenade::Explode()
 
     PlayExplosionFX(ExplosionLocation);
 
-    AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState<AGameState>() : nullptr;
-
+    AGameStateBase* GS = GetWorld() ? GetWorld()->GetGameState() : nullptr;
     TArray<AActor*> IgnoredActors;
-    IgnoredActors.Reserve(GameState ? GameState->PlayerArray.Num() + 1 : 4);
+    IgnoredActors.Reserve(GS ? GS->PlayerArray.Num() + 1 : 4);
     IgnoredActors.Add(this);
 
     APawn* InstigatorPawn = GetInstigator();
 
-    if (GameState)
+    if (GS)
     {
-        for (APlayerState* PS : GameState->PlayerArray)
+        for (APlayerState* PS : GS->PlayerArray)
         {
             if (!PS) continue;
             if (APawn* PlayerPawn = PS->GetPawn())

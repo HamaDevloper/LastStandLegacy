@@ -93,6 +93,9 @@ struct FWeaponData : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
     int32 MaxReserveAmmo = 220;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon|Ammo")
+    int32 InitialReserveAmmo = -1;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
     float DefaultReloadTime = 2.0f;
 
@@ -297,7 +300,12 @@ private:
 public:
     bool IsDataInitialized() const { return bInitilize; }
 
-    void ResetDownedAmmo();
+    void ResetDownedAmmo(bool bIsFallbackWeapon = false);
 
    const FGameplayTagContainer& GetWeaponTags() const { return CurrentWeaponData.WeaponTags; }
+
+protected:
+    UFUNCTION(Client, Reliable)
+    void Client_SyncDownedAmmo(int32 NewCurrentAmmo, int32 NewReserveAmmo);
+
 };

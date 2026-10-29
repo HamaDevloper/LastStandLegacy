@@ -74,7 +74,16 @@ void ABaseWeapon::InitializeWeaponData()
 
     MaxAmmoInClip = CurrentWeaponData.MaxAmmoInClip;
     CurrentAmmo = MaxAmmoInClip;
-    ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+
+    if (CurrentWeaponData.InitialReserveAmmo >= 0)
+    {
+        ReserveAmmo = CurrentWeaponData.InitialReserveAmmo;
+    }
+    else
+    {
+        ReserveAmmo = CurrentWeaponData.MaxReserveAmmo;
+    }
+
     Damage = CurrentWeaponData.Damage;
 
     if (HasAuthority())
@@ -562,14 +571,50 @@ bool ABaseWeapon::NeedsAmmo() const
     return  (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
 }
 
-void ABaseWeapon::ResetDownedAmmo()
+void ABaseWeapon::ResetDownedAmmo(bool bIsFallbackWeapon)
 {
     if (!HasAuthority()) return;
 
-    CurrentAmmo = MaxAmmoInClip;
+    if (bIsFallbackWeapon)
+    {
+        CurrentAmmo = FMath::Clamp(CurrentWeaponData.InitialReserveAmmo, 0, CurrentWeaponData.MaxAmmoInClip);
+        ReserveAmmo = FMath::Max(0, CurrentWeaponData.InitialReserveAmmo - CurrentAmmo);
+    }
+    else
+    {
+        if (CurrentAmmo <= 0 && ReserveAmmo <= 0)
+        {
+            CurrentAmmo = FMath::Clamp(CurrentWeaponData.InitialReserveAmmo, 0, CurrentWeaponData.MaxAmmoInClip);
+            ReserveAmmo = FMath::Max(0, CurrentWeaponData.InitialReserveAmmo - CurrentAmmo);
+        }
+        else if (CurrentAmmo <= 0 && ReserveAmmo > 0)
+        {
+            int32 AmmoToChamber = FMath::Min(CurrentWeaponData.MaxAmmoInClip, ReserveAmmo);
+            CurrentAmmo = AmmoToChamber;
+            ReserveAmmo -= AmmoToChamber;
+        }
+    }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
 
+    if (OwnerCharacter)
+    {
+        if (OwnerCharacter->IsLocallyControlled())
+        {
+            OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+        }
+        else
+        {
+            Client_SyncDownedAmmo(CurrentAmmo, ReserveAmmo);
+        }
+    }
+}
+
+void ABaseWeapon::Client_SyncDownedAmmo_Implementation(int32 NewCurrentAmmo, int32 NewReserveAmmo)
+{
+    CurrentAmmo = NewCurrentAmmo;
+    ReserveAmmo = NewReserveAmmo;
     OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 }
 
@@ -734,8 +779,7 @@ float ABaseWeapon::GetCalculatedReloadTime() const
     UAnimMontage* ReloadMontage = GetReloadMontage();
     float BaseTime = ReloadMontage ? ReloadMontage->GetPlayLength() : CurrentWeaponData.DefaultReloadTime;
 
-    ALastStandLegacyGameState* GS = GetGameStateCache();
-    bool bHasFastReload = (GS && GS->IsTeamAdrenalineActive()) || (OwnerCharacter && OwnerCharacter->HasFastHands());
+    bool bHasFastReload = OwnerCharacter && OwnerCharacter->HasFastHands();
 
     return bHasFastReload ? (BaseTime / 2.0f) : BaseTime;
 }

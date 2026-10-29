@@ -833,7 +833,7 @@ float AHama::GetSwapPlayRate() const
     float PlayRate = 1.0f;
     if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
     {
-        if (HasFastHands() || GS->IsTeamAdrenalineActive())
+        if (HasFastHands())
         {
             PlayRate = 2.0f;
         }
@@ -1346,8 +1346,6 @@ void AHama::InitializeDownedWeapon()
         DownedWeaponInstance->SetActorEnableCollision(false);
         DownedWeaponInstance->SetActorTickEnabled(false);
     }
-
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("[InitializeDownedWeapon] Downed Weapon Initialized! %s"), *DownedWeaponInstance->GetName()));
 }
 
 void AHama::HandleDownStateChanged(bool bIsDowned)
@@ -1418,7 +1416,8 @@ void AHama::EquipDownedWeapon()
         }
     }
 
-    if (!TargetDownedWeapon && IsValid(DownedWeaponInstance))
+    const bool bUsingFallbackInstance = (TargetDownedWeapon == nullptr);
+    if (bUsingFallbackInstance && IsValid(DownedWeaponInstance))
     {
         TargetDownedWeapon = DownedWeaponInstance;
     }
@@ -1428,10 +1427,7 @@ void AHama::EquipDownedWeapon()
         CurrentWeapon = TargetDownedWeapon;
         CurrentWeapon->EquipWeapon(this);
 
-        if (TargetDownedWeapon == DownedWeaponInstance)
-        {
-            DownedWeaponInstance->ResetDownedAmmo();
-        }
+        TargetDownedWeapon->ResetDownedAmmo(bUsingFallbackInstance);
     }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, CurrentWeapon, this);
@@ -2062,13 +2058,6 @@ void AHama::AbilityActionPressed()
     if (HealthComponent && HealthComponent->IsDowned()) return;
     if (IsDrinkingPerk()) return;
     if (!HamaAbilityComponent || !HamaAbilityComponent->IsPowerFull() || HamaAbilityComponent->IsAbilityActive()) return;
-    if (HamaAbilityComponent->GetAssignedAbility() == EHamaAbilityType::MedicalSupport)
-    {
-        if (!HamaAbilityComponent->CanActivateMedicalSupportLocal())
-        {
-            return;
-        }
-    }
 
     HamaAbilityComponent->Server_ActivateAbility();
 }
@@ -2843,9 +2832,8 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
     ClearAllReviveTimers();
 
     float FullReviveTime = (DefaultReviveTime > 0.0f) ? DefaultReviveTime : 4.0f;
-    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
 
-    if (HasQuickRevive() || (GS && GS->IsTeamAdrenalineActive()))
+    if (HasQuickRevive())
     {
         FullReviveTime *= 0.5f;
     }
@@ -2858,6 +2846,8 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
     const float ExistingProgress = DownedPlayer->HealthComponent->GetActiveRevivePercent();
     const float RemainingFraction = FMath::Clamp(1.0f - ExistingProgress, 0.02f, 1.0f);
     const float TimeToComplete = FullReviveTime * RemainingFraction;
+
+    AGameStateBase* GS = GetWorld()->GetGameState();
 
     const float ServerTime = GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
     const float CalculatedEndTime = ServerTime + TimeToComplete;
