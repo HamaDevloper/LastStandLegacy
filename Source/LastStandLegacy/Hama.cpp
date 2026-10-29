@@ -2694,6 +2694,8 @@ void AHama::MeleeActionPressed()
 
     PlayMeleeMontageByCounter(TargetMontage);
 
+    MeleeCounter++;
+
     UpdateWeaponVisibility();
 
     FOnMontageBlendingOutStarted BlendingOutDelegate;
@@ -2788,18 +2790,19 @@ void AHama::OnRep_MeleeCounter()
 
 void AHama::PerformMeleeHitDetection()
 {
-    if (!IsLocallyControlled() || !GetMesh()) return;
+    if (!IsLocallyControlled()) return;
 
     const bool bIsBrawler = IsBrawlerModeActive();
     const float ActiveRange = bIsBrawler ? HamaAbilityComponent->GetBrawlerRange() : MeleeRange;
     const float ActiveRadius = bIsBrawler ? HamaAbilityComponent->GetBrawlerRadius() : MeleeRadius;
 
-    const FVector TraceStart = bIsBrawler
-        ? (GetActorLocation() + FVector(0.f, 0.f, 50.f))
-        : GetMesh()->GetSocketLocation(MeleeSocketName);
+    // لەجیاتی 50.f، شوێنی ڕاستەقینەی چاو و کامێرای یاریزان وەردەگرین
+    FVector EyeLocation;
+    FRotator EyeRotation;
+    GetActorEyesViewPoint(EyeLocation, EyeRotation);
 
-    const FVector ForwardVector = GetBaseAimRotation().Vector();
-    const FVector TraceEnd = TraceStart + (ForwardVector * ActiveRange);
+    const FVector ForwardVector = EyeRotation.Vector();
+    const FVector TraceEnd = EyeLocation + (ForwardVector * ActiveRange);
 
     FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeTrace), false);
     Params.AddIgnoredActor(this);
@@ -2810,13 +2813,21 @@ void AHama::PerformMeleeHitDetection()
 
     const bool bHit = GetWorld()->SweepSingleByChannel(
         HitResult,
-        TraceStart,
+        EyeLocation,
         TraceEnd,
         FQuat::Identity,
         ECC_Melee,
         SphereShape,
         Params
     );
+
+#if ENABLE_DRAW_DEBUG
+    FColor DebugColor = bHit ? FColor::Green : FColor::Red;
+    const FVector TargetEndLoc = bHit ? HitResult.ImpactPoint : TraceEnd;
+    DrawDebugSphere(GetWorld(), EyeLocation, ActiveRadius, 12, DebugColor, false, 1.5f, 0, 1.0f);
+    DrawDebugSphere(GetWorld(), TargetEndLoc, ActiveRadius, 12, DebugColor, false, 1.5f, 0, 1.0f);
+    DrawDebugLine(GetWorld(), EyeLocation, TargetEndLoc, DebugColor, false, 1.5f, 0, 1.5f);
+#endif
 
     if (bHit && IsValid(HitResult.GetActor()))
     {
@@ -2825,7 +2836,6 @@ void AHama::PerformMeleeHitDetection()
         {
             if (HasAuthority())
             {
-                bServerMeleeHitWindowOpen = false;
                 ApplyMeleeDamageInternal(HitResult.GetActor(), HitResult.ImpactPoint);
             }
             else
