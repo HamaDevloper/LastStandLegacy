@@ -30,7 +30,7 @@ void ALastStandLegacyGameMode::InitGame(const FString& MapName, const FString& O
     ActiveAbilities.Add(EHamaAbilityType::BulletStorm);
     ActiveAbilities.Add(EHamaAbilityType::MedicalSupport);
     ActiveAbilities.Add(EHamaAbilityType::GhostMode);
-    //ActiveAbilities.Add(EHamaAbilityType::Blitz);
+    ActiveAbilities.Add(EHamaAbilityType::Brawler);
 
     for (int32 i = 0; i < ActiveAbilities.Num(); ++i)
     {

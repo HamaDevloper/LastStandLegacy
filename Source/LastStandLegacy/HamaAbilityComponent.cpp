@@ -4,6 +4,7 @@
 #include "Hama.h"
 #include "LastStandLegacyGameState.h"
 #include "HamaPlayerState.h"
+#include "HealthComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "ZombieDirectorSubsystem.h"
 
@@ -41,15 +42,19 @@ void UHamaAbilityComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    FDoRepLifetimeParams Params;
-    Params.bIsPushBased = true;
+    FDoRepLifetimeParams OwnerParams;
+    OwnerParams.bIsPushBased = true;
+    OwnerParams.Condition = COND_OwnerOnly;
 
-    Params.Condition = COND_OwnerOnly;
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, CurrentPower, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, bIsAbilityActive, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, CurrentPower, OwnerParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, bIsAbilityActive, OwnerParams);
 
-    Params.Condition = COND_None;
-    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, bIsGhost, Params);
+    FDoRepLifetimeParams SharedParams;
+    SharedParams.bIsPushBased = true;
+    SharedParams.Condition = COND_None;
+
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, bIsGhost, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHamaAbilityComponent, bIsBrawler, SharedParams);
 }
 
 void UHamaAbilityComponent::SetAssignedAbility(EHamaAbilityType NewAbility)
@@ -65,17 +70,11 @@ void UHamaAbilityComponent::AddPower(float Amount)
     CurrentPower = FMath::Clamp(CurrentPower + Amount, 0.f, MaxPower);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, CurrentPower, this);
 
-    if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
+    if (GetOwner()->HasAuthority() && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_CurrentPower();
     }
 }
-
-bool UHamaAbilityComponent::IsAbilityActive() const
-{
-    return bIsAbilityActive;
-}
-
 
 void UHamaAbilityComponent::StartAbilityCooldown(float Duration)
 {
@@ -111,6 +110,11 @@ void UHamaAbilityComponent::EndAbilityCooldown()
         DeactivateGhostMode();
     }
 
+    if (bIsBrawler)
+    {
+        DeactivateBrawler();
+    }
+
     if (GetOwner() && GetOwner()->HasAuthority() && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_IsAbilityActive();
@@ -127,7 +131,7 @@ void UHamaAbilityComponent::ResetPower()
     CurrentPower = 0.f;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, CurrentPower, this);
 
-    if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
+    if (GetOwner() && GetOwner()->HasAuthority() && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_CurrentPower();
     }
@@ -143,7 +147,7 @@ void UHamaAbilityComponent::FullPower()
     CurrentPower = MaxPower;
     MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, CurrentPower, this);
 
-    if (GetOwner()->GetLocalRole() == ROLE_Authority && GetNetMode() != NM_DedicatedServer)
+    if (GetOwner() && GetOwner()->HasAuthority() && GetNetMode() != NM_DedicatedServer)
     {
         OnRep_CurrentPower();
     }
@@ -158,8 +162,8 @@ void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
 {
     if (CurrentPower < MaxPower || bIsAbilityActive || CurrentAssignedAbility == EHamaAbilityType::None) return;
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
-    if (!CachedOwner || CachedOwner->IsDrinkingPerk()) return;
-    if (CachedOwner->IsDowned()) return;
+    if (!CachedOwner) CachedOwner = Cast<AHama>(GetOwner());
+    if (!CachedOwner || CachedOwner->IsDrinkingPerk() || CachedOwner->IsDowned()) return;
 
     switch (CurrentAssignedAbility)
     {
@@ -172,11 +176,10 @@ void UHamaAbilityComponent::Server_ActivateAbility_Implementation()
     case EHamaAbilityType::GhostMode:
         ActivateGhostMode();
         break;
-    //case EHamaAbilityType::Blitz:
-        //ActivateBlitz();
-        //break;
+    case EHamaAbilityType::Brawler:
+        ActivateBrawler();
+        break;
     default:
-        UE_LOG(LogTemp, Warning, TEXT("Player tried to activate ability but has NONE assigned!"));
         break;
     }
 }
@@ -203,6 +206,7 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
         if (!PS) continue;
         APawn* TargetPawn = PS->GetPawn();
         if (!TargetPawn || TargetPawn == CachedOwner) continue;
+
         if (UHealthComponent* TargetHealth = TargetPawn->FindComponentByClass<UHealthComponent>())
         {
             if (TargetHealth->IsDowned() && FVector::DistSquared(CenterLocation, TargetPawn->GetActorLocation()) <= SphereRadiusSq)
@@ -211,6 +215,9 @@ void UHamaAbilityComponent::ActivateMedicalSupport()
             }
         }
     }
+
+    // سفرکردنەوەی پاوەر دوای زیندووکردنەوەی تیمەکە
+    ResetPower();
 }
 
 void UHamaAbilityComponent::ActivateGhostMode()
@@ -259,40 +266,83 @@ void UHamaAbilityComponent::DeactivateGhostMode()
 
 void UHamaAbilityComponent::OnRep_IsGhost()
 {
-    AHama* OwnerChar = Cast<AHama>(GetOwner());
-    if (!OwnerChar || !OwnerChar->GetCapsuleComponent()) return;
+    if (!CachedOwner) CachedOwner = Cast<AHama>(GetOwner());
+    if (!CachedOwner || !CachedOwner->GetCapsuleComponent()) return;
 
     if (bIsGhost)
     {
-        OwnerChar->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+        CachedOwner->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
     }
     else
     {
-        OwnerChar->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+        CachedOwner->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
     }
 }
 
-void UHamaAbilityComponent::ActivateBlitz()
+void UHamaAbilityComponent::ActivateBrawler()
 {
-    if (ALastStandLegacyGameState* GS = GetGameState())
+    if (bIsBrawler) return;
+
+    bIsBrawler = true;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsBrawler, this);
+
+    StartAbilityCooldown(BrawlerAbilityDuration);
+
+    if (GetNetMode() != NM_DedicatedServer)
     {
-        GS->StartTeamAdrenaline(BlitzAbilityDuration);
-        StartAbilityCooldown(BlitzAbilityDuration);
+        OnRep_IsBrawler();
+    }
+}
+
+void UHamaAbilityComponent::DeactivateBrawler()
+{
+    if (!bIsBrawler) return;
+
+    bIsBrawler = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsBrawler, this);
+
+    if (GetNetMode() != NM_DedicatedServer)
+    {
+        OnRep_IsBrawler();
+    }
+}
+
+void UHamaAbilityComponent::OnRep_IsBrawler()
+{
+    if (!CachedOwner) CachedOwner = Cast<AHama>(GetOwner());
+    if (CachedOwner)
+    {
+        CachedOwner->OnBrawlerStateChanged(bIsBrawler);
     }
 }
 
 void UHamaAbilityComponent::StopAllAbilities()
 {
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(AbilityDurationTimerHandle);
     }
 
-    bIsAbilityActive = false;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsAbilityActive, this);
+    if (bIsAbilityActive)
+    {
+        bIsAbilityActive = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHamaAbilityComponent, bIsAbilityActive, this);
+
+        if (GetNetMode() != NM_DedicatedServer)
+        {
+            OnRep_IsAbilityActive();
+        }
+    }
 
     if (bIsGhost)
     {
         DeactivateGhostMode();
+    }
+
+    if (bIsBrawler)
+    {
+        DeactivateBrawler();
     }
 }

@@ -667,7 +667,7 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
         PendingWeaponForSwap = nullptr;
     }
 
-    const bool bIsThrowing = (ThrowableComponent && ThrowableComponent->IsThrowingInProcess());
+    const bool bIsThrowing = (ThrowableComponent && ThrowableComponent->IsThrowingInProcess() || IsBrawlerModeActive());
     CurrentWeapon->SetActorHiddenInGame(bIsThrowing);
     AttachWeaponToMesh(CurrentWeapon);
 
@@ -848,6 +848,7 @@ void AHama::Input_SwapWeapon()
 
 void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 {
+    if (IsBrawlerModeActive()) return;
     if (!SwapWeaponMontage || !CurrentWeapon || bIsDead) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
     if (IsDrinkingPerk() || IsDowned()) return;
@@ -945,6 +946,7 @@ void AHama::SwapWeapon(ABaseWeapon* TargetWeapon)
 
 void AHama::Server_SwapWeapon_Implementation(ABaseWeapon* NewWeapon)
 {
+    if (IsBrawlerModeActive()) return;
     if (!SwapWeaponMontage || !CurrentWeapon || bIsDead) return;
     if (IsDrinkingPerk() || IsDowned()) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
@@ -1366,6 +1368,8 @@ void AHama::EquipDownedWeapon()
 {
     if (!HasAuthority()) return;
 
+    if (HamaAbilityComponent) HamaAbilityComponent->StopAllAbilities();
+
     PendingWeaponForSwap = nullptr;
     GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
     Multicast_StopSwapMontage();
@@ -1575,10 +1579,17 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 // -----------------------------------------------------------------------------
 void AHama::FireActionPressed()
 {
-    if (!HamaComponent || !CurrentWeapon) return;
+    if (!HamaComponent) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
-    if (IsDrinkingPerk()) return;
-    if(IsMeleeing()) return;
+    if (IsDrinkingPerk() || IsDowned()) return;
+
+    if (IsBrawlerModeActive())
+    {
+        MeleeActionPressed();
+        return;
+    }
+
+    if (!CurrentWeapon || IsMeleeing()) return;
     bIsFireButtonHold = true;
     CurrentWeapon->StartFire();
 }
@@ -1592,9 +1603,17 @@ void AHama::FireActionReleased()
 
 void AHama::AimActionPressed()
 {
-    if (!HamaComponent || !CurrentWeapon) return;
+   
     if (IsDrinkingPerk()) return;
     if (IsMeleeing()) return;
+
+    if (IsBrawlerModeActive())
+    {
+        MeleeActionPressed();
+        return;
+    }
+
+    if (!HamaComponent || !CurrentWeapon) return;
 
     if (HamaComponent->IsSprinting())
     {
@@ -2513,22 +2532,116 @@ void AHama::Server_Interact_Implementation(AActor* InteractTarget)
 // Melee System Implementation
 // -----------------------------------------------------------------------------
 
+bool AHama::IsBrawlerModeActive() const
+{
+    return HamaAbilityComponent && HamaAbilityComponent->IsBrawlerActive();
+}
+
+UAnimMontage* AHama::GetActiveMeleeMontage() const
+{
+    if (IsBrawlerModeActive() && BrawlerAttackMontage)
+    {
+        return BrawlerAttackMontage;
+    }
+    return MeleeAttackMontage;
+}
+
+void AHama::PlayMeleeMontageByCounter(UAnimMontage* MontageToPlay)
+{
+    if (!MontageToPlay) return;
+
+    const float Duration = PlayAnimMontage(MontageToPlay);
+    if (Duration > 0.0f && MontageToPlay == BrawlerAttackMontage && BrawlerComboSections.Num() > 0)
+    {
+        if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+        {
+            const int32 SectionIndex = MeleeCounter % BrawlerComboSections.Num();
+            const FName SectionName = BrawlerComboSections[SectionIndex];
+            if (MontageToPlay->IsValidSectionName(SectionName))
+            {
+                AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
+            }
+        }
+    }
+}
+
+void AHama::OnBrawlerStateChanged(bool bInBrawlerMode)
+{
+    UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+
+    if (bInBrawlerMode)
+    {
+        // ١. هەڵوەشاندنەوەی هەر چەک گۆڕینێک کە لە نیوەدا بێت
+        PendingWeaponForSwap = nullptr;
+        GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
+        if (AnimInstance && SwapWeaponMontage && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
+        {
+            AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
+        }
+
+        // ٢. دەرچوون لە دۆخی نیشانەگرتن (Aim)
+        if (bIsAimButtonHold && HamaComponent)
+        {
+            bIsAimButtonHold = false;
+            HamaComponent->SetAiming(false);
+            OnAim(false);
+        }
+
+        if (IsValid(CurrentWeapon))
+        {
+            CurrentWeapon->StopFire();
+            if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+            CurrentWeapon->SetActorHiddenInGame(true);
+        }
+
+        if (UHamaAnimInstance* HamaAnim = Cast<UHamaAnimInstance>(AnimInstance))
+        {
+            HamaAnim->SetEquippedWeapon(nullptr);
+        }
+    }
+    else
+    {
+        if (IsValid(CurrentWeapon))
+        {
+            const bool bIsThrowing = (ThrowableComponent && ThrowableComponent->IsThrowingInProcess());
+            CurrentWeapon->SetActorHiddenInGame(bIsThrowing);
+            AttachWeaponToMesh(CurrentWeapon);
+        }
+
+        UpdateAnimInstanceWeapon();
+    }
+}
+
 bool AHama::IsMeleeing() const
 {
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
-    return AnimInstance ? AnimInstance->Montage_IsPlaying(MeleeAttackMontage) : false;
+    if (!AnimInstance) return false;
+
+    return (MeleeAttackMontage && AnimInstance->Montage_IsPlaying(MeleeAttackMontage)) ||
+        (BrawlerAttackMontage && AnimInstance->Montage_IsPlaying(BrawlerAttackMontage));
 }
 
 void AHama::MeleeActionPressed()
 {
-    if (IsMeleeing() || IsDrinkingPerk()) return;
+    if (IsMeleeing() || IsDrinkingPerk() || IsDowned()) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
-    if (!MeleeAttackMontage) return;
 
-    if (IsSprinting()) StopSprint();
-    if (CurrentWeapon) CurrentWeapon->StopFire();
-    if (CurrentWeapon && CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
-    if (bIsAimButtonHold)
+    UAnimMontage* TargetMontage = GetActiveMeleeMontage();
+    if (!TargetMontage) return;
+
+    // تەنها لە Meleeـی ئاساییدا سپرینت دەبڕین؛ لە دۆخی Brawler یاریزان دەبێت بتوانێت بە ڕاکردنەوە هێرش بکات!
+    if (!IsBrawlerModeActive() && IsSprinting())
+    {
+        StopSprint();
+    }
+
+    if (CurrentWeapon)
+    {
+        CurrentWeapon->StopFire();
+        if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+    }
+
+    if (bIsAimButtonHold && HamaComponent)
     {
         HamaComponent->SetAiming(false);
         OnAim(false);
@@ -2537,99 +2650,99 @@ void AHama::MeleeActionPressed()
     UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
     if (!AnimInstance) return;
 
-    const float Duration = PlayAnimMontage(MeleeAttackMontage);
-    if (Duration <= 0.0f)
-    {
-        return;
-    }
+    PlayMeleeMontageByCounter(TargetMontage);
 
     FOnMontageBlendingOutStarted BlendingOutDelegate;
     BlendingOutDelegate.BindUObject(this, &AHama::OnMeleeMontageBlendingOut);
-    AnimInstance->Montage_SetBlendingOutDelegate(BlendingOutDelegate, MeleeAttackMontage);
+    AnimInstance->Montage_SetBlendingOutDelegate(BlendingOutDelegate, TargetMontage);
 
     Server_ExecuteMelee();
 }
 
 void AHama::OnMeleeMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
 {
-    if (Montage == MeleeAttackMontage)
+    if (Montage == MeleeAttackMontage || Montage == BrawlerAttackMontage)
     {
-        if (!bInterrupted && bIsAimButtonHold)
+        if (!bInterrupted && bIsAimButtonHold && !IsBrawlerModeActive() && HamaComponent)
         {
-                HamaComponent->SetAiming(true);
-                OnAim(true);
+            HamaComponent->SetAiming(true);
+            OnAim(true);
         }
     }
 }
 
 void AHama::Server_ExecuteMelee_Implementation()
 {
-    if (IsDrinkingPerk()) return;
+    if (IsDrinkingPerk() || IsDowned()) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
 
+    const bool bIsBrawler = IsBrawlerModeActive();
+    const float ActiveCooldown = bIsBrawler ? HamaAbilityComponent->GetBrawlerCooldown() : MeleeCooldown;
+
     const float CurrentTime = GetWorld()->GetTimeSeconds();
-    if (CurrentTime - LastServerMeleeTime < (MeleeCooldown * 0.8f))
+    if (CurrentTime - LastServerMeleeTime < (ActiveCooldown * 0.8f))
     {
         return;
     }
 
     LastServerMeleeTime = CurrentTime;
+    bServerMeleeHitWindowOpen = true; 
 
-    if (IsSprinting()) StopSprint();
-    if (CurrentWeapon) CurrentWeapon->StopFire();
-    if (CurrentWeapon && CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+    if (!bIsBrawler && IsSprinting()) StopSprint();
+    if (CurrentWeapon)
+    {
+        CurrentWeapon->StopFire();
+        if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
+    }
+
+    if (GetNetMode() != NM_DedicatedServer && !IsLocallyControlled())
+    {
+        PlayMeleeMontageByCounter(GetActiveMeleeMontage());
+    }
 
     MeleeCounter++;
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, MeleeCounter, this);
-
-    if (GetNetMode() != NM_DedicatedServer && !IsLocallyControlled() && MeleeAttackMontage)
-    {
-        PlayAnimMontage(MeleeAttackMontage);
-    }
 }
 
 void AHama::OnRep_MeleeCounter()
 {
-    if (!IsLocallyControlled() && MeleeAttackMontage)
+    if (!IsLocallyControlled())
     {
-        PlayAnimMontage(MeleeAttackMontage);
+        PlayMeleeMontageByCounter(GetActiveMeleeMontage());
     }
-}
+} 
 
 void AHama::PerformMeleeHitDetection()
 {
-    if (!IsLocallyControlled()) return;
-    if (!GetMesh()) return;
+    if (!IsLocallyControlled() || !GetMesh()) return;
 
-    const FVector SocketLocation = GetMesh()->GetSocketLocation(MeleeSocketName);
-    const FVector ForwardVector = GetActorForwardVector();
-    const FVector TraceEnd = SocketLocation + (ForwardVector * MeleeRange);
+    const bool bIsBrawler = IsBrawlerModeActive();
+    const float ActiveRange = bIsBrawler ? HamaAbilityComponent->GetBrawlerRange() : MeleeRange;
+    const float ActiveRadius = bIsBrawler ? HamaAbilityComponent->GetBrawlerRadius() : MeleeRadius;
+
+    const FVector TraceStart = bIsBrawler
+        ? (GetActorLocation() + FVector(0.f, 0.f, 50.f))
+        : GetMesh()->GetSocketLocation(MeleeSocketName);
+
+    const FVector ForwardVector = GetBaseAimRotation().Vector();
+    const FVector TraceEnd = TraceStart + (ForwardVector * ActiveRange);
 
     FCollisionQueryParams Params(SCENE_QUERY_STAT(MeleeTrace), false);
     Params.AddIgnoredActor(this);
     if (CurrentWeapon) Params.AddIgnoredActor(CurrentWeapon);
 
     FHitResult HitResult;
-    FCollisionShape SphereShape = FCollisionShape::MakeSphere(MeleeRadius);
+    const FCollisionShape SphereShape = FCollisionShape::MakeSphere(ActiveRadius);
 
-    bool bHit = GetWorld()->SweepSingleByChannel(
+    const bool bHit = GetWorld()->SweepSingleByChannel(
         HitResult,
-        SocketLocation,
+        TraceStart,
         TraceEnd,
         FQuat::Identity,
         ECC_Melee,
         SphereShape,
         Params
     );
-
-#if ENABLE_DRAW_DEBUG
-    FColor DebugColor = bHit ? FColor::Green : FColor::Red;
-    const FVector TargetEndLoc = bHit ? HitResult.ImpactPoint : TraceEnd;
-
-    DrawDebugSphere(GetWorld(), SocketLocation, MeleeRadius, 12, DebugColor, false, 1.5f, 0, 1.0f);
-    DrawDebugSphere(GetWorld(), TargetEndLoc, MeleeRadius, 12, DebugColor, false, 1.5f, 0, 1.0f);
-    DrawDebugLine(GetWorld(), SocketLocation, TargetEndLoc, DebugColor, false, 1.5f, 0, 1.5f);
-#endif
 
     if (bHit && IsValid(HitResult.GetActor()))
     {
@@ -2638,6 +2751,7 @@ void AHama::PerformMeleeHitDetection()
         {
             if (HasAuthority())
             {
+                bServerMeleeHitWindowOpen = false;
                 ApplyMeleeDamageInternal(HitResult.GetActor(), HitResult.ImpactPoint);
             }
             else
@@ -2650,45 +2764,35 @@ void AHama::PerformMeleeHitDetection()
 
 void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_NetQuantize HitLocation)
 {
-    if (!IsValid(HitActor))
+    if (!bServerMeleeHitWindowOpen || !IsValid(HitActor))
     {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, TEXT("[Server Reject]: HitActor is Invalid"));
-        }
         return;
     }
 
+    const bool bIsBrawler = IsBrawlerModeActive();
+    const float ActiveCooldown = bIsBrawler ? HamaAbilityComponent->GetBrawlerCooldown() : MeleeCooldown;
+    const float ActiveRange = bIsBrawler ? HamaAbilityComponent->GetBrawlerRange() : MeleeRange;
+    const float ActiveRadius = bIsBrawler ? HamaAbilityComponent->GetBrawlerRadius() : MeleeRadius;
+
     const float CurrentTime = GetWorld()->GetTimeSeconds();
-    if ((CurrentTime - LastServerMeleeTime) > (MeleeCooldown + 1.2f))
+    if ((CurrentTime - LastServerMeleeTime) > (ActiveCooldown + 0.8f))
     {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, TEXT("[Server Reject]: Melee Attack Window Expired!"));
-        }
+        bServerMeleeHitWindowOpen = false;
         return;
     }
 
     IDamageableInterface* Damageable = Cast<IDamageableInterface>(HitActor);
     if (!Damageable || !Damageable->CanReceiveWeaponDamage())
     {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, FString::Printf(TEXT("[Server Reject]: %s cannot receive damage"), *HitActor->GetName()));
-        }
         return;
     }
 
     const FVector PlayerLoc = GetActorLocation();
-    const float MaxAllowedDistanceSq = FMath::Square(MeleeRange + MeleeRadius + 100.f);
+    const float MaxAllowedDistanceSq = FMath::Square(ActiveRange + ActiveRadius + 100.f);
     const float ActualDistSq = FVector::DistSquared(PlayerLoc, HitLocation);
 
     if (ActualDistSq > MaxAllowedDistanceSq)
     {
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("[Server Reject]: Distance Too Far! Max: %.1f | Actual: %.1f"), FMath::Sqrt(MaxAllowedDistanceSq), FMath::Sqrt(ActualDistSq)));
-        }
         return;
     }
 
@@ -2707,45 +2811,29 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
         TraceParams
     );
 
-#if ENABLE_DRAW_DEBUG
-    FColor LineColor = bBlockedByWall ? FColor::Red : FColor::Green;
-    DrawDebugLine(GetWorld(), EyeLocation, HitLocation, LineColor, false, 2.0f, 0, 1.5f);
-
-    if (bBlockedByWall && WallHit.bBlockingHit)
-    {
-        DrawDebugPoint(GetWorld(), WallHit.ImpactPoint, 12.0f, FColor::Red, false, 2.0f);
-    }
-#endif
-
     if (bBlockedByWall)
     {
-        if (GEngine)
-        {
-            FString WallName = IsValid(WallHit.GetActor()) ? WallHit.GetActor()->GetName() : TEXT("Static Mesh");
-            GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("[Server Reject]: Line of Sight Blocked by: %s"), *WallName));
-        }
         return;
     }
 
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("[Server Success]: Valid Hit on %s"), *HitActor->GetName()));
-    }
+    bServerMeleeHitWindowOpen = false;
 
     ApplyMeleeDamageInternal(HitActor, HitLocation);
 }
 
 void AHama::ApplyMeleeDamageInternal(AActor* HitActor, const FVector& HitLocation)
 {
+    const float FinalDamage = IsBrawlerModeActive() ? HamaAbilityComponent->GetBrawlerDamage() : MeleeDamage;
+
     FPointDamageEvent PointDamageEvent;
-    PointDamageEvent.Damage = MeleeDamage;
+    PointDamageEvent.Damage = FinalDamage;
 
     const FVector HitDir = (HitLocation - GetActorLocation()).GetSafeNormal();
     PointDamageEvent.HitInfo = FHitResult(HitActor, nullptr, HitLocation, HitDir);
     PointDamageEvent.ShotDirection = HitDir;
     PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
 
-    HitActor->TakeDamage(MeleeDamage, PointDamageEvent, GetController(), this);
+    HitActor->TakeDamage(FinalDamage, PointDamageEvent, GetController(), this);
 }
 
 bool AHama::CanInteract(AHama* InteractingPlayer)

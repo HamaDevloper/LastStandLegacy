@@ -19,7 +19,7 @@ enum class EHamaAbilityType : uint8
     BulletStorm    UMETA(DisplayName = "BulletStorm"),
     MedicalSupport UMETA(DisplayName = "MedicalSupport"),
     GhostMode      UMETA(DisplayName = "GhostMode"),
-    RingOfFire     UMETA(DisplayName = "RingOfFire")
+    Brawler        UMETA(DisplayName = "Brawler")
 };
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
@@ -38,18 +38,30 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_IsGhost, BlueprintReadOnly, Category = "Abilities")
     bool bIsGhost = false;
 
-    UPROPERTY(ReplicatedUsing = OnRep_IsAbilityActive)
+    UPROPERTY(ReplicatedUsing = OnRep_IsAbilityActive, BlueprintReadOnly, Category = "Abilities")
     bool bIsAbilityActive = false;
+
+    UPROPERTY(ReplicatedUsing = OnRep_IsBrawler, BlueprintReadOnly, Category = "Abilities")
+    bool bIsBrawler = false;
 
     void SetAssignedAbility(EHamaAbilityType NewAbility);
     void AddPower(float Amount);
+
     UFUNCTION(Server, Reliable, BlueprintCallable)
     void Server_ActivateAbility();
+
     bool IsPowerFull() const;
     void FullPower();
     void StopAllAbilities();
 
+    bool IsAbilityActive() const { return bIsAbilityActive; }
     bool GetGhost() const { return bIsGhost; }
+    bool IsBrawlerActive() const { return bIsBrawler; }
+
+    float GetBrawlerDamage() const { return BrawlerDamage; }
+    float GetBrawlerCooldown() const { return BrawlerCooldown; }
+    float GetBrawlerRange() const { return BrawlerRange; }
+    float GetBrawlerRadius() const { return BrawlerRadius; }
 
     EHamaAbilityType GetAssignedAbility() const { return CurrentAssignedAbility; }
 
@@ -57,7 +69,6 @@ protected:
     UFUNCTION(BlueprintPure, Category = "Hama|Abilities")
     EHamaAbilityType GetCurrentAssignedAbility() const { return CurrentAssignedAbility; }
 
-protected:
     UPROPERTY(BlueprintAssignable, Category = "Hama|Abilities")
     FOnPowerChangedSignature OnPowerChanged;
 
@@ -67,12 +78,43 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_CurrentPower, VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
     float CurrentPower = 0.0f;
 
-    UPROPERTY(EditAnywhere, Category = "Ability")
+    UPROPERTY(EditAnywhere, Category = "Hama|Abilities")
     float SphereRadius = 500.f;
 
     const float MaxPower = 100.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
+    float AbilityDuration = 15.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities|Brawler")
+    float BrawlerAbilityDuration = 20.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Abilities|Brawler")
+    float BrawlerDamage = 650.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Abilities|Brawler")
+    float BrawlerCooldown = 0.4f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Abilities|Brawler")
+    float BrawlerRange = 200.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Abilities|Brawler")
+    float BrawlerRadius = 55.0f;
+
     void ResetPower();
+    void StartAbilityCooldown(float Duration);
+    void EndAbilityCooldown();
+
+    void ActivateBulletStorm();
+    void ActivateMedicalSupport();
+    void ActivateGhostMode();
+    void ActivateBrawler();
+
+    UFUNCTION()
+    void DeactivateGhostMode();
+
+    UFUNCTION()
+    void DeactivateBrawler();
 
     UFUNCTION()
     void OnRep_CurrentPower();
@@ -80,29 +122,13 @@ protected:
     UFUNCTION()
     void OnRep_IsAbilityActive();
 
-    void ActivateBulletStorm();
-    void ActivateMedicalSupport();
-    void ActivateGhostMode();
-    void ActivateBlitz();
-
-    void StartAbilityCooldown(float Duration);
-    void EndAbilityCooldown();
-
-    UFUNCTION()
-    void DeactivateGhostMode();
-
-protected:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
-    float AbilityDuration = 15.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Abilities")
-    float BlitzAbilityDuration = 20.0f;
-
     UFUNCTION()
     void OnRep_IsGhost();
 
+    UFUNCTION()
+    void OnRep_IsBrawler();
+
 private:
-    FTimerHandle GhostTimerHandle;
     FTimerHandle AbilityDurationTimerHandle;
 
     UPROPERTY()
@@ -115,10 +141,5 @@ private:
     mutable TObjectPtr<UZombieDirectorSubsystem> CachedDirector;
 
     ALastStandLegacyGameState* GetGameState() const;
-
     UZombieDirectorSubsystem* GetZombieDirector() const;
-
-
-public:
-    bool IsAbilityActive() const;
 };

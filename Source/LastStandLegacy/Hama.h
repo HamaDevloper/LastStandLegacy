@@ -672,4 +672,21 @@ public:
 
 protected:
     void UpdateAnimInstanceWeapon();
+
+public:
+    void OnBrawlerStateChanged(bool bInBrawlerMode);
+    bool IsBrawlerModeActive() const;
+
+protected:
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|Melee")
+    TObjectPtr<UAnimMontage> BrawlerAttackMontage;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Combat|Melee")
+    TArray<FName> BrawlerComboSections = { FName("Punch1"), FName("Punch2"), FName("Kick") };
+
+    // قفڵی دژە-هاک لەسەر سێرڤەر بۆ ئەوەی هەر لێدانێک تەنها یەک جار دەمێج بدات
+    bool bServerMeleeHitWindowOpen = false;
+
+    UAnimMontage* GetActiveMeleeMontage() const;
+    void PlayMeleeMontageByCounter(UAnimMontage* MontageToPlay);
 };
