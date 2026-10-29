@@ -643,6 +643,18 @@ void AHama::UpdateAnimInstanceWeapon()
     }
 }
 
+void AHama::UpdateWeaponVisibility()
+{
+    if (!IsValid(CurrentWeapon)) return;
+
+    const bool bIsThrowing = ThrowableComponent && ThrowableComponent->IsThrowingInProcess();
+    const bool bIsBrawler = IsBrawlerModeActive();
+    const bool bIsMelee = IsMeleeing();
+
+    const bool bShouldHide = bIsThrowing || bIsBrawler || bIsMelee;
+    CurrentWeapon->SetActorHiddenInGame(bShouldHide);
+}
+
 void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
 {
     if (IsValid(PreviousWeapon) && PreviousWeapon != CurrentWeapon)
@@ -667,8 +679,7 @@ void AHama::OnRep_CurrentWeapon(ABaseWeapon* PreviousWeapon)
         PendingWeaponForSwap = nullptr;
     }
 
-    const bool bIsThrowing = (ThrowableComponent && ThrowableComponent->IsThrowingInProcess() || IsBrawlerModeActive());
-    CurrentWeapon->SetActorHiddenInGame(bIsThrowing);
+    UpdateWeaponVisibility();
     AttachWeaponToMesh(CurrentWeapon);
 
     CurrentWeapon->OnWeaponDataInitialized.RemoveAll(this);
@@ -1069,10 +1080,7 @@ void AHama::CompleteWeaponSwap()
         OldWeapon->Destroy();
     }
 
-    if (IsValid(NewlyEquippedWeapon) && NewlyEquippedWeapon->NeedsAmmo() && NewlyEquippedWeapon->CanReload())
-    {
-        NewlyEquippedWeapon->Reload();
-    }
+    CheckAndAutoReloadWeapon();
 }
 
 void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
@@ -1084,8 +1092,35 @@ void AHama::OnSwapWeaponMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     }
 
     PendingWeaponForSwap = nullptr;
+
+    CheckAndAutoReloadWeapon();
+
+    if (bIsFireButtonHold && IsLocallyControlled() && IsValid(CurrentWeapon))
+    {
+        if (!CurrentWeapon->IsReloading() && !IsDrinkingPerk() && !IsDowned() && !bIsDead && !IsMeleeing())
+        {
+            if (IsBrawlerModeActive())
+            {
+                MeleeActionPressed();
+            }
+            else if (CurrentWeapon->HasAmmo())
+            {
+                CurrentWeapon->StartFire();
+            }
+        }
+    }
 }
 
+void AHama::CheckAndAutoReloadWeapon()
+{
+    if (IsBrawlerModeActive() || IsDrinkingPerk() || IsDowned() || bIsDead) return;
+    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
+
+    if (IsValid(CurrentWeapon) && CurrentWeapon->CanReload())
+    {
+        CurrentWeapon->Reload();
+    }
+}
 
 void AHama::GiveDeathMachine(TSubclassOf<ABaseWeapon> WeaponClass, float Duration)
 {
@@ -2532,6 +2567,15 @@ void AHama::Server_Interact_Implementation(AActor* InteractTarget)
 // Melee System Implementation
 // -----------------------------------------------------------------------------
 
+void AHama::OnMeleeMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    if (Montage == MeleeAttackMontage || Montage == BrawlerAttackMontage)
+    {
+        UpdateWeaponVisibility();
+        CheckAndAutoReloadWeapon();
+    }
+}
+
 bool AHama::IsBrawlerModeActive() const
 {
     return HamaAbilityComponent && HamaAbilityComponent->IsBrawlerActive();
@@ -2571,7 +2615,6 @@ void AHama::OnBrawlerStateChanged(bool bInBrawlerMode)
 
     if (bInBrawlerMode)
     {
-        // ١. هەڵوەشاندنەوەی هەر چەک گۆڕینێک کە لە نیوەدا بێت
         PendingWeaponForSwap = nullptr;
         GetWorldTimerManager().ClearTimer(SwapFailSafeHandle);
         if (AnimInstance && SwapWeaponMontage && AnimInstance->Montage_IsPlaying(SwapWeaponMontage))
@@ -2579,7 +2622,6 @@ void AHama::OnBrawlerStateChanged(bool bInBrawlerMode)
             AnimInstance->Montage_Stop(0.1f, SwapWeaponMontage);
         }
 
-        // ٢. دەرچوون لە دۆخی نیشانەگرتن (Aim)
         if (bIsAimButtonHold && HamaComponent)
         {
             bIsAimButtonHold = false;
@@ -2609,6 +2651,7 @@ void AHama::OnBrawlerStateChanged(bool bInBrawlerMode)
         }
 
         UpdateAnimInstanceWeapon();
+        CheckAndAutoReloadWeapon();
     }
 }
 
@@ -2629,7 +2672,6 @@ void AHama::MeleeActionPressed()
     UAnimMontage* TargetMontage = GetActiveMeleeMontage();
     if (!TargetMontage) return;
 
-    // تەنها لە Meleeـی ئاساییدا سپرینت دەبڕین؛ لە دۆخی Brawler یاریزان دەبێت بتوانێت بە ڕاکردنەوە هێرش بکات!
     if (!IsBrawlerModeActive() && IsSprinting())
     {
         StopSprint();
@@ -2652,9 +2694,15 @@ void AHama::MeleeActionPressed()
 
     PlayMeleeMontageByCounter(TargetMontage);
 
+    UpdateWeaponVisibility();
+
     FOnMontageBlendingOutStarted BlendingOutDelegate;
     BlendingOutDelegate.BindUObject(this, &AHama::OnMeleeMontageBlendingOut);
     AnimInstance->Montage_SetBlendingOutDelegate(BlendingOutDelegate, TargetMontage);
+
+    FOnMontageEnded MontageEndedDelegate;
+    MontageEndedDelegate.BindUObject(this, &AHama::OnMeleeMontageEnded);
+    AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, TargetMontage);
 
     Server_ExecuteMelee();
 }
@@ -2663,6 +2711,9 @@ void AHama::OnMeleeMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
 {
     if (Montage == MeleeAttackMontage || Montage == BrawlerAttackMontage)
     {
+        UpdateWeaponVisibility();
+        CheckAndAutoReloadWeapon();
+
         if (!bInterrupted && bIsAimButtonHold && !IsBrawlerModeActive() && HamaComponent)
         {
             HamaComponent->SetAiming(true);
@@ -2686,7 +2737,7 @@ void AHama::Server_ExecuteMelee_Implementation()
     }
 
     LastServerMeleeTime = CurrentTime;
-    bServerMeleeHitWindowOpen = true; 
+    bServerMeleeHitWindowOpen = true;
 
     if (!bIsBrawler && IsSprinting()) StopSprint();
     if (CurrentWeapon)
@@ -2695,9 +2746,19 @@ void AHama::Server_ExecuteMelee_Implementation()
         if (CurrentWeapon->IsReloading()) CurrentWeapon->CancelReload();
     }
 
-    if (GetNetMode() != NM_DedicatedServer && !IsLocallyControlled())
+    UpdateWeaponVisibility();
+
+    UAnimMontage* TargetMontage = GetActiveMeleeMontage();
+    if (GetNetMode() != NM_DedicatedServer && !IsLocallyControlled() && TargetMontage)
     {
-        PlayMeleeMontageByCounter(GetActiveMeleeMontage());
+        PlayMeleeMontageByCounter(TargetMontage);
+
+        if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+        {
+            FOnMontageEnded MontageEndedDelegate;
+            MontageEndedDelegate.BindUObject(this, &AHama::OnMeleeMontageEnded);
+            AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, TargetMontage);
+        }
     }
 
     MeleeCounter++;
@@ -2708,9 +2769,22 @@ void AHama::OnRep_MeleeCounter()
 {
     if (!IsLocallyControlled())
     {
-        PlayMeleeMontageByCounter(GetActiveMeleeMontage());
+        UAnimMontage* TargetMontage = GetActiveMeleeMontage();
+        if (TargetMontage)
+        {
+            PlayMeleeMontageByCounter(TargetMontage);
+
+            UpdateWeaponVisibility();
+
+            if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+            {
+                FOnMontageEnded MontageEndedDelegate;
+                MontageEndedDelegate.BindUObject(this, &AHama::OnMeleeMontageEnded);
+                AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, TargetMontage);
+            }
+        }
     }
-} 
+}
 
 void AHama::PerformMeleeHitDetection()
 {
@@ -3141,6 +3215,11 @@ bool AHama::SetCanInteract() const
    }
 
    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess())
+   {
+       return false;
+   }
+
+   if (IsBrawlerModeActive())
    {
        return false;
    }

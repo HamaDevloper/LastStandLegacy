@@ -682,11 +682,15 @@ protected:
     TObjectPtr<UAnimMontage> BrawlerAttackMontage;
 
     UPROPERTY(EditDefaultsOnly, Category = "Combat|Melee")
-    TArray<FName> BrawlerComboSections = { FName("Punch1"), FName("Punch2"), FName("Kick") };
+    TArray<FName> BrawlerComboSections = { FName("Attack1"), FName("Attack2"), FName("Attack3") };
 
-    // قفڵی دژە-هاک لەسەر سێرڤەر بۆ ئەوەی هەر لێدانێک تەنها یەک جار دەمێج بدات
     bool bServerMeleeHitWindowOpen = false;
 
     UAnimMontage* GetActiveMeleeMontage() const;
     void PlayMeleeMontageByCounter(UAnimMontage* MontageToPlay);
+
+    void UpdateWeaponVisibility();
+    void OnMeleeMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+    void CheckAndAutoReloadWeapon();
 };

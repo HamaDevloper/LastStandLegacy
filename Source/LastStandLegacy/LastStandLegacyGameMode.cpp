@@ -59,11 +59,8 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
                 PS->SetAssignedRole(AssignedAbility);
 
             }
-            else if (ActiveAbilities.IsEmpty())
-            {
-                UE_LOG(LogTemp, Warning, TEXT("No abilities left for %s!"), *NewPlayer->GetName());
-            }
         }
+
         ALastStandLegacyGameState* GS = GetGameState<ALastStandLegacyGameState>();
         if (GS)
         {
