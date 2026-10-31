@@ -27,8 +27,8 @@ ABaseWeapon::ABaseWeapon()
 
     bReplicates = true;
 
-    SetNetUpdateFrequency(40.f);
-    SetMinNetUpdateFrequency(10.f);
+    SetNetUpdateFrequency(33.0f);
+    SetMinNetUpdateFrequency(5.f);
 
     WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
     RootComponent = WeaponMesh;

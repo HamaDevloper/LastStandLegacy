@@ -23,12 +23,10 @@ public:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    // --- Delegates (Multicast for Modular Architecture) ---
     FOnDownStateChangedSignature OnDownStateChanged;
     FOnReviveStateChangedSignature OnReviveStateChanged;
     FOnDeathSignature OnDeath;
 
-    // --- Core Health & State Functions ---
     void ApplyDamage(float Amount, AActor* DamageCauser);
     void UpgradeHealth(float Amount);
     void DownPlayer();
@@ -78,15 +76,14 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_IsBeingRevived)
     float ActiveReviveRate = 0.0f;
 
-    // --- Configuration Defaults ---
     UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
-    float DeathTime = 45.0f; // BO3 Standard 45s Bleed-out
+    float DeathTime = 45.0f; 
 
     UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
     float SoloReviveTime = 10.0f;
 
     UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
-    float HealthTickGenerate = 0.2f; // 5Hz instead of spamming network
+    float HealthTickGenerate = 0.2f;
 
     UPROPERTY(EditDefaultsOnly, Category = "Health|Config")
     float HealthGenerateDelay = 4.0f;
@@ -119,4 +116,8 @@ private:
     FTimerHandle RegenerateHealthTimer;
     FTimerHandle DownTimerHandle;
     FTimerHandle QuickReviveTimerHandle;
+
+protected:
+    UFUNCTION(BlueprintCallable)
+    float GetCurrentHealth() const { return CurrentHealth; }
 };

@@ -35,15 +35,13 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 
     bReplicates = true;
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(80.f);
-    SetMinNetUpdateFrequency(33.f);
+    SetNetUpdateFrequency(60.f);
+    SetMinNetUpdateFrequency(10.f);
 
     if (GetCharacterMovement())
     {
         GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
     }
-
-    bAlwaysRelevant = true;
 
     HamaComponent = CreateDefaultSubobject<UHamaComponent>(TEXT("HamaComponent"));
     HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
@@ -1616,7 +1614,7 @@ void AHama::FireActionPressed()
 {
     if (!HamaComponent) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
-    if (IsDrinkingPerk() || IsDowned()) return;
+    if (IsDrinkingPerk()) return;
 
     if (IsBrawlerModeActive())
     {
