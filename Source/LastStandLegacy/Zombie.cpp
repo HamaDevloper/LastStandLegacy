@@ -52,9 +52,11 @@ void AZombie::PossessedBy(AController* NewController)
 
     if (CachedAIController)
     {
-        CachedAIController->SetActorTickEnabled(false);
+        // پێویستە بە خێرایی 30 فرەیم لە چرکەیەکدا کار بکات بۆ ئەوەی لە کاتی هێرشدا بە نەرمی ڕووی بسووڕێت بۆ لای یاریزان
+        CachedAIController->SetActorTickInterval(0.033f);
     }
 }
+
 
 void AZombie::BeginPlay()
 {
@@ -68,6 +70,9 @@ void AZombie::BeginPlay()
             : ECollisionEnabled::QueryAndPhysics;
     }
 
+    // ڕێگەدان بە سووڕانەوەی نەرم لە ڕێگەی Movement Componentـەوە
+    bUseControllerRotationYaw = false;
+
     CachedMovement = GetCharacterMovement();
 
     if (CachedMovement)
@@ -79,7 +84,10 @@ void AZombie::BeginPlay()
         CachedMovement->bScalePushForceToVelocity = false;
         CachedMovement->MaxStepHeight = 35.f;
         CachedMovement->SetWalkableFloorAngle(45.f);
+
+        // bOrientRotationToMovement بۆ کاتی ڕۆیشتن + bUseControllerDesiredRotation بۆ کاتی وەستان و هێرشکردن
         CachedMovement->bOrientRotationToMovement = true;
+        CachedMovement->bUseControllerDesiredRotation = true;
         CachedMovement->RotationRate = FRotator(0.f, 540.f, 0.f);
 
         CachedMovement->MaxSimulationIterations = 4;
@@ -552,16 +560,23 @@ void AZombie::ApplySelectedMesh()
 
 void AZombie::TryAttack()
 {
-    if (!HasAuthority() || bIsDead || bIsAttacking || !CurrentTarget) return;
+    if (!HasAuthority() || bIsDead || !CurrentTarget) return;
+
+    const FVector DirToTarget = (CurrentTarget->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+    if (!DirToTarget.IsNearlyZero())
+    {
+        SetActorRotation(DirToTarget.Rotation());
+    }
+
+    if (bIsAttacking) return;
 
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     if (CurrentTime < NextAllowedAttackTime) return;
 
-    // ئەگەر مۆنتاژ نەبوو، کاتی هێرشەکە بە فەرمی وەربگرە و ڕاستەوخۆ دێمەیج لێبدە (Fallback)
     if (AttackMontages.IsEmpty())
     {
         NextAllowedAttackTime = CurrentTime + AttackCooldown;
-        ExecuteMeleeHit(); // ڕاستەوخۆ لێدانەکە تاقی دەکاتەوە
+        ExecuteMeleeHit();
         return;
     }
 

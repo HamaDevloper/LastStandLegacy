@@ -307,6 +307,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         AActor* FinalTargetActor = nullptr;
         FVector FinalTargetLoc = FVector::ZeroVector;
         float ClosestDistanceSq = UE_BIG_NUMBER;
+        bool bIsTargetAttractor = false;
 
         // =========================================================
         // A. ئەولەویەت بۆ مەیموونەکە (Attractor Priority)
@@ -325,6 +326,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                         ClosestDistanceSq = DistSq;
                         FinalTargetActor = AttractorActor;
                         FinalTargetLoc = CurrentLoc;
+                        bIsTargetAttractor = true;
                     }
                 }
             }
@@ -384,31 +386,14 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         }
 
         // =========================================================
-        // C. Dynamic Network LOD & AI Repathing
+        // C. Dynamic Network LOD & AI Repathing + Smart Unstuck
         // =========================================================
         AAIController* AICon = Zombie->CachedAIController;
         if (!AICon) continue;
 
         if (FinalTargetActor)
         {
-            if (ClosestDistanceSq <= Zombie->AttackDistanceSq)
-            {
-                if (!Zombie->IsAttacking())
-                {
-                    AICon->SetFocus(FinalTargetActor);
-                    Zombie->TryAttack();
-                }
-                continue;
-            }
-
-            if (Zombie->IsAttacking())
-            {
-                continue;
-            }
-
-            const uint8 Tier = (ClosestDistanceSq < 1440000.f) ? 0 : (ClosestDistanceSq < 6250000.f ? 1 : 2);
-            Zombie->ApplyServerLOD(Tier);
-
+            // فۆکەس خستنە سەر ئامانج کاتێک نزیکە (تەنانەت لە کاتی هێرشکردنیشدا کار دەکات تا زۆمبییەکە بەردەوام ڕووی بسووڕێت)
             if (ClosestDistanceSq < 400000.f)
             {
                 if (AICon->GetFocusActor() != FinalTargetActor)
@@ -421,6 +406,37 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 AICon->ClearFocus(EAIFocusPriority::Gameplay);
             }
 
+            // ١. ئەگەر ئامانجەکە مەیموون بوو (Attractor): هەرگیز هێرش مەکە، تەنها لە دەوری کۆببەرەوە و بوەستە!
+            if (bIsTargetAttractor)
+            {
+                const float AttractorStopDistSq = FMath::Square(90.f);
+                if (ClosestDistanceSq <= AttractorStopDistSq)
+                {
+                    Zombie->CurrentTarget = FinalTargetActor;
+                    Zombie->LastTargetLocation = FinalTargetLoc;
+                    if (AICon->GetMoveStatus() != EPathFollowingStatus::Idle)
+                    {
+                        AICon->StopMovement();
+                    }
+                    continue;
+                }
+            }
+            // ٢. ئەگەر ئامانجەکە یاریزان بوو: کاتێک دەگاتە مەودای لێدان، هێرش بکە
+            else if (ClosestDistanceSq <= Zombie->AttackDistanceSq)
+            {
+                Zombie->CurrentTarget = FinalTargetActor;
+                Zombie->TryAttack();
+                continue;
+            }
+
+            if (Zombie->IsAttacking())
+            {
+                continue;
+            }
+
+            const uint8 Tier = (ClosestDistanceSq < 1440000.f) ? 0 : (ClosestDistanceSq < 6250000.f ? 1 : 2);
+            Zombie->ApplyServerLOD(Tier);
+
             const float MinRepathInterval =
                 (ClosestDistanceSq < 360000.f) ? 0.15f :
                 (ClosestDistanceSq < 2250000.f) ? 0.35f : 0.8f;
@@ -432,12 +448,26 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             }
 
             const float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, FinalTargetLoc);
-            const bool bIsAIIdle = (AICon->GetMoveStatus() == EPathFollowingStatus::Idle);
+            const EPathFollowingStatus::Type MoveStatus = AICon->GetMoveStatus();
+            const bool bIsAIIdle = (MoveStatus == EPathFollowingStatus::Idle);
             const bool bTargetChanged = (Zombie->CurrentTarget != FinalTargetActor);
             const bool bThrottleOpen = (CurrentTime >= Zombie->NextRepathAllowedTime);
 
+            const float CurrentSpeedSq = Zombie->GetVelocity().SizeSquared2D();
+            const bool bIsBlocked = (MoveStatus == EPathFollowingStatus::Moving) && (CurrentSpeedSq < 900.f);
+
+            // ئەگەر زۆمبییەکە زۆر نزیک بوو لە مەیموونەکە و لەبەر قەرەباڵغی زۆمبییەکانی تر وەستا، با لە شوێنی خۆی بوەستێت
+            if (bIsTargetAttractor && bIsBlocked && ClosestDistanceSq <= FMath::Square(220.f))
+            {
+                Zombie->CurrentTarget = FinalTargetActor;
+                Zombie->LastTargetLocation = FinalTargetLoc;
+                AICon->StopMovement();
+                continue;
+            }
+
             const bool bShouldRepath = bTargetChanged ||
-                (bThrottleOpen && (TargetMovedDistSq > DynamicMovedThresholdSq ||
+                (bThrottleOpen && (bIsBlocked ||
+                    TargetMovedDistSq > DynamicMovedThresholdSq ||
                     (bIsAIIdle && CurrentTime >= Zombie->NextForceRepathTime)));
 
             if (bShouldRepath)
@@ -447,17 +477,49 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                     break;
                 }
 
+                FVector MoveGoalLoc = FinalTargetLoc;
+
+                if (bIsBlocked && !bTargetChanged)
+                {
+                    const FVector DirToTarget = (FinalTargetLoc - ZombieLoc).GetSafeNormal2D();
+                    const FVector RightDir(-DirToTarget.Y, DirToTarget.X, 0.f);
+                    const float SideSign = FMath::RandBool() ? 1.f : -1.f;
+
+                    const FVector CandidateA = ZombieLoc + (DirToTarget * 110.f) + (RightDir * (160.f * SideSign));
+                    const FVector CandidateB = ZombieLoc + (DirToTarget * 110.f) - (RightDir * (160.f * SideSign));
+
+                    FHitResult Hit;
+                    FCollisionQueryParams Params(SCENE_QUERY_STAT(ZombieUnstuck), false, Zombie);
+                    const FVector EyeOffset(0.f, 0.f, 45.f);
+
+                    if (World->LineTraceSingleByChannel(Hit, ZombieLoc + EyeOffset, CandidateA + EyeOffset, ECC_Pawn, Params))
+                    {
+                        MoveGoalLoc = CandidateB;
+                    }
+                    else
+                    {
+                        MoveGoalLoc = CandidateA;
+                    }
+
+                    Zombie->NextRepathAllowedTime = CurrentTime + 0.4f;
+                }
+                else
+                {
+                    const float NextDelay = bIsAIIdle ? FMath::Max(MinRepathInterval, 0.25f) : MinRepathInterval;
+                    Zombie->NextRepathAllowedTime = CurrentTime + NextDelay;
+                }
+
                 Zombie->CurrentTarget = FinalTargetActor;
-                Zombie->LastTargetLocation = FinalTargetLoc;
-                Zombie->NextRepathAllowedTime = CurrentTime + MinRepathInterval;
+                Zombie->LastTargetLocation = MoveGoalLoc;
 
                 if (bIsAIIdle)
                 {
                     Zombie->NextForceRepathTime = CurrentTime + 0.2f;
                 }
 
-                FAIMoveRequest MoveReq(FinalTargetLoc);
-                MoveReq.SetAcceptanceRadius(Zombie->AttackDistance * 0.5f);
+                FAIMoveRequest MoveReq(MoveGoalLoc);
+                const float AcceptRadius = bIsBlocked ? 25.f : (bIsTargetAttractor ? 45.f : (Zombie->AttackDistance * 0.5f));
+                MoveReq.SetAcceptanceRadius(AcceptRadius);
                 MoveReq.SetUsePathfinding(true);
                 MoveReq.SetAllowPartialPath(true);
                 MoveReq.SetProjectGoalLocation(true);
