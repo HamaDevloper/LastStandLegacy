@@ -1807,6 +1807,7 @@ void AHama::Look(const FInputActionValue& Value)
 
 void AHama::JumpActionPressed()
 {
+
     if (HamaComponent)
     {
         if (HamaComponent->IsDowned()) return;

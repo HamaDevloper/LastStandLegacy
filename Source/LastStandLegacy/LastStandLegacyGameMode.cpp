@@ -61,7 +61,8 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
             }
         }
 
-        ALastStandLegacyGameState* GS = GetGameState<ALastStandLegacyGameState>();
+        ALastStandLegacyGameState* GS = ChekGameState();
+
         if (GS)
         {
             if (GetNumPlayers() <= 1)
@@ -74,6 +75,15 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
             }
         }
     }
+}
+
+ALastStandLegacyGameState* ALastStandLegacyGameMode::ChekGameState()
+{
+    if (!CachedGameState && GameState)
+    {
+        CachedGameState = Cast<ALastStandLegacyGameState>(GameState);
+    }
+    return CachedGameState;
 }
 
 void ALastStandLegacyGameMode::BeginPlay()
@@ -100,27 +110,60 @@ void ALastStandLegacyGameMode::BeginPlay()
     }
 
     SpawnRandomPerks();
+    StartFirstRound();
+    
+}
 
+void ALastStandLegacyGameMode::StartFirstRound()
+{
     DeadZombiesCount = 0;
     ActiveZombiesCount = 0;
     ZombiesSpawnedThisRound = 0;
 
-    ZombiesToKill = BaseZombiesCount + ((CurrentRound - 1) * ZombiesPerRoundIncrement);
+    ZombiesToKill = CalculateZombiesForRound(CurrentRound);
 
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    if (ALastStandLegacyGameState* GS = ChekGameState())
     {
         GS->SetCurrentRound(CurrentRound);
     }
 
-    if (GEngine)
+    const float InitialInterval = GetCalculateSpawnInterval();
+    GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, InitialInterval, true);
+}
+
+int32 ALastStandLegacyGameMode::CalculateZombiesForRound(int32 InRound)
+{
+    const int32 PlayerCount = FMath::Clamp(GetNumPlayers(), 1, 4);
+
+    if (PlayerCount == 1)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green,
-            FString::Printf(TEXT("Round %d Started! Zombies this round: %d"), CurrentRound, ZombiesToKill));
+        return BaseZombiesCount + ((InRound - 1) * ZombiesPerRoundIncrement);
     }
 
-    const float InitialInterval = GetCalculateSpawnInterval();
+    float PlayerMultiplier = 1.0f;
+    if (InRound <= 4)
+    {
+        switch (PlayerCount)
+        {
+        case 2:  PlayerMultiplier = 1.4f; break;
+        case 3:  PlayerMultiplier = 1.8f; break;
+        case 4:  PlayerMultiplier = 2.2f; break;
+        default: PlayerMultiplier = 1.0f; break;
+        }
+    }
+    else
+    {
+        switch (PlayerCount)
+        {
+        case 2:  PlayerMultiplier = 1.75f; break;
+        case 3:  PlayerMultiplier = 2.6f;  break;
+        case 4:  PlayerMultiplier = 3.5f;  break;
+        default: PlayerMultiplier = 1.0f;  break;
+        }
+    }
 
-    GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ALastStandLegacyGameMode::ProcessSpawning, InitialInterval, true);
+    const float BaseRoundZombies = BaseZombiesCount + ((InRound - 1) * ZombiesPerRoundIncrement);
+    return FMath::RoundToInt32(BaseRoundZombies * PlayerMultiplier);
 }
 
 void ALastStandLegacyGameMode::MyShufflePerks(TArray<TSubclassOf<ABasePerk>>& ArrayToShuffle)
@@ -183,8 +226,12 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
         {
             if (UHamaAbilityComponent* AbilityComp = KillerHama->GetAbilityComponent())
             {
-                const float BasePowerReward = 15.0f / (1.0f + (CurrentRound * 0.15f));
-                const float PowerReward = FMath::Max(BasePowerReward, 1.0f);
+                const float ClampedRound = FMath::Clamp(static_cast<float>(CurrentRound), 1.0f, 30.0f);
+               const float PowerReward = FMath::GetMappedRangeValueClamped(
+                FVector2D(1.0f, 25.0f),
+                FVector2D(4.0f, 2.0f),
+                ClampedRound
+            );
 
                 AbilityComp->AddPower(PowerReward);
             }
@@ -192,7 +239,7 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
     }
 
     DeadZombiesCount++;
-    ActiveZombiesCount--;
+    ActiveZombiesCount = FMath::Max(0, ActiveZombiesCount - 1);
 
     int32 ZombiesRemaining = ZombiesToKill - DeadZombiesCount;
 
@@ -202,7 +249,7 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
             FString::Printf(TEXT("Zombies Remaining: %d"), ZombiesRemaining));
     }
 
-    if (KillerController != nullptr && CurrentPowerSpawn < MaxPowerSpawn)
+    if (KillerController != nullptr && CurrentPowerSpawn < MaxPowerSpawn && IsValid(DeadZombie))
     {
         float CurrentTime = GetWorld()->GetTimeSeconds();
         float CalculateTime = CurrentTime - CurrentPowerSpawnTime;
@@ -219,11 +266,13 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
         }
     }
 
-    if (DeadZombiesCount >= ZombiesToKill)
+    if (DeadZombiesCount >= ZombiesToKill && !GetWorldTimerManager().IsTimerActive(RoundTransitionTimerHandle))
     {
+        GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
+
         CurrentRound++;
 
-        if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+        if (ALastStandLegacyGameState* GS = ChekGameState())
         {
             GS->SetCurrentRound(CurrentRound);
         }
@@ -258,9 +307,7 @@ void ALastStandLegacyGameMode::StartNextRound()
     ActiveZombiesCount = 0;
     CurrentPowerSpawn = 0;
 
-    // --- لێرەدا دەبێت بە هەمان شێوەی BeginPlay حیسابی ZombiesToKill بکرێت ---
-    ZombiesToKill = BaseZombiesCount + ((CurrentRound - 1) * ZombiesPerRoundIncrement);
-    // --------------------------------------------------------------------------
+    ZombiesToKill = CalculateZombiesForRound(CurrentRound);
 
     if (GEngine)
     {
@@ -424,7 +471,7 @@ void ALastStandLegacyGameMode::ProcessSpawning()
     UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>();
     if (!Director) return;
 
-    AActor* SpawnPoint = PickWeightedSpawnPoint();
+    AActor* SpawnPoint = PickWeightedSpawnPoint(Director);
     if (!SpawnPoint) return;
 
     AZombie* Zombie = Director->AcquireZombieFromPool(
@@ -436,6 +483,7 @@ void ALastStandLegacyGameMode::ProcessSpawning()
     if (Zombie)
     {
         ActiveZombiesCount++;
+        ActiveZombiesCount++;
         ZombiesSpawnedThisRound++;
 
         if (!Zombie->OnZombieDeath.IsBound())
@@ -445,57 +493,92 @@ void ALastStandLegacyGameMode::ProcessSpawning()
     }
 }
 
-AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint()
+AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint(const UZombieDirectorSubsystem* Director)
 {
     if (SpawnPoints.IsEmpty()) return nullptr;
 
-    TArray<APawn*, TInlineAllocator<4>> Players;
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    const TArray<TWeakObjectPtr<APawn>>& Players = Director ? Director->GetActivePlayers() : TArray<TWeakObjectPtr<APawn>>();
+
+    // پاڵاوتنی یاریزانە دروست و زیندووەکان
+    TArray<APawn*, TInlineAllocator<4>> ValidPlayers;
+    for (const TWeakObjectPtr<APawn>& WeakPawn : Players)
     {
-        if (APlayerController* PC = It->Get())
+        if (APawn* P = WeakPawn.Get())
         {
-            if (APawn* Pawn = PC->GetPawn())
+            if (IsValid(P))
             {
-                Players.Add(Pawn);
+                ValidPlayers.Add(P);
             }
         }
     }
 
-    struct FScoredPoint { AActor* Point; float Weight; };
-    TArray<FScoredPoint, TInlineAllocator<32>> ScoredPoints;
-    float TotalWeight = 0.f;
-    const float MinSafeDistSq = FMath::Square(MinSafeDistance);
-
-    for (AActor* SP : SpawnPoints)
-    {
-        if (!SP) continue;
-        float ClosestDistSq = TNumericLimits<float>::Max();
-
-        for (APawn* Player : Players)
-        {
-            const float DistSq = FVector::DistSquared(SP->GetActorLocation(), Player->GetActorLocation());
-            ClosestDistSq = FMath::Min(ClosestDistSq, DistSq);
-        }
-
-        if (!Players.IsEmpty() && ClosestDistSq < MinSafeDistSq) continue;
-
-        const float Weight = FMath::Sqrt(ClosestDistSq) + 100.f;
-        ScoredPoints.Add({ SP, Weight });
-        TotalWeight += Weight;
-    }
-
-    if (ScoredPoints.IsEmpty())
+    if (ValidPlayers.IsEmpty())
     {
         return SpawnPoints[FMath::RandRange(0, SpawnPoints.Num() - 1)];
     }
 
+    // ١. هەڵبژاردنی یاریزانی ئامانج بە شێوازی نۆرە (Round-Robin)
+    TargetPlayerIndex = (TargetPlayerIndex + 1) % ValidPlayers.Num();
+    APawn* TargetPlayer = ValidPlayers[TargetPlayerIndex];
+    const FVector TargetLocation = TargetPlayer->GetActorLocation();
+
+    // ٢. کۆکردنەوەی ئەو سپۆن پۆینتانەی لە مەودای ئەم یاریزانە دیاریکراوەدان
+    struct FScoredPoint { AActor* Point; float Weight; };
+    TArray<FScoredPoint, TInlineAllocator<16>> ScoredPoints;
+    float TotalWeight = 0.f;
+
+    const float MinSafeDistSq = FMath::Square(MinSafeDistance);
+    const float MaxSpawnDistSq = FMath::Square(MaxSpawnDistance);
+
+    for (AActor* SP : SpawnPoints)
+    {
+        if (!SP) continue;
+
+        const float DistSq = FVector::DistSquared(SP->GetActorLocation(), TargetLocation);
+
+        if (DistSq < MinSafeDistSq || DistSq > MaxSpawnDistSq)
+        {
+            continue;
+        }
+
+        const float ActualDist = FMath::Sqrt(DistSq);
+        const float Weight = (MaxSpawnDistance - ActualDist) + 200.0f;
+
+        ScoredPoints.Add({ SP, Weight });
+        TotalWeight += Weight;
+    }
+
+    // ٣. Fallback: ئەگەر ئەو یاریزانە هیچ خاڵێکی لە دەور نەبوو (بۆ نموونە لە ناوچەیەکی بێ سپۆن بوو)
+    if (ScoredPoints.IsEmpty())
+    {
+        AActor* BestFallback = nullptr;
+        float BestDistSq = TNumericLimits<float>::Max();
+
+        for (AActor* SP : SpawnPoints)
+        {
+            if (!SP) continue;
+            const float DistSq = FVector::DistSquared(SP->GetActorLocation(), TargetLocation);
+            if (DistSq >= MinSafeDistSq && DistSq < BestDistSq)
+            {
+                BestDistSq = DistSq;
+                BestFallback = SP;
+            }
+        }
+
+        return BestFallback ? BestFallback : SpawnPoints[FMath::RandRange(0, SpawnPoints.Num() - 1)];
+    }
+
+    // ٤. هەڵبژاردنی هەڕەمەکی لە نێوان خاڵەکانی دەوروبەری ئەو یاریزانە
     const float RandomValue = FMath::FRandRange(0.f, TotalWeight);
     float CurrentWeight = 0.f;
 
     for (const FScoredPoint& Entry : ScoredPoints)
     {
         CurrentWeight += Entry.Weight;
-        if (RandomValue <= CurrentWeight) return Entry.Point;
+        if (RandomValue <= CurrentWeight)
+        {
+            return Entry.Point;
+        }
     }
 
     return ScoredPoints.Last().Point;
@@ -548,7 +631,7 @@ void ALastStandLegacyGameMode::ActivateNuke()
     }
 
     bool bDoublePoints = false;
-    if (const ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+    if (const ALastStandLegacyGameState* GS = ChekGameState())
     {
         bDoublePoints = GS->bIsDoublePointsActive;
     }
@@ -603,7 +686,7 @@ void ALastStandLegacyGameMode::FinishNuke()
 
 void ALastStandLegacyGameMode::CheckGameOverCondition()
 {
-    ALastStandLegacyGameState* GS = GetGameState<ALastStandLegacyGameState>();
+    ALastStandLegacyGameState* GS = ChekGameState();
     if (!GS) return;
 
     bool bIsAnyPlayerAliveAndUp = false;

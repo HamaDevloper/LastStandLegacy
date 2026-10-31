@@ -5,7 +5,9 @@
 #include "LastStandLegacyGameMode.generated.h"
 
 class AZombie;
+class ALastStandLegacyGameState;
 class AZombieSpawnPoint;
+class UZombieDirectorSubsystem;
 class ABasePowerUp;
 class AController;
 class ABasePerk;
@@ -31,8 +33,7 @@ protected:
     void SpawnPowers(FVector SpawnLocation);
     void StartNextRound();
     void ProcessSpawning();
-    AActor* PickWeightedSpawnPoint();
-
+    AActor* PickWeightedSpawnPoint(const UZombieDirectorSubsystem* Director);
     void MyShufflePerks(TArray<TSubclassOf<ABasePerk>>& ArrayToShuffle);
     void SpawnRandomPerks();
 
@@ -44,15 +45,14 @@ public:
     TArray<AZombieSpawnPoint*> SpawnPoints;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
-    float MinSafeDistance = 500.f;
+    float MinSafeDistance = 700.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie Spawning|Distances")
+    float MaxSpawnDistance = 2800.0f;
 
     int32 DeadZombiesCount = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|Zombie Settings")
-    int32 ActiveZombiesCount = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
-    int32 ZombiesToKill = 10;
+    int32 ActiveZombiesCount;
+    int32 ZombiesToKill;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     int32 CurrentRound = 1;
@@ -66,7 +66,7 @@ public:
     int32 StartNexRoundDelay = 5;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombies|Zombie Settings")
-    int32 BaseZombiesCount = 10;
+    int32 BaseZombiesCount = 8;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombies|Zombie Settings")
     int32 ZombiesPerRoundIncrement = 5;
@@ -104,6 +104,13 @@ private:
 
     UPROPERTY()
     TArray<TObjectPtr<AZombie>> ZombiesToNuke;
+
+    UPROPERTY()
+    TObjectPtr<ALastStandLegacyGameState> CachedGameState;
+
+    ALastStandLegacyGameState* ChekGameState();
+    int32 CalculateZombiesForRound(int32 InRound);
+    void StartFirstRound();
 
     FTimerHandle NukeTimerHandle;
     
@@ -156,6 +163,8 @@ public:
 
     virtual void Logout(AController* Exiting) override;
     virtual void RestartPlayer(AController* NewPlayer) override;
+
+    int32 TargetPlayerIndex = 0;
 
 protected:
     void TriggerGameOver();

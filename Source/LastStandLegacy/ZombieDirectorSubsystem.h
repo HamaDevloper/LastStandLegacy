@@ -78,6 +78,7 @@ public:
  
     bool bHasDirectLineOfSight = false;
 
+    FORCEINLINE const TArray<TWeakObjectPtr<APawn>>& GetActivePlayers() const { return ActivePlayers; }
 private:
     UPROPERTY()
     TArray<TObjectPtr<AZombie>> InactiveZombiePool;
