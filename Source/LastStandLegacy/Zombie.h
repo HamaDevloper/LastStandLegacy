@@ -12,7 +12,6 @@ class UZombieDirectorSubsystem;
 
 DECLARE_DELEGATE_TwoParams(FOnZombieDeathSignature, AZombie*, AController*);
 
-
 UENUM(BlueprintType)
 enum class EZombiePoolState : uint8
 {
@@ -40,8 +39,11 @@ public:
     UPROPERTY(Transient)
     FVector LastTargetLocation = FVector::ZeroVector;
 
+    // تەنیا یەک جار لێرە ڕاگەیەندراوە
     UFUNCTION(BlueprintCallable, Category = "Zombie|Combat")
     void ExecuteMeleeHit();
+
+    void TryAttack();
 
     FOnZombieDeathSignature OnZombieDeath;
 
@@ -50,10 +52,20 @@ public:
     void ReturnToPool();
 
     FORCEINLINE bool IsPoolAvailable() const { return PoolState == EZombiePoolState::Pooled; }
+    FORCEINLINE bool IsDead() const { return bIsDead; }
+    FORCEINLINE bool IsAttacking() const { return bIsAttacking; }
+
+    UPROPERTY(Transient)
+    TObjectPtr<AAIController> CachedAIController = nullptr;
+
+    float NextTargetSearchTime = 0.0f;
+    float NextForceRepathTime = 0.f;
+
+    void Die(AController* KillerController);
 
 protected:
     virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; // گرنگە بۆ سەلامەتی سێرڤەر
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual void OnRep_ReplicatedMovement() override;
 
@@ -61,17 +73,47 @@ protected:
     void OnRep_IsDead();
 
     UFUNCTION()
+    void OnRep_PoolState();
+
+    UFUNCTION()
     void OnRep_SelectedIndex();
 
+    // سیستەمی هێرش لە ڕێگەی OnRep بەبێ Multicast RPC
+    UFUNCTION()
+    void OnRep_AttackPlayCount();
+
     void ApplySelectedMesh();
+    void ApplyStateVisualsAndPhysics(EZombiePoolState NewState);
+    void FinalizePoolActivationVisuals();
+
+    UFUNCTION()
+    void OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+    virtual bool CanReceiveWeaponDamage() const override { return !bIsDead; }
 
 protected:
-
     UPROPERTY(ReplicatedUsing = OnRep_PoolState)
     EZombiePoolState PoolState = EZombiePoolState::Alive;
 
     UPROPERTY(ReplicatedUsing = OnRep_IsDead, BlueprintReadOnly, Category = "Zombie|State")
     bool bIsDead = false;
+
+    // کاتێک ئەم ژمارەیە بەرز دەبێتەوە OnRep بانگ دەبێت تەنانەت ئەگەر هێرشەکان یەک لەدوای یەک بن
+    UPROPERTY(ReplicatedUsing = OnRep_AttackPlayCount)
+    uint8 AttackPlayCount = 0;
+
+    UPROPERTY(Replicated)
+    uint8 SelectedAttackMontageIndex = 0;
+
+    bool bIsAttacking = false;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
+    TArray<TObjectPtr<UAnimMontage>> AttackMontages;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
+    float AttackCooldown = 1.2f;
+
+    float NextAllowedAttackTime = 0.f;
 
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
     float BaseHealth = 150.f;
@@ -94,7 +136,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
     float AttackDistance = 150.f;
 
-protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
     float MinWalkSpeed = 200.f;
 
@@ -107,20 +148,13 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie|Visuals")
     TArray<TSoftObjectPtr<USkeletalMesh>> MeshToSelect;
 
-    float AttackDistanceSq;
-
 public:
-    void Die(AController* KillerController);
-
-    UPROPERTY(Transient)
-    TObjectPtr<AAIController> CachedAIController = nullptr;
-
-    FORCEINLINE bool IsDead() const { return bIsDead; }
+    float AttackDistanceSq;
 
 private:
     UPROPERTY()
     TObjectPtr<ALastStandLegacyGameState> CachedGS = nullptr;
-     
+
     UPROPERTY()
     TObjectPtr<UCharacterMovementComponent> CachedMovement = nullptr;
 
@@ -129,27 +163,14 @@ private:
 
     bool bRegisteredWithDirector = false;
 
-    UFUNCTION()
-    void OnRep_PoolState();
-
-    void ApplyStateVisualsAndPhysics(EZombiePoolState NewState);
-
-    virtual bool CanReceiveWeaponDamage() const override { return !bIsDead; }
-public:
-    float NextTargetSearchTime = 0.0f;
-    float NextForceRepathTime = 0.f;
-
-private:
     FVector CachedMeshRelativeLocation = FVector::ZeroVector;
     FRotator CachedMeshRelativeRotation = FRotator::ZeroRotator;
     FName CachedMeshCollisionProfile = NAME_None;
-    ECollisionChannel CachedMeshObjectType = ECC_Pawn;
+    TEnumAsByte<ECollisionChannel> CachedMeshObjectType = ECC_Pawn;
     FCollisionResponseContainer CachedMeshCollisionResponses;
     ECollisionEnabled::Type CachedMeshCollisionEnabled = ECollisionEnabled::QueryOnly;
     ECollisionEnabled::Type CachedCapsuleCollisionEnabled = ECollisionEnabled::QueryAndPhysics;
 
     FTimerHandle TimerHandle_ReturnToPool;
     FTimerHandle TimerHandle_RevealMesh;
-
-    void FinalizePoolActivationVisuals();
 };
