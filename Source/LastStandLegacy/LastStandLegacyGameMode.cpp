@@ -483,7 +483,6 @@ void ALastStandLegacyGameMode::ProcessSpawning()
     if (Zombie)
     {
         ActiveZombiesCount++;
-        ActiveZombiesCount++;
         ZombiesSpawnedThisRound++;
 
         if (!Zombie->OnZombieDeath.IsBound())

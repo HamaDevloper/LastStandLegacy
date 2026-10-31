@@ -83,6 +83,7 @@ void UZombieDirectorSubsystem::SetPlayerTargetable(APawn* Player, bool bIsTarget
         if (!ValidTargetPlayers.Contains(Player))
         {
             ValidTargetPlayers.Add(Player);
+            CachedPlayerLocations.Add({ Player, Player->GetActorLocation() });
         }
     }
     else
@@ -95,7 +96,13 @@ void UZombieDirectorSubsystem::SetPlayerTargetable(APawn* Player, bool bIsTarget
             EAllowShrinking::No
         );
 
-        CachedPlayerMap.Remove(Player);
+        CachedPlayerLocations.RemoveAllSwap(
+            [Player](const FCachedTargetInfo& Info)
+            {
+                return !Info.PlayerPawn.IsValid() || Info.PlayerPawn.Get() == Player;
+            },
+            EAllowShrinking::No
+        );
     }
 }
 
@@ -324,7 +331,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         }
 
         // =========================================================
-        // B. دیاریکردنی یاریزان و وەرگرتنی شوێنی ڕاستەقینەی ئێستا (Live Location)
+        // B. دیاریکردنی یاریزان و وەرگرتنی شوێنی ڕاستەقینەی ئێستا
         // =========================================================
         if (!FinalTargetActor)
         {
@@ -384,22 +391,25 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
         if (FinalTargetActor)
         {
-            float DesiredNetFreq = 4.f;
-            if (ClosestDistanceSq < 1440000.f)
+            if (ClosestDistanceSq <= Zombie->AttackDistanceSq)
             {
-                DesiredNetFreq = 12.f;
-            }
-            else if (ClosestDistanceSq < 6250000.f)
-            {
-                DesiredNetFreq = 8.f;
-            }
-
-            if (!FMath::IsNearlyEqual(Zombie->GetNetUpdateFrequency(), DesiredNetFreq))
-            {
-                Zombie->SetNetUpdateFrequency(DesiredNetFreq);
+                if (!Zombie->IsAttacking())
+                {
+                    AICon->SetFocus(FinalTargetActor);
+                    Zombie->TryAttack();
+                }
+                continue;
             }
 
-            if (ClosestDistanceSq < 250000.f)
+            if (Zombie->IsAttacking())
+            {
+                continue;
+            }
+
+            const uint8 Tier = (ClosestDistanceSq < 1440000.f) ? 0 : (ClosestDistanceSq < 6250000.f ? 1 : 2);
+            Zombie->ApplyServerLOD(Tier);
+
+            if (ClosestDistanceSq < 400000.f)
             {
                 if (AICon->GetFocusActor() != FinalTargetActor)
                 {
@@ -411,22 +421,24 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 AICon->ClearFocus(EAIFocusPriority::Gameplay);
             }
 
-            float DynamicMovedThresholdSq = 160.f * 160.f;
+            const float MinRepathInterval =
+                (ClosestDistanceSq < 360000.f) ? 0.15f :
+                (ClosestDistanceSq < 2250000.f) ? 0.35f : 0.8f;
+
+            float DynamicMovedThresholdSq = 180.f * 180.f;
             if (ClosestDistanceSq < 360000.f)
             {
-                DynamicMovedThresholdSq = 25.f * 25.f;
-            }
-            else if (ClosestDistanceSq < 2250000.f)
-            {
-                DynamicMovedThresholdSq = 75.f * 75.f;
+                DynamicMovedThresholdSq = 90.f * 90.f;
             }
 
             const float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, FinalTargetLoc);
             const bool bIsAIIdle = (AICon->GetMoveStatus() == EPathFollowingStatus::Idle);
+            const bool bTargetChanged = (Zombie->CurrentTarget != FinalTargetActor);
+            const bool bThrottleOpen = (CurrentTime >= Zombie->NextRepathAllowedTime);
 
-            const bool bShouldRepath = (Zombie->CurrentTarget != FinalTargetActor) ||
-                (TargetMovedDistSq > DynamicMovedThresholdSq) ||
-                (bIsAIIdle && CurrentTime >= Zombie->NextForceRepathTime);
+            const bool bShouldRepath = bTargetChanged ||
+                (bThrottleOpen && (TargetMovedDistSq > DynamicMovedThresholdSq ||
+                    (bIsAIIdle && CurrentTime >= Zombie->NextForceRepathTime)));
 
             if (bShouldRepath)
             {
@@ -437,20 +449,20 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
                 Zombie->CurrentTarget = FinalTargetActor;
                 Zombie->LastTargetLocation = FinalTargetLoc;
+                Zombie->NextRepathAllowedTime = CurrentTime + MinRepathInterval;
 
                 if (bIsAIIdle)
                 {
-                    Zombie->NextForceRepathTime = CurrentTime + 0.12f;
+                    Zombie->NextForceRepathTime = CurrentTime + 0.2f;
                 }
 
-                FAIMoveRequest MoveReq(FinalTargetActor);
-                MoveReq.SetAcceptanceRadius(75.f);
+                FAIMoveRequest MoveReq(FinalTargetLoc);
+                MoveReq.SetAcceptanceRadius(Zombie->AttackDistance * 0.5f);
                 MoveReq.SetUsePathfinding(true);
                 MoveReq.SetAllowPartialPath(true);
                 MoveReq.SetProjectGoalLocation(true);
 
                 AICon->MoveTo(MoveReq);
-
                 CurrentRepathCount++;
             }
         }

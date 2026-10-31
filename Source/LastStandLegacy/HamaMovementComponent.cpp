@@ -12,10 +12,6 @@ UHamaMovementComponent::UHamaMovementComponent()
 
     DefaultGroundFriction = 8.0f;
     DefaultBrakingDecelerationWalking = 2048.0f;
-
-    //NetworkSmoothingMode = ENetworkSmoothingMode::Exponential;
-    //NetworkMaxSmoothUpdateDistance = 192.0f;
-    //NetworkNoSmoothUpdateDistance = 350.0f;
 }
 
 void UHamaMovementComponent::BeginPlay()

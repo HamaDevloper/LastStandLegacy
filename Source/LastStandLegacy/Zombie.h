@@ -33,13 +33,13 @@ public:
 
     void SetStatsForRound(int32 CurrentRound);
 
-    UPROPERTY(BlueprintReadOnly, Replicated)
+    // CurrentTarget تەنیا لەسەر سێرڤەرە و کڵایەنت پێویستی پێی نییە (Replication لابرا)
+    UPROPERTY(BlueprintReadOnly)
     TObjectPtr<AActor> CurrentTarget;
 
     UPROPERTY(Transient)
     FVector LastTargetLocation = FVector::ZeroVector;
 
-    // تەنیا یەک جار لێرە ڕاگەیەندراوە
     UFUNCTION(BlueprintCallable, Category = "Zombie|Combat")
     void ExecuteMeleeHit();
 
@@ -60,7 +60,9 @@ public:
 
     float NextTargetSearchTime = 0.0f;
     float NextForceRepathTime = 0.f;
+    float NextRepathAllowedTime = 0.f; // بەربەستی کاتی بۆ ڕێگریکردن لە لافاوی Repath
 
+    void ApplyServerLOD(uint8 Tier);
     void Die(AController* KillerController);
 
 protected:
@@ -70,15 +72,11 @@ protected:
     virtual void OnRep_ReplicatedMovement() override;
 
     UFUNCTION()
-    void OnRep_IsDead();
-
-    UFUNCTION()
     void OnRep_PoolState();
 
     UFUNCTION()
     void OnRep_SelectedIndex();
 
-    // سیستەمی هێرش لە ڕێگەی OnRep بەبێ Multicast RPC
     UFUNCTION()
     void OnRep_AttackPlayCount();
 
@@ -95,10 +93,12 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_PoolState)
     EZombiePoolState PoolState = EZombiePoolState::Alive;
 
-    UPROPERTY(ReplicatedUsing = OnRep_IsDead, BlueprintReadOnly, Category = "Zombie|State")
+    // bIsDead لە ڕیپلیکەیشن دەرهێنرا؛ کڵایەنت لە PoolState دەیزانێت
+    UPROPERTY(BlueprintReadOnly, Category = "Zombie|State")
     bool bIsDead = false;
 
-    // کاتێک ئەم ژمارەیە بەرز دەبێتەوە OnRep بانگ دەبێت تەنانەت ئەگەر هێرشەکان یەک لەدوای یەک بن
+    uint8 ServerLODTier = 255;
+
     UPROPERTY(ReplicatedUsing = OnRep_AttackPlayCount)
     uint8 AttackPlayCount = 0;
 
@@ -133,9 +133,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
     float AttackDamage = 50.f;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
-    float AttackDistance = 150.f;
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
     float MinWalkSpeed = 200.f;
 
@@ -149,6 +146,9 @@ protected:
     TArray<TSoftObjectPtr<USkeletalMesh>> MeshToSelect;
 
 public:
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
+    float AttackDistance = 150.f;
+
     float AttackDistanceSq;
 
 private:
@@ -173,4 +173,7 @@ private:
 
     FTimerHandle TimerHandle_ReturnToPool;
     FTimerHandle TimerHandle_RevealMesh;
+    FTimerHandle TimerHandle_Dormant;
+
+    void GoDormant();
 };

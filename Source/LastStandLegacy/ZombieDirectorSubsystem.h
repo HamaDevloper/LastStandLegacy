@@ -69,25 +69,22 @@ public:
 
     const TArray<TWeakObjectPtr<AZombie>>& GetActiveZombies() const { return ActiveZombies; }
     TArray<FCachedTargetInfo, TInlineAllocator<4>> CachedPlayerLocations;
-public:
+
     void InitializeZombiePool(TSubclassOf<AZombie> InZombieClass, int32 PoolSize);
-
     AZombie* AcquireZombieFromPool(const FVector& SpawnLocation, const FRotator& SpawnRotation, int32 CurrentRound);
-
     void ReturnZombieToPool(AZombie* Zombie);
- 
+
     bool bHasDirectLineOfSight = false;
 
     FORCEINLINE const TArray<TWeakObjectPtr<APawn>>& GetActivePlayers() const { return ActivePlayers; }
+
 private:
     UPROPERTY()
     TArray<TObjectPtr<AZombie>> InactiveZombiePool;
 
-    // پاشەکەوتکردنی کلاسی زۆمبی بۆ کاتێک ئەگەر هەموو زۆمبییەکان لە یەک کاتدا سەرقاڵ بوون
     UPROPERTY()
     TSubclassOf<AZombie> PooledZombieClass;
 
-private:
     UPROPERTY()
     TArray<TWeakObjectPtr<APawn>> ActivePlayers;
 
@@ -97,7 +94,6 @@ private:
     UPROPERTY()
     TArray<TWeakObjectPtr<AZombie>> ActiveZombies;
 
-    TMap<TWeakObjectPtr<APawn>, FVector> CachedPlayerMap;
     float PlayerCacheRefreshTimer = 0.f;
 
     UPROPERTY()

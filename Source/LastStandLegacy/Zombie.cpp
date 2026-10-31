@@ -49,11 +49,24 @@ void AZombie::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
     CachedAIController = Cast<AAIController>(NewController);
+
+    if (CachedAIController)
+    {
+        CachedAIController->SetActorTickEnabled(false);
+    }
 }
 
 void AZombie::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        const ECollisionEnabled::Type CurrentCapCol = Capsule->GetCollisionEnabled();
+        CachedCapsuleCollisionEnabled = (CurrentCapCol != ECollisionEnabled::NoCollision)
+            ? CurrentCapCol
+            : ECollisionEnabled::QueryAndPhysics;
+    }
 
     CachedMovement = GetCharacterMovement();
 
@@ -69,10 +82,11 @@ void AZombie::BeginPlay()
         CachedMovement->bOrientRotationToMovement = true;
         CachedMovement->RotationRate = FRotator(0.f, 540.f, 0.f);
 
-        // ڕێکخستنی ڕاستەوخۆی RVO بەبێ فانکشنی هەڵە
-        CachedMovement->bUseRVOAvoidance = true;
-        CachedMovement->AvoidanceWeight = 0.5f;
-        CachedMovement->AvoidanceConsiderationRadius = 120.f;
+        CachedMovement->MaxSimulationIterations = 4;
+        CachedMovement->bUseFlatBaseForFloorChecks = true;
+
+        CachedMovement->bUseRVOAvoidance = false;
+        CachedMovement->SetAvoidanceEnabled(false);
 
         CachedMovement->NetworkSimulatedSmoothLocationTime = 0.06f;
         CachedMovement->NetworkSimulatedSmoothRotationTime = 0.03f;
@@ -100,9 +114,8 @@ void AZombie::BeginPlay()
         }
         else
         {
-            // سێرڤەر دەبێت مۆنتاژ تیک بکات تا AnimNotify کار بکات
-            MeshComp->bNoSkeletonUpdate = false;
-            MeshComp->SetComponentTickEnabled(true);
+            MeshComp->bNoSkeletonUpdate = true;
+            MeshComp->SetComponentTickEnabled(false);
             MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
         }
     }
@@ -126,6 +139,7 @@ void AZombie::EndPlay(const EEndPlayReason::Type EndPlayReason)
     {
         World->GetTimerManager().ClearTimer(TimerHandle_ReturnToPool);
         World->GetTimerManager().ClearTimer(TimerHandle_RevealMesh);
+        World->GetTimerManager().ClearTimer(TimerHandle_Dormant);
     }
 
     if (HasAuthority() && bRegisteredWithDirector && CachedDirector)
@@ -144,13 +158,23 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
 
-    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, bIsDead, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, PoolState, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, CurrentTarget, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, MeshIndexSelected, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, MaxHealth, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, AttackPlayCount, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, SelectedAttackMontageIndex, Params);
+}
+
+void AZombie::ApplyServerLOD(uint8 Tier)
+{
+    if (Tier == ServerLODTier || !CachedMovement) return;
+    ServerLODTier = Tier;
+
+    static constexpr float NetFreq[] = { 12.f, 8.f, 4.f };
+    static constexpr float MoveTickInt[] = { 0.f, 0.033f, 0.1f };
+
+    SetNetUpdateFrequency(NetFreq[Tier]);
+    CachedMovement->SetComponentTickInterval(MoveTickInt[Tier]);
 }
 
 void AZombie::OnRep_ReplicatedMovement()
@@ -168,17 +192,15 @@ void AZombie::InitializeForPool()
     if (!HasAuthority()) return;
 
     GetWorldTimerManager().ClearTimer(TimerHandle_RevealMesh);
+    GetWorldTimerManager().ClearTimer(TimerHandle_Dormant);
 
     bIsDead = true;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
-
     bIsAttacking = false;
 
     PoolState = EZombiePoolState::Pooled;
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
 
     CurrentTarget = nullptr;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, CurrentTarget, this);
 
     if (CachedAIController)
     {
@@ -193,6 +215,15 @@ void AZombie::InitializeForPool()
         CachedMovement->DisableMovement();
     }
 
+    if (IsRunningDedicatedServer())
+    {
+        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        {
+            MeshComp->bNoSkeletonUpdate = true;
+            MeshComp->SetComponentTickEnabled(false);
+        }
+    }
+
     SetReplicateMovement(false);
     SetNetUpdateFrequency(1.f);
 
@@ -205,22 +236,27 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
 
     GetWorldTimerManager().ClearTimer(TimerHandle_ReturnToPool);
     GetWorldTimerManager().ClearTimer(TimerHandle_RevealMesh);
+    GetWorldTimerManager().ClearTimer(TimerHandle_Dormant);
 
+    SetNetDormancy(DORM_Awake);
+
+    bIsDead = false;
     bIsAttacking = false;
     CurrentTarget = nullptr;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, CurrentTarget, this);
     LastTargetLocation = FVector::ZeroVector;
     NextTargetSearchTime = 0.f;
     NextForceRepathTime = 0.f;
+    NextRepathAllowedTime = 0.f;
     NextAllowedAttackTime = 0.f;
+    ServerLODTier = 255;
 
     if (CachedMovement)
     {
         CachedMovement->StopMovementImmediately();
         CachedMovement->Velocity = FVector::ZeroVector;
+        CachedMovement->SetComponentTickInterval(0.f);
     }
 
-    // ئۆفسێتی هەڕەمەکی بازنەیی تا لەسەر یەک سپۆن نەبن
     const FVector2D RandCircle = FMath::RandPointInCircle(55.f);
     FVector AdjustedSpawn = SpawnLocation + FVector(RandCircle.X, RandCircle.Y, 0.f);
 
@@ -240,9 +276,6 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
     GetWorld()->FindTeleportSpot(this, FinalSpawnLocation, SpawnRotation);
 
     SetActorLocationAndRotation(FinalSpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
-
-    bIsDead = false;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
 
     PoolState = EZombiePoolState::Alive;
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
@@ -269,6 +302,7 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
     ForceNetUpdate();
 }
 
+
 void AZombie::ReturnToPool()
 {
     if (!HasAuthority()) return;
@@ -281,16 +315,23 @@ void AZombie::ReturnToPool()
     }
 
     ForceNetUpdate();
+
+    // خستنە دۆخی Dormant دوای ناردنی پاکێتی کۆتایی بە ٠.٥ چرکە
+    GetWorldTimerManager().SetTimer(TimerHandle_Dormant, this, &AZombie::GoDormant, 0.5f, false);
+}
+
+void AZombie::GoDormant()
+{
+    if (PoolState == EZombiePoolState::Pooled)
+    {
+        SetNetDormancy(DORM_DormantAll);
+    }
 }
 
 void AZombie::OnRep_PoolState()
 {
     bIsDead = (PoolState != EZombiePoolState::Alive);
     ApplyStateVisualsAndPhysics(PoolState);
-}
-
-void AZombie::OnRep_IsDead()
-{
 }
 
 void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
@@ -353,7 +394,7 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
                 CharacterMesh->SetCollisionResponseToChannels(CachedMeshCollisionResponses);
                 CharacterMesh->SetCollisionEnabled(CachedMeshCollisionEnabled);
 
-                CharacterMesh->RecreatePhysicsState();
+                // RecreatePhysicsState بە تەواوی لابرا؛ هیچ پێویست نییە و دەبووە هۆی Frame Drop ی کڵایەنت
 
                 if (UAnimInstance* AnimInst = CharacterMesh->GetAnimInstance())
                 {
@@ -516,39 +557,51 @@ void AZombie::TryAttack()
     const float CurrentTime = GetWorld()->GetTimeSeconds();
     if (CurrentTime < NextAllowedAttackTime) return;
 
-    if (AttackMontages.IsEmpty()) return;
+    // ئەگەر مۆنتاژ نەبوو، کاتی هێرشەکە بە فەرمی وەربگرە و ڕاستەوخۆ دێمەیج لێبدە (Fallback)
+    if (AttackMontages.IsEmpty())
+    {
+        NextAllowedAttackTime = CurrentTime + AttackCooldown;
+        ExecuteMeleeHit(); // ڕاستەوخۆ لێدانەکە تاقی دەکاتەوە
+        return;
+    }
 
     const int32 RandIndex = FMath::RandRange(0, AttackMontages.Num() - 1);
     UAnimMontage* SelectedMontage = AttackMontages[RandIndex];
     if (!SelectedMontage) return;
 
+    USkeletalMeshComponent* MeshComp = GetMesh();
+    UAnimInstance* AnimInst = MeshComp ? MeshComp->GetAnimInstance() : nullptr;
+    if (!AnimInst) return;
+
+    if (IsRunningDedicatedServer())
+    {
+        MeshComp->bNoSkeletonUpdate = false;
+        MeshComp->SetComponentTickEnabled(true);
+    }
+
+    const float Duration = AnimInst->Montage_Play(SelectedMontage);
+    if (Duration <= 0.f)
+    {
+        if (IsRunningDedicatedServer())
+        {
+            MeshComp->bNoSkeletonUpdate = true;
+            MeshComp->SetComponentTickEnabled(false);
+        }
+        return;
+    }
+
     bIsAttacking = true;
     NextAllowedAttackTime = CurrentTime + AttackCooldown;
 
-    // ڕاگرتنی کاتیی لە کاتی لێداندا
     if (CachedAIController)
     {
         CachedAIController->StopMovement();
     }
 
-    // سێرڤەر ڕاستەوخۆ مۆنتاژەکە لێدەدات تا AnimNotify بکەوێتە کار
-    if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
-    {
-        const float Duration = AnimInst->Montage_Play(SelectedMontage);
-        if (Duration > 0.f)
-        {
-            FOnMontageEnded EndedDelegate;
-            EndedDelegate.BindUObject(this, &AZombie::OnAttackMontageEnded);
-            AnimInst->Montage_SetEndDelegate(EndedDelegate, SelectedMontage);
-        }
-        else
-        {
-            bIsAttacking = false;
-            return;
-        }
-    }
+    FOnMontageEnded EndedDelegate;
+    EndedDelegate.BindUObject(this, &AZombie::OnAttackMontageEnded);
+    AnimInst->Montage_SetEndDelegate(EndedDelegate, SelectedMontage);
 
-    // زیادکردنی ژمارەی Counter و ئاگادارکردنەوەی کڵایەنتەکان بە PushModel بەبێ Multicast RPC
     SelectedAttackMontageIndex = static_cast<uint8>(RandIndex);
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, SelectedAttackMontageIndex, this);
 
@@ -575,24 +628,35 @@ void AZombie::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     if (!HasAuthority()) return;
 
     bIsAttacking = false;
+
+    // کوژاندنەوەی تیکی مێش پاش تەواوبوونی لێدان لەسەر سێرڤەر
+    if (IsRunningDedicatedServer())
+    {
+        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        {
+            MeshComp->bNoSkeletonUpdate = true;
+            MeshComp->SetComponentTickEnabled(false);
+        }
+    }
 }
 
-// تاکە پێناسەی ExecuteMeleeHit بە Sphere Trace بۆ هەستی پێکانێکی تەواو
 void AZombie::ExecuteMeleeHit()
 {
     if (!HasAuthority() || bIsDead) return;
 
-    const FVector Start = GetActorLocation() + FVector(0.f, 0.f, 30.f);
+    const float SphereRadius = 45.f;
     const FVector Forward = GetActorForwardVector();
-    const FVector End = Start + (Forward * (AttackDistance + 35.f));
+    // دەستپێکردنی سفیرەکە کەمێک لە پێش کەپسولەکەوە تا لەگەڵ زۆمبییەکانی تەنیشتی تێکەڵ نەبێت
+    const FVector Start = GetActorLocation() + (Forward * 30.f) + FVector(0.f, 0.f, 30.f);
+    const FVector End = Start + (Forward * AttackDistance);
 
-    FHitResult HitResult;
-    FCollisionShape SphereShape = FCollisionShape::MakeSphere(45.f);
-
+    TArray<FHitResult> HitResults;
+    FCollisionShape SphereShape = FCollisionShape::MakeSphere(SphereRadius);
     FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ZombieMeleeHit), false, this);
 
-    const bool bHit = GetWorld()->SweepSingleByChannel(
-        HitResult,
+    // بەکارهێنانی Multi بۆ ئەوەی ئەگەر کەپسولی زۆمبییەکی تر لە پێش بوو، تێپەڕێت بۆ سەر یاریزانەکە
+    const bool bHitAny = GetWorld()->SweepMultiByChannel(
+        HitResults,
         Start,
         End,
         FQuat::Identity,
@@ -601,11 +665,49 @@ void AZombie::ExecuteMeleeHit()
         QueryParams
     );
 
-    if (bHit && HitResult.GetActor())
+    AActor* ValidTargetHit = nullptr;
+    FVector ImpactVisualPoint = End;
+
+    if (bHitAny)
     {
-        AActor* HitActor = HitResult.GetActor();
+        for (const FHitResult& Hit : HitResults)
+        {
+            AActor* HitActor = Hit.GetActor();
+            // لێدان تەنیا ئەگەر ئەکتەرەکە یاریزان بێت و هاوپۆلی زۆمبی نەبێت
+            if (HitActor && HitActor != this && !HitActor->IsA<AZombie>())
+            {
+                ValidTargetHit = HitActor;
+                ImpactVisualPoint = Hit.ImpactPoint;
+                break;
+            }
+        }
+    }
+
+#if ENABLE_DRAW_DEBUG
+    const bool bDamagedPlayer = (ValidTargetHit != nullptr);
+    const FColor TraceColor = bDamagedPlayer ? FColor::Green : FColor::Red;
+    const float LifeTime = 1.5f;
+
+    // ١. سفیری سەرەتایی بە بەکارهێنانی ڕادیۆسی ڕاست (SphereRadius)
+    DrawDebugSphere(GetWorld(), Start, SphereRadius, 12, FColor::Yellow, false, LifeTime, 0, 1.5f);
+
+    // ٢. سفیری کۆتایی
+    DrawDebugSphere(GetWorld(), End, SphereRadius, 12, TraceColor, false, LifeTime, 0, 1.5f);
+
+    // ٣. هێڵی ئاڕاستەی لێدان
+    DrawDebugLine(GetWorld(), Start, End, TraceColor, false, LifeTime, 0, 2.0f);
+
+    // ٤. نیشاندانی خاڵی بەرکەوتن
+    if (bDamagedPlayer)
+    {
+        DrawDebugPoint(GetWorld(), ImpactVisualPoint, 15.f, FColor::Cyan, false, LifeTime);
+    }
+#endif
+
+    if (ValidTargetHit)
+    {
         UGameplayStatics::ApplyDamage(
-            HitActor,
+            ValidTargetHit,
             AttackDamage,
             GetController(),
             this,
@@ -672,15 +774,21 @@ void AZombie::Die(AController* KillerController)
     }
 
     bIsDead = true;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, bIsDead, this);
-
     bIsAttacking = false;
+
+    if (IsRunningDedicatedServer())
+    {
+        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        {
+            MeshComp->bNoSkeletonUpdate = true;
+            MeshComp->SetComponentTickEnabled(false);
+        }
+    }
 
     PoolState = EZombiePoolState::Dead;
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, PoolState, this);
 
     CurrentTarget = nullptr;
-    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, CurrentTarget, this);
 
     if (bRegisteredWithDirector && CachedDirector)
     {
