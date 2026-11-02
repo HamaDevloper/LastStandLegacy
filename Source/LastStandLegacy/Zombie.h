@@ -9,6 +9,8 @@
 class AAIController;
 class ALastStandLegacyGameState;
 class UZombieDirectorSubsystem;
+class UAnimMontage;
+class USkeletalMesh;
 
 DECLARE_DELEGATE_TwoParams(FOnZombieDeathSignature, AZombie*, AController*);
 
@@ -33,7 +35,6 @@ public:
 
     void SetStatsForRound(int32 CurrentRound);
 
-    // CurrentTarget تەنیا لەسەر سێرڤەرە و کڵایەنت پێویستی پێی نییە (Replication لابرا)
     UPROPERTY(BlueprintReadOnly)
     TObjectPtr<AActor> CurrentTarget;
 
@@ -54,13 +55,14 @@ public:
     FORCEINLINE bool IsPoolAvailable() const { return PoolState == EZombiePoolState::Pooled; }
     FORCEINLINE bool IsDead() const { return bIsDead; }
     FORCEINLINE bool IsAttacking() const { return bIsAttacking; }
+    FORCEINLINE float GetAttackPlayRate() const { return CurrentAttackPlayRate; }
 
     UPROPERTY(Transient)
     TObjectPtr<AAIController> CachedAIController = nullptr;
 
     float NextTargetSearchTime = 0.0f;
     float NextForceRepathTime = 0.f;
-    float NextRepathAllowedTime = 0.f; // بەربەستی کاتی بۆ ڕێگریکردن لە لافاوی Repath
+    float NextRepathAllowedTime = 0.f;
 
     void ApplyServerLOD(uint8 Tier);
     void Die(AController* KillerController);
@@ -80,6 +82,9 @@ protected:
     UFUNCTION()
     void OnRep_AttackPlayCount();
 
+    UFUNCTION()
+    void OnRep_AttackPlayRate();
+
     void ApplySelectedMesh();
     void ApplyStateVisualsAndPhysics(EZombiePoolState NewState);
     void FinalizePoolActivationVisuals();
@@ -93,28 +98,49 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_PoolState)
     EZombiePoolState PoolState = EZombiePoolState::Alive;
 
-    // bIsDead لە ڕیپلیکەیشن دەرهێنرا؛ کڵایەنت لە PoolState دەیزانێت
     UPROPERTY(BlueprintReadOnly, Category = "Zombie|State")
     bool bIsDead = false;
 
+    bool bIsAttacking = false;
+
     uint8 ServerLODTier = 255;
 
+    // --- ڕێپلیکەیشنی شەڕ و هێرش ---
     UPROPERTY(ReplicatedUsing = OnRep_AttackPlayCount)
     uint8 AttackPlayCount = 0;
 
     UPROPERTY(Replicated)
     uint8 SelectedAttackMontageIndex = 0;
 
-    bool bIsAttacking = false;
+    // خێرایی لێدان بە ١ بایت بۆ نێتۆرک (PlayRate * 100)
+    UPROPERTY(ReplicatedUsing = OnRep_AttackPlayRate)
+    uint8 RepAttackPlayRateByte = 100;
 
+    float CurrentAttackPlayRate = 1.0f;
+    float CurrentAttackCooldown = 2.0f;
+    float NextAllowedAttackTime = 0.f;
+
+    // --- ڕێکخستنی کات و خێرایی هێرش بەپێی ڕاوەند ---
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
     TArray<TObjectPtr<UAnimMontage>> AttackMontages;
 
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
+    float Round1AttackCooldown = 2.2f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
+    float HighRoundAttackCooldown = 0.9f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
+    float Round1AttackPlayRate = 0.75f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
+    float HighRoundAttackPlayRate = 1.1f;
+
+    // تەنیا وەک مەرجەع یان Default ئەگەر لە ڕاوەند نەخوێندرایەوە
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
     float AttackCooldown = 1.2f;
 
-    float NextAllowedAttackTime = 0.f;
-
+    // --- زانیارییە سەرەکییەکان (Stats) ---
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
     float BaseHealth = 150.f;
 

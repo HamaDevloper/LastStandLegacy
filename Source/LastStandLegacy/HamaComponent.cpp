@@ -314,16 +314,16 @@ void UHamaComponent::DrainStamina()
         return;
     }
 
-    const FVector InputVector = OwnerCharacter->GetLastMovementInputVector();
-    if (InputVector.SizeSquared() < 0.64f)
+    const FVector CurrentAccel = MoveComp->GetCurrentAcceleration();
+    if (CurrentAccel.SizeSquared() < 0.64f)
     {
         SetSprinting(false);
         return;
     }
 
     const FVector Forward2D = OwnerCharacter->GetActorForwardVector().GetSafeNormal2D();
-    const FVector NormalizedInput = InputVector.GetSafeNormal2D();
-    const float ForwardDot = FVector::DotProduct(Forward2D, NormalizedInput);
+    const FVector NormalizedAccel = CurrentAccel.GetSafeNormal2D();
+    const float ForwardDot = FVector::DotProduct(Forward2D, NormalizedAccel);
 
     if (ForwardDot < 0.5f)
     {

@@ -77,11 +77,14 @@ public:
     /* ================================================================================================
      *                                 PROTECTED PROPERTIES & REPLICATION
      * ================================================================================================ */
-protected:
+public:
     // --- STAMINA SETTINGS ---
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float Stamina = 100.f;
 
+    bool bIsExhausted = false;
+
+protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float MaxStamina = 100.f;
 
@@ -96,9 +99,7 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hama|Stamina")
     float NormalDelayStamina = 0.5f;
-
-    bool bIsExhausted = false;
-
+   
 public:
     // --- REPLICATED STATES ---
     UPROPERTY(ReplicatedUsing = OnRep_Sprinting, EditAnywhere, BlueprintReadOnly, Category = "Hama|State")

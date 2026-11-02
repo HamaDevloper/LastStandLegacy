@@ -52,7 +52,6 @@ void AZombie::PossessedBy(AController* NewController)
 
     if (CachedAIController)
     {
-        // پێویستە بە خێرایی 30 فرەیم لە چرکەیەکدا کار بکات بۆ ئەوەی لە کاتی هێرشدا بە نەرمی ڕووی بسووڕێت بۆ لای یاریزان
         CachedAIController->SetActorTickInterval(0.033f);
     }
 }
@@ -70,7 +69,6 @@ void AZombie::BeginPlay()
             : ECollisionEnabled::QueryAndPhysics;
     }
 
-    // ڕێگەدان بە سووڕانەوەی نەرم لە ڕێگەی Movement Componentـەوە
     bUseControllerRotationYaw = false;
 
     CachedMovement = GetCharacterMovement();
@@ -171,6 +169,7 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, MaxHealth, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, AttackPlayCount, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, SelectedAttackMontageIndex, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, RepAttackPlayRateByte, Params);
 }
 
 void AZombie::ApplyServerLOD(uint8 Tier)
@@ -490,6 +489,7 @@ void AZombie::SetStatsForRound(int32 CurrentRound)
 {
     if (!HasAuthority()) return;
 
+    // --- Health Calculations ---
     const float NewHealth = BaseHealth * FMath::Pow(1.12f, CurrentRound - 1);
     const float ClampedMaxHealth = FMath::Clamp(NewHealth, BaseHealth, MaxHealthZombieReach);
 
@@ -501,6 +501,23 @@ void AZombie::SetStatsForRound(int32 CurrentRound)
 
     Health = MaxHealth;
 
+    // ڕێژەی سەرکەوتنی ڕاوەند (لە ڕاوەندی ١ سفرە، لە ڕاوەندی ١٠ بەرەو سەرەوە دەبێتە ١)
+    const float CombatAlpha = FMath::Clamp((CurrentRound - 1) / 9.f, 0.f, 1.f);
+
+    // ١. خاوکردنەوەی Cooldown (لە ڕاوەندی ١ درێژە، لە ڕاوەندی بەرز کەم دەبێتەوە)
+    CurrentAttackCooldown = FMath::Lerp(Round1AttackCooldown, HighRoundAttackCooldown, CombatAlpha);
+
+    // ٢. خاوکردنەوەی ئەنیمەیشن (لە ڕاوەندی ١ دەبێتە 0.75x یان 0.8x)
+    CurrentAttackPlayRate = FMath::Lerp(Round1AttackPlayRate, HighRoundAttackPlayRate, CombatAlpha);
+
+    const uint8 NewPlayRateByte = static_cast<uint8>(FMath::RoundToInt(CurrentAttackPlayRate * 100.0f));
+    if (RepAttackPlayRateByte != NewPlayRateByte)
+    {
+        RepAttackPlayRateByte = NewPlayRateByte;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, RepAttackPlayRateByte, this);
+    }
+
+    // --- Movement Speed Logic ---
     const float Alpha = FMath::Clamp((CurrentRound - 1) / 19.f, 0.f, 1.f);
     const float BaseSpeed = FMath::Lerp(MinWalkSpeed, MaxBaseWalkSpeed, Alpha);
 
@@ -575,7 +592,7 @@ void AZombie::TryAttack()
 
     if (AttackMontages.IsEmpty())
     {
-        NextAllowedAttackTime = CurrentTime + AttackCooldown;
+        NextAllowedAttackTime = CurrentTime + CurrentAttackCooldown;
         ExecuteMeleeHit();
         return;
     }
@@ -594,7 +611,8 @@ void AZombie::TryAttack()
         MeshComp->SetComponentTickEnabled(true);
     }
 
-    const float Duration = AnimInst->Montage_Play(SelectedMontage);
+    // لێدانی مۆنتاژ لەسەر سێرڤەر بە خێرایی دیاریکراو (CurrentAttackPlayRate)
+    const float Duration = AnimInst->Montage_Play(SelectedMontage, CurrentAttackPlayRate);
     if (Duration <= 0.f)
     {
         if (IsRunningDedicatedServer())
@@ -606,7 +624,8 @@ void AZombie::TryAttack()
     }
 
     bIsAttacking = true;
-    NextAllowedAttackTime = CurrentTime + AttackCooldown;
+
+    NextAllowedAttackTime = CurrentTime + (Duration / CurrentAttackPlayRate) + CurrentAttackCooldown;
 
     if (CachedAIController)
     {
@@ -624,6 +643,12 @@ void AZombie::TryAttack()
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, AttackPlayCount, this);
 }
 
+
+void AZombie::OnRep_AttackPlayRate()
+{
+    CurrentAttackPlayRate = static_cast<float>(RepAttackPlayRateByte) / 100.0f;
+}
+
 void AZombie::OnRep_AttackPlayCount()
 {
     if (AttackMontages.IsValidIndex(SelectedAttackMontageIndex))
@@ -632,7 +657,7 @@ void AZombie::OnRep_AttackPlayCount()
         {
             if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
             {
-                AnimInst->Montage_Play(MontageToPlay);
+                AnimInst->Montage_Play(MontageToPlay, CurrentAttackPlayRate);
             }
         }
     }
