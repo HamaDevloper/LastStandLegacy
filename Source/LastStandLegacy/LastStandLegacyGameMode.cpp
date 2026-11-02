@@ -16,6 +16,7 @@
 #include "NavigationSystem.h"
 #include "Components/CapsuleComponent.h"
 #include "ZombieDirectorSubsystem.h"
+#include "ThrowablePoolSubsystem.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -107,6 +108,11 @@ void ALastStandLegacyGameMode::BeginPlay()
     {
         const int32 TotalPoolSize = ZombiesSpawnLimit + 20;
         Director->InitializeZombiePool(ZombieClass, TotalPoolSize);
+    }
+
+    if (UThrowablePoolSubsystem* Pool = GetWorld()->GetSubsystem<UThrowablePoolSubsystem>())
+    {
+        Pool->WarmupPool(DefaultGrenadeClass, PrewarmedGrenadeCount, DefaultMonkeyClass, PrewarmedMonkeyCount);
     }
 
     SpawnRandomPerks();

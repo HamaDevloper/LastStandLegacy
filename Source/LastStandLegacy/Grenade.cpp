@@ -7,25 +7,34 @@
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "ThrowablePoolSubsystem.h"
 
 AGrenade::AGrenade()
 {
     PrimaryActorTick.bCanEverTick = false;
 
     bReplicates = true;
+    bAlwaysRelevant = true;
     SetReplicateMovement(false);
 
     SetNetUpdateFrequency(10.0f);
     SetMinNetUpdateFrequency(2.0f);
-    SetNetCullDistanceSquared(FMath::Square(3500.0f));
 
     bHasExploded = false;
+    SettledLocation = FVector::ZeroVector;
+    ExplosionLocation = FVector::ZeroVector;
 
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
     CollisionComp->InitSphereRadius(8.0f);
     CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
     CollisionComp->SetCanEverAffectNavigation(false);
-    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+    CollisionComp->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+    CollisionComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+    CollisionComp->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
     RootComponent = CollisionComp;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
@@ -38,8 +47,9 @@ AGrenade::AGrenade()
     ProjectileMovementComp->InitialSpeed = 0.0f;
     ProjectileMovementComp->MaxSpeed = 10000.0f;
     ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
+    ProjectileMovementComp->bAutoActivate = false;
     ProjectileMovementComp->Velocity = FVector::ZeroVector;
-    ProjectileMovementComp->bRotationFollowsVelocity = true;
+    ProjectileMovementComp->bRotationFollowsVelocity = false;
     ProjectileMovementComp->bShouldBounce = true;
     ProjectileMovementComp->Bounciness = 0.3f;
     ProjectileMovementComp->Friction = 0.5f;
@@ -53,9 +63,10 @@ void AGrenade::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetime
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
 
+    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, LaunchData, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, SettledLocation, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, bHasExploded, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, ExplosionLocation, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AGrenade, InitialVelocity, Params);
 }
 
 void AGrenade::BeginPlay()
@@ -64,7 +75,20 @@ void AGrenade::BeginPlay()
 
     if (HasAuthority())
     {
-        GetWorldTimerManager().SetTimer(FuseTimerHandle, this, &AGrenade::Explode, FuseDuration, false);
+        CachedInstigatorController = GetInstigatorController();
+
+        if (ProjectileMovementComp)
+        {
+            ProjectileMovementComp->OnProjectileStop.AddUniqueDynamic(this, &AGrenade::OnProjectileStopped);
+        }
+    }
+    else
+    {
+        // ئەگەر ئەکتەرەکە بۆ یەکەم جار لەسەر کڵایەنت دروست بووبێت و OnRep پێش BeginPlay گەیشتبێت
+        if (LaunchData.LaunchSpeed > 0.0f && !bHasExploded)
+        {
+            ApplyLaunchData();
+        }
     }
 }
 
@@ -73,26 +97,132 @@ void AGrenade::SetFuseDuration(float NewDuration)
     FuseDuration = FMath::Max(0.1f, NewDuration);
 }
 
-void AGrenade::InitVelocity(const FVector& InVelocity)
+void AGrenade::IgnoreOwnerAndAttachedActors(AActor* InOwnerActor)
 {
-    if (HasAuthority())
-    {
-        InitialVelocity = InVelocity;
-        MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, InitialVelocity, this);
+    if (!CollisionComp) return;
 
-        if (ProjectileMovementComp)
+    CollisionComp->ClearMoveIgnoreActors();
+
+    auto AddActorAndChildrenToIgnore = [this](AActor* TargetActor)
         {
-            ProjectileMovementComp->Velocity = InVelocity;
+            if (!TargetActor) return;
+            CollisionComp->IgnoreActorWhenMoving(TargetActor, true);
+
+            TArray<AActor*> AttachedActors;
+            TargetActor->GetAttachedActors(AttachedActors);
+            for (AActor* Attached : AttachedActors)
+            {
+                if (Attached)
+                {
+                    CollisionComp->IgnoreActorWhenMoving(Attached, true);
+                }
+            }
+        };
+
+    AddActorAndChildrenToIgnore(InOwnerActor);
+
+    // لەسەر کڵایەنت ئەگەر هێشتا Owner نەگەیشتبوو، کارەکتەری لۆکاڵیش پشتگوێ دەخەین تا لە دەستیدا گیر نەخوات
+    if (!HasAuthority() && GetWorld())
+    {
+        if (APlayerController* LocalPC = GetWorld()->GetFirstPlayerController())
+        {
+            if (APawn* LocalPawn = LocalPC->GetPawn())
+            {
+                AddActorAndChildrenToIgnore(LocalPawn);
+            }
         }
     }
 }
 
-void AGrenade::OnRep_InitialVelocity()
+void AGrenade::InitVelocity(const FVector& LaunchVelocity)
 {
+    if (!HasAuthority()) return;
+
     if (ProjectileMovementComp)
     {
-        ProjectileMovementComp->Velocity = InitialVelocity;
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->SetUpdatedComponent(CollisionComp);
+        ProjectileMovementComp->Velocity = LaunchVelocity;
+        ProjectileMovementComp->UpdateComponentVelocity();
+        ProjectileMovementComp->Activate(true);
+        ProjectileMovementComp->SetComponentTickEnabled(true);
     }
+}
+
+void AGrenade::OnRep_LaunchData()
+{
+    if (!HasActorBegunPlay())
+    {
+        return;
+    }
+
+    ApplyLaunchData();
+}
+
+void AGrenade::ApplyLaunchData()
+{
+    if (LaunchData.LaunchSpeed <= 0.0f) return;
+
+    bHasExploded = false;
+
+    IgnoreOwnerAndAttachedActors(GetOwner() ? GetOwner() : GetInstigator());
+
+    SetActorLocationAndRotation(
+        LaunchData.SpawnLocation,
+        LaunchData.LaunchDirection.Rotation(),
+        false,
+        nullptr,
+        ETeleportType::ResetPhysics
+    );
+
+    SetActorHiddenInGame(false);
+    if (MeshComp)
+    {
+        MeshComp->SetVisibility(true, true);
+    }
+    SetActorEnableCollision(true);
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->SetUpdatedComponent(CollisionComp);
+        ProjectileMovementComp->Velocity = LaunchData.LaunchDirection * LaunchData.LaunchSpeed;
+        ProjectileMovementComp->UpdateComponentVelocity();
+        ProjectileMovementComp->Activate(true);
+        ProjectileMovementComp->SetComponentTickEnabled(true);
+    }
+}
+
+void AGrenade::OnProjectileStopped(const FHitResult& ImpactResult)
+{
+    if (!HasAuthority() || bHasExploded) return;
+
+    SettledLocation = GetActorLocation();
+    MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, SettledLocation, this);
+
+    SetNetUpdateFrequency(2.0f);
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->Deactivate();
+    }
+}
+
+void AGrenade::OnRep_SettledLocation()
+{
+    if (bHasExploded || SettledLocation.IsNearlyZero())
+    {
+        return;
+    }
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->Deactivate();
+    }
+
+    SetActorLocation(SettledLocation, false, nullptr, ETeleportType::TeleportPhysics);
 }
 
 float AGrenade::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
@@ -109,13 +239,21 @@ void AGrenade::Explode()
 
     bHasExploded = true;
     ExplosionLocation = GetActorLocation();
+    SettledLocation = FVector::ZeroVector;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, bHasExploded, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, ExplosionLocation, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, SettledLocation, this);
 
+    SetNetUpdateFrequency(10.0f);
     ForceNetUpdate();
-
     GetWorldTimerManager().ClearTimer(FuseTimerHandle);
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->Deactivate();
+    }
 
     PlayExplosionFX(ExplosionLocation);
 
@@ -125,6 +263,7 @@ void AGrenade::Explode()
     IgnoredActors.Add(this);
 
     APawn* InstigatorPawn = GetInstigator();
+    const bool bIsThrowerAlive = (InstigatorPawn != nullptr);
 
     if (GS)
     {
@@ -133,13 +272,17 @@ void AGrenade::Explode()
             if (!PS) continue;
             if (APawn* PlayerPawn = PS->GetPawn())
             {
-                if (PlayerPawn != InstigatorPawn)
+                if (!bIsThrowerAlive || PlayerPawn != InstigatorPawn)
                 {
                     IgnoredActors.Add(PlayerPawn);
                 }
             }
         }
     }
+
+    AController* DamageInstigator = CachedInstigatorController.IsValid()
+        ? CachedInstigatorController.Get()
+        : GetInstigatorController();
 
     UGameplayStatics::ApplyRadialDamage(
         this,
@@ -149,15 +292,25 @@ void AGrenade::Explode()
         UDamageType::StaticClass(),
         IgnoredActors,
         this,
-        GetInstigatorController(),
+        DamageInstigator,
         true,
-        ECC_WorldStatic
+        ECC_MAX
     );
 
     SetActorHiddenInGame(true);
+    if (MeshComp)
+    {
+        MeshComp->SetVisibility(false, true);
+    }
     SetActorEnableCollision(false);
 
-    SetLifeSpan(2.0f);
+    GetWorldTimerManager().SetTimer(
+        ReturnToPoolTimerHandle,
+        this,
+        &AGrenade::PrepareForPool,
+        0.3f,
+        false
+    );
 }
 
 void AGrenade::OnRep_HasExploded()
@@ -166,7 +319,17 @@ void AGrenade::OnRep_HasExploded()
     {
         PlayExplosionFX(ExplosionLocation);
         SetActorHiddenInGame(true);
+        if (MeshComp)
+        {
+            MeshComp->SetVisibility(false, true);
+        }
         SetActorEnableCollision(false);
+
+        if (ProjectileMovementComp)
+        {
+            ProjectileMovementComp->StopMovementImmediately();
+            ProjectileMovementComp->Deactivate();
+        }
     }
 }
 
@@ -191,5 +354,86 @@ void AGrenade::PlayExplosionFX(const FVector& Location)
             true,
             ENCPoolMethod::AutoRelease
         );
+    }
+}
+
+void AGrenade::ActivateFromPool(const FTransform& SpawnTransform, const FVector& LaunchVelocity, float InFuseDuration, AController* InInstigatorController)
+{
+    if (!HasAuthority()) return;
+
+    GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+    GetWorldTimerManager().ClearTimer(FuseTimerHandle);
+
+    SetNetDormancy(DORM_Awake);
+    FlushNetDormancy();
+    SetNetUpdateFrequency(10.0f);
+
+    if (InInstigatorController && InInstigatorController->GetPawn())
+    {
+        SetOwner(InInstigatorController->GetPawn());
+        SetInstigator(InInstigatorController->GetPawn());
+    }
+
+    bHasExploded = false;
+    SettledLocation = FVector::ZeroVector;
+    CachedInstigatorController = InInstigatorController;
+    FuseDuration = FMath::Max(0.1f, InFuseDuration);
+
+    LaunchData.SpawnLocation = SpawnTransform.GetLocation();
+    LaunchData.LaunchDirection = LaunchVelocity.GetSafeNormal();
+    LaunchData.LaunchSpeed = LaunchVelocity.Size();
+    LaunchData.LaunchIndex++;
+
+    IgnoreOwnerAndAttachedActors(GetOwner() ? GetOwner() : GetInstigator());
+
+    SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::ResetPhysics);
+    SetActorHiddenInGame(false);
+    if (MeshComp)
+    {
+        MeshComp->SetVisibility(true, true);
+    }
+    SetActorEnableCollision(true);
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, bHasExploded, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, SettledLocation, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AGrenade, LaunchData, this);
+
+    InitVelocity(LaunchVelocity);
+
+    ForceNetUpdate();
+    GetWorldTimerManager().SetTimer(FuseTimerHandle, this, &AGrenade::Explode, FuseDuration, false);
+}
+
+void AGrenade::PrepareForPool()
+{
+    if (!HasAuthority()) return;
+
+    SetActorHiddenInGame(true);
+    if (MeshComp)
+    {
+        MeshComp->SetVisibility(false, true);
+    }
+    SetActorEnableCollision(false);
+
+    if (CollisionComp)
+    {
+        CollisionComp->ClearMoveIgnoreActors();
+    }
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->Deactivate();
+    }
+
+    GetWorldTimerManager().ClearTimer(FuseTimerHandle);
+    GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+
+    FlushNetDormancy();
+    SetNetDormancy(DORM_DormantAll);
+
+    if (UThrowablePoolSubsystem* Pool = GetWorld()->GetSubsystem<UThrowablePoolSubsystem>())
+    {
+        Pool->ReturnGrenade(this);
     }
 }

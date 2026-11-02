@@ -12,6 +12,8 @@ class ABasePowerUp;
 class AController;
 class ABasePerk;
 class APerkSpawnPoint;
+//class AGrenade;
+//class AMonkeyBomb;
 enum class EHamaAbilityType : uint8;
 
 UCLASS()
@@ -169,4 +171,20 @@ public:
 protected:
     void TriggerGameOver();
     bool GetSpawnTransformNearTeammate(AController* Player, FTransform& OutSpawnTransform);
+
+    //Grenade && Monkey Polling
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable Pool|Warmup")
+    TSubclassOf<AActor> DefaultGrenadeClass;
+
+    // پۆلی بنەڕەتی مەیموون بۆ دروستکردنی پێشوەختە لەناو پووڵدا
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable Pool|Warmup")
+    TSubclassOf<AActor> DefaultMonkeyClass;
+
+    // ژمارەی نارنجۆکە ئامادەکراوەکان (Pre-warmed) لە ساتی باربوونی یاری
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable Pool|Warmup")
+    int32 PrewarmedGrenadeCount = 14;
+
+    // ژمارەی مەیموونە ئامادەکراوەکان لە ساتی باربوونی یاری
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throwable Pool|Warmup")
+    int32 PrewarmedMonkeyCount = 8;
 };

@@ -6,29 +6,38 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
 #include "ZombieDirectorSubsystem.h"
+#include "ThrowablePoolSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 
 AMonkeyBomb::AMonkeyBomb()
 {
     PrimaryActorTick.bCanEverTick = false;
 
     bReplicates = true;
+    bAlwaysRelevant = true;
     SetReplicateMovement(false);
 
     SetNetUpdateFrequency(10.0f);
     SetMinNetUpdateFrequency(2.0f);
-    SetNetCullDistanceSquared(FMath::Square(3500.0f));
 
     bAttractionActivated = false;
     bHasExploded = false;
+    SettledLocation = FVector::ZeroVector;
+    ExplosionLocation = FVector::ZeroVector;
 
     CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComp"));
     CollisionComp->InitSphereRadius(8.0f);
     CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
     CollisionComp->SetCanEverAffectNavigation(false);
-    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+    CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+    CollisionComp->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+    CollisionComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+    CollisionComp->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
     RootComponent = CollisionComp;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
@@ -45,8 +54,9 @@ AMonkeyBomb::AMonkeyBomb()
     ProjectileMovementComp->InitialSpeed = 0.0f;
     ProjectileMovementComp->MaxSpeed = 10000.0f;
     ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
+    ProjectileMovementComp->bAutoActivate = false;
     ProjectileMovementComp->Velocity = FVector::ZeroVector;
-    ProjectileMovementComp->bRotationFollowsVelocity = true;
+    ProjectileMovementComp->bRotationFollowsVelocity = false;
     ProjectileMovementComp->bShouldBounce = true;
     ProjectileMovementComp->Bounciness = 0.15f;
     ProjectileMovementComp->Friction = 0.7f;
@@ -60,47 +70,136 @@ void AMonkeyBomb::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     FDoRepLifetimeParams Params;
     Params.bIsPushBased = true;
 
+    DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, LaunchData, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, SettledLocation, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, bAttractionActivated, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, bHasExploded, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, ExplosionLocation, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(AMonkeyBomb, InitialVelocity, Params);
 }
 
 void AMonkeyBomb::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (HasAuthority() && ProjectileMovementComp)
-    {
-        ProjectileMovementComp->OnProjectileStop.AddDynamic(this, &AMonkeyBomb::OnProjectileStopped);
-    }
-}
-
-void AMonkeyBomb::InitVelocity(const FVector& InVelocity)
-{
     if (HasAuthority())
     {
-        InitialVelocity = InVelocity;
-        MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, InitialVelocity, this);
+        CachedInstigatorController = GetInstigatorController();
 
         if (ProjectileMovementComp)
         {
-            ProjectileMovementComp->Velocity = InVelocity;
+            ProjectileMovementComp->OnProjectileStop.AddUniqueDynamic(this, &AMonkeyBomb::OnProjectileStopped);
+        }
+    }
+    else
+    {
+        // چارەسەری سەرەکی: کاتێک مەیموونەکە بۆ یەکەم جار لە Poolـەوە دەگاتە کڵایەنت،
+        // OnRep_LaunchData پێش BeginPlay بانگ دەکرێت (کاتێک کۆمپۆنێنتەکان هێشتا Register نەبوون).
+        // لێرەدا دوای Register بوونی تەواوی کۆمپۆنێنتەکان فڕینەکە چالاک دەکەین.
+        if (LaunchData.LaunchSpeed > 0.0f && !bHasExploded)
+        {
+            ApplyLaunchData();
         }
     }
 }
 
-void AMonkeyBomb::OnRep_InitialVelocity()
+void AMonkeyBomb::IgnoreOwnerAndAttachedActors(AActor* InOwnerActor)
 {
+    if (!CollisionComp) return;
+
+    CollisionComp->ClearMoveIgnoreActors();
+
+    auto AddActorAndChildrenToIgnore = [this](AActor* TargetActor)
+        {
+            if (!TargetActor) return;
+            CollisionComp->IgnoreActorWhenMoving(TargetActor, true);
+
+            TArray<AActor*> AttachedActors;
+            TargetActor->GetAttachedActors(AttachedActors);
+            for (AActor* Attached : AttachedActors)
+            {
+                if (Attached)
+                {
+                    CollisionComp->IgnoreActorWhenMoving(Attached, true);
+                }
+            }
+        };
+
+    AddActorAndChildrenToIgnore(InOwnerActor);
+
+    if (!HasAuthority() && GetWorld())
+    {
+        if (APlayerController* LocalPC = GetWorld()->GetFirstPlayerController())
+        {
+            if (APawn* LocalPawn = LocalPC->GetPawn())
+            {
+                AddActorAndChildrenToIgnore(LocalPawn);
+            }
+        }
+    }
+}
+
+void AMonkeyBomb::InitVelocity(const FVector& LaunchVelocity)
+{
+    if (!HasAuthority()) return;
+
     if (ProjectileMovementComp)
     {
-        ProjectileMovementComp->Velocity = InitialVelocity;
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->SetUpdatedComponent(CollisionComp);
+        ProjectileMovementComp->Velocity = LaunchVelocity;
+        ProjectileMovementComp->UpdateComponentVelocity();
+        ProjectileMovementComp->Activate(true);
+        ProjectileMovementComp->SetComponentTickEnabled(true);
+    }
+}
+
+void AMonkeyBomb::OnRep_LaunchData()
+{
+    if (!HasActorBegunPlay())
+    {
+        return;
+    }
+
+    ApplyLaunchData();
+}
+
+void AMonkeyBomb::ApplyLaunchData()
+{
+    if (LaunchData.LaunchSpeed <= 0.0f) return;
+
+    bHasExploded = false;
+
+    IgnoreOwnerAndAttachedActors(GetOwner() ? GetOwner() : GetInstigator());
+
+    SetActorLocationAndRotation(
+        LaunchData.SpawnLocation,
+        LaunchData.LaunchDirection.Rotation(),
+        false,
+        nullptr,
+        ETeleportType::ResetPhysics
+    );
+
+    SetActorHiddenInGame(false);
+    if (MeshComp)
+    {
+        MeshComp->SetVisibility(true, true);
+    }
+    SetActorEnableCollision(true);
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->SetUpdatedComponent(CollisionComp);
+        ProjectileMovementComp->Velocity = LaunchData.LaunchDirection * LaunchData.LaunchSpeed;
+        ProjectileMovementComp->UpdateComponentVelocity();
+        ProjectileMovementComp->Activate(true);
+        ProjectileMovementComp->SetComponentTickEnabled(true);
     }
 }
 
 void AMonkeyBomb::OnProjectileStopped(const FHitResult& ImpactResult)
 {
-    if (!HasAuthority() || bAttractionActivated || bHasExploded) return;
+    if (!HasAuthority() || bHasExploded) return;
     ActivateAttraction();
 }
 
@@ -110,6 +209,9 @@ void AMonkeyBomb::ActivateAttraction()
 
     bAttractionActivated = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bAttractionActivated, this);
+
+    SettledLocation = GetActorLocation();
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, SettledLocation, this);
 
     if (ProjectileMovementComp)
     {
@@ -123,18 +225,44 @@ void AMonkeyBomb::ActivateAttraction()
     }
 
     OnRep_AttractionActivated();
-
+    ForceNetUpdate();
     GetWorldTimerManager().SetTimer(FuseTimerHandle, this, &AMonkeyBomb::Explode, FuseDuration, false);
+}
+
+void AMonkeyBomb::OnRep_SettledLocation()
+{
+    if (bHasExploded || SettledLocation.IsNearlyZero())
+    {
+        return;
+    }
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->Deactivate();
+    }
+
+    SetActorLocation(SettledLocation, false, nullptr, ETeleportType::TeleportPhysics);
 }
 
 void AMonkeyBomb::OnRep_AttractionActivated()
 {
-    if (bAttractionActivated && AttractionSound && AttractionAudioComp)
+    if (bAttractionActivated && !bHasExploded)
     {
-        if (!AttractionAudioComp->IsPlaying())
+        if (AttractionSound && AttractionAudioComp)
         {
-            AttractionAudioComp->SetSound(AttractionSound);
-            AttractionAudioComp->Play();
+            if (!AttractionAudioComp->IsPlaying())
+            {
+                AttractionAudioComp->SetSound(AttractionSound);
+                AttractionAudioComp->Play();
+            }
+        }
+    }
+    else
+    {
+        if (AttractionAudioComp && AttractionAudioComp->IsPlaying())
+        {
+            AttractionAudioComp->Stop();
         }
     }
 }
@@ -151,14 +279,24 @@ void AMonkeyBomb::Explode()
     if (!HasAuthority() || bHasExploded) return;
 
     bHasExploded = true;
+    bAttractionActivated = false;
     ExplosionLocation = GetActorLocation();
+    SettledLocation = FVector::ZeroVector;
 
     MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bHasExploded, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bAttractionActivated, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, ExplosionLocation, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, SettledLocation, this);
 
+    SetNetUpdateFrequency(10.0f);
     ForceNetUpdate();
-
     GetWorldTimerManager().ClearTimer(FuseTimerHandle);
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->Deactivate();
+    }
 
     if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
@@ -167,13 +305,13 @@ void AMonkeyBomb::Explode()
 
     PlayExplosionFX(ExplosionLocation);
 
-    AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState<AGameState>() : nullptr;
-
+    AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
     TArray<AActor*> IgnoredActors;
     IgnoredActors.Reserve(GameState ? GameState->PlayerArray.Num() + 1 : 4);
     IgnoredActors.Add(this);
 
     APawn* InstigatorPawn = GetInstigator();
+    const bool bIsThrowerAlive = (InstigatorPawn != nullptr);
 
     if (GameState)
     {
@@ -182,13 +320,17 @@ void AMonkeyBomb::Explode()
             if (!PS) continue;
             if (APawn* PlayerPawn = PS->GetPawn())
             {
-                if (PlayerPawn != InstigatorPawn)
+                if (!bIsThrowerAlive || PlayerPawn != InstigatorPawn)
                 {
                     IgnoredActors.Add(PlayerPawn);
                 }
             }
         }
     }
+
+    AController* DamageInstigator = CachedInstigatorController.IsValid()
+        ? CachedInstigatorController.Get()
+        : GetInstigatorController();
 
     UGameplayStatics::ApplyRadialDamage(
         this,
@@ -198,15 +340,25 @@ void AMonkeyBomb::Explode()
         UDamageType::StaticClass(),
         IgnoredActors,
         this,
-        GetInstigatorController(),
+        DamageInstigator,
         true,
-        ECC_WorldStatic
+        ECC_MAX
     );
 
     SetActorHiddenInGame(true);
+    if (MeshComp)
+    {
+        MeshComp->SetVisibility(false, true);
+    }
     SetActorEnableCollision(false);
 
-    SetLifeSpan(2.0f);
+    GetWorldTimerManager().SetTimer(
+        ReturnToPoolTimerHandle,
+        this,
+        &AMonkeyBomb::PrepareForPool,
+        0.3f,
+        false
+    );
 }
 
 void AMonkeyBomb::OnRep_HasExploded()
@@ -215,7 +367,17 @@ void AMonkeyBomb::OnRep_HasExploded()
     {
         PlayExplosionFX(ExplosionLocation);
         SetActorHiddenInGame(true);
+        if (MeshComp)
+        {
+            MeshComp->SetVisibility(false, true);
+        }
         SetActorEnableCollision(false);
+
+        if (ProjectileMovementComp)
+        {
+            ProjectileMovementComp->StopMovementImmediately();
+            ProjectileMovementComp->Deactivate();
+        }
     }
 }
 
@@ -245,5 +407,103 @@ void AMonkeyBomb::PlayExplosionFX(const FVector& Location)
             true,
             ENCPoolMethod::AutoRelease
         );
+    }
+}
+
+void AMonkeyBomb::ActivateFromPool(const FTransform& SpawnTransform, const FVector& LaunchVelocity, float InFuseDuration, AController* InInstigatorController)
+{
+    if (!HasAuthority()) return;
+
+    GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+    GetWorldTimerManager().ClearTimer(FuseTimerHandle);
+
+    SetNetDormancy(DORM_Awake);
+    FlushNetDormancy();
+    SetNetUpdateFrequency(10.0f);
+
+    if (InInstigatorController && InInstigatorController->GetPawn())
+    {
+        SetOwner(InInstigatorController->GetPawn());
+        SetInstigator(InInstigatorController->GetPawn());
+    }
+
+    bHasExploded = false;
+    bAttractionActivated = false;
+    SettledLocation = FVector::ZeroVector;
+    CachedInstigatorController = InInstigatorController;
+    FuseDuration = FMath::Max(0.1f, InFuseDuration);
+
+    LaunchData.SpawnLocation = SpawnTransform.GetLocation();
+    LaunchData.LaunchDirection = LaunchVelocity.GetSafeNormal();
+    LaunchData.LaunchSpeed = LaunchVelocity.Size();
+    LaunchData.LaunchIndex++;
+
+    IgnoreOwnerAndAttachedActors(GetOwner() ? GetOwner() : GetInstigator());
+
+    SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::ResetPhysics);
+    SetActorHiddenInGame(false);
+    if (MeshComp)
+    {
+        MeshComp->SetVisibility(true, true);
+    }
+    SetActorEnableCollision(true);
+
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bHasExploded, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bAttractionActivated, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, SettledLocation, this);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, LaunchData, this);
+
+    InitVelocity(LaunchVelocity);
+
+    ForceNetUpdate();
+}
+
+void AMonkeyBomb::PrepareForPool()
+{
+    if (!HasAuthority()) return;
+
+    SetActorHiddenInGame(true);
+    if (MeshComp)
+    {
+        MeshComp->SetVisibility(false, true);
+    }
+    SetActorEnableCollision(false);
+
+    if (CollisionComp)
+    {
+        CollisionComp->ClearMoveIgnoreActors();
+    }
+
+    if (AttractionAudioComp && AttractionAudioComp->IsPlaying())
+    {
+        AttractionAudioComp->Stop();
+    }
+
+    if (ProjectileMovementComp)
+    {
+        ProjectileMovementComp->StopMovementImmediately();
+        ProjectileMovementComp->Deactivate();
+    }
+
+    if (bAttractionActivated)
+    {
+        bAttractionActivated = false;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AMonkeyBomb, bAttractionActivated, this);
+    }
+
+    if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
+    {
+        Director->UnregisterAttractor(this);
+    }
+
+    GetWorldTimerManager().ClearTimer(FuseTimerHandle);
+    GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+
+    FlushNetDormancy();
+    SetNetDormancy(DORM_DormantAll);
+
+    if (UThrowablePoolSubsystem* Pool = GetWorld()->GetSubsystem<UThrowablePoolSubsystem>())
+    {
+        Pool->ReturnMonkey(this);
     }
 }

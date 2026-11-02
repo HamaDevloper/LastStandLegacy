@@ -15,6 +15,24 @@ class UProjectileMovementComponent;
 class USoundBase;
 class UNiagaraSystem;
 
+USTRUCT()
+struct FMonkeyLaunchData
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    FVector_NetQuantize SpawnLocation = FVector::ZeroVector;
+
+    UPROPERTY()
+    FVector_NetQuantizeNormal LaunchDirection = FVector::ForwardVector;
+
+    UPROPERTY()
+    float LaunchSpeed = 0.0f;
+
+    UPROPERTY()
+    uint8 LaunchIndex = 0;
+};
+
 UCLASS()
 class LASTSTANDLEGACY_API AMonkeyBomb : public AActor, public IDamageableInterface
 {
@@ -62,6 +80,12 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MonkeyBomb|FX")
     TObjectPtr<UNiagaraSystem> ExplosionNiagaraFX;
 
+    UPROPERTY(ReplicatedUsing = OnRep_LaunchData)
+    FMonkeyLaunchData LaunchData;
+
+    UPROPERTY(ReplicatedUsing = OnRep_SettledLocation)
+    FVector_NetQuantize SettledLocation;
+
     UPROPERTY(ReplicatedUsing = OnRep_AttractionActivated)
     bool bAttractionActivated = false;
 
@@ -71,10 +95,17 @@ protected:
     UPROPERTY(Replicated)
     FVector_NetQuantize ExplosionLocation;
 
-    UPROPERTY(ReplicatedUsing = OnRep_InitialVelocity)
-    FVector_NetQuantize InitialVelocity;
+    UPROPERTY()
+    TWeakObjectPtr<AController> CachedInstigatorController;
 
     FTimerHandle FuseTimerHandle;
+    FTimerHandle ReturnToPoolTimerHandle;
+
+    UFUNCTION()
+    void OnRep_LaunchData();
+
+    UFUNCTION()
+    void OnRep_SettledLocation();
 
     UFUNCTION()
     void OnRep_AttractionActivated();
@@ -83,17 +114,19 @@ protected:
     void OnRep_HasExploded();
 
     UFUNCTION()
-    void OnRep_InitialVelocity();
-
-    UFUNCTION()
     void OnProjectileStopped(const FHitResult& ImpactResult);
 
+    void ApplyLaunchData();
     void ActivateAttraction();
     void Explode();
     void PlayExplosionFX(const FVector& Location);
+    void IgnoreOwnerAndAttachedActors(AActor* InOwnerActor);
 
 public:
-    void InitVelocity(const FVector& InVelocity);
+    void InitVelocity(const FVector& LaunchVelocity);
+
+    void ActivateFromPool(const FTransform& SpawnTransform, const FVector& LaunchVelocity, float InFuseDuration, AController* InInstigatorController);
+    void PrepareForPool();
 
     virtual bool CanReceiveWeaponDamage() const override { return !bHasExploded; }
 };

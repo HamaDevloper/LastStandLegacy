@@ -7,6 +7,8 @@
 
 class AHama;
 class UAnimMontage;
+class AGrenade;
+class AMonkeyBomb;
 
 DECLARE_DELEGATE_TwoParams(FOnThrowableCountChanged, int32 /*MonkeyCount*/, int32 /*GrenadeCount*/);
 
@@ -25,7 +27,6 @@ class LASTSTANDLEGACY_API UThrowableComponent : public UActorComponent
 
 public:
     UThrowableComponent();
-
 
 protected:
     virtual void BeginPlay() override;
@@ -46,6 +47,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     void ReleaseMonkeyThrow();
 
+    // بە TSubclassOf<AActor> دەمێنێتەوە بۆ ئەوەی لەگەڵ Mystery Box و بانگکەرەکانی تر گونجاو بێت
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     void UnlockAndRefillMonkeyBomb(TSubclassOf<AActor> NewMonkeyClass, int32 Amount = 3);
 
@@ -59,23 +61,24 @@ public:
     FORCEINLINE bool IsThrowingInProcess() const { return bIsThrowingLocal || ChargeState != EThrowChargeState::Idle; }
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
-    bool IsCharging() const { return ChargeState == EThrowChargeState::Charging; }
+    FORCEINLINE bool IsCharging() const { return ChargeState == EThrowChargeState::Charging; }
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     TSubclassOf<AActor> GetMonkeyClass() const { return MonkeyClass; }
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
-    int32 GetCurrentGrenadeCount() const { return CurrentGrenadeCount; }
+    FORCEINLINE int32 GetCurrentGrenadeCount() const { return CurrentGrenadeCount; }
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
-    int32 GetCurrentMonkeyCount() const { return CurrentMonkeyCount; }
+    FORCEINLINE int32 GetCurrentMonkeyCount() const { return CurrentMonkeyCount; }
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    FORCEINLINE int32 GetMaxGrenadeCount() const { return MaxGrenadeCount; }
+
+    UFUNCTION(BlueprintCallable, Category = "Throwable")
+    FORCEINLINE int32 GetMaxMonkeyCount() const { return MaxMonkeyCount; }
 
     void ToggleHandThrowableVisibility(bool bVisible);
-    void Server_OnGrenadeCookExpired();
-
-    int32 GetMaxGrenadeCount() const { return MaxGrenadeCount; }
-    int32 GetMaxMonkeyCount() const { return MaxMonkeyCount; }
-
     void HandleOwnerDowned();
 
 protected:
@@ -122,10 +125,10 @@ protected:
     float MonkeyThrowCooldown = 1.0f;
 
     UPROPERTY(ReplicatedUsing = OnRep_GrenadeCount, VisibleInstanceOnly, Category = "Throwable|State")
-    uint8 CurrentGrenadeCount;
+    uint8 CurrentGrenadeCount = 3;
 
     UPROPERTY(ReplicatedUsing = OnRep_MonkeyCount, VisibleInstanceOnly, Category = "Throwable|State")
-    uint8 CurrentMonkeyCount;
+    uint8 CurrentMonkeyCount = 0;
 
     UPROPERTY(ReplicatedUsing = OnRep_ChargeState, VisibleInstanceOnly, Category = "Throwable|State")
     EThrowChargeState ChargeState = EThrowChargeState::Idle;
@@ -142,13 +145,13 @@ protected:
     float ServerCookStartTime = 0.0f;
 
     FTimerHandle TimerHandle_ResetThrowState;
+    FTimerHandle TimerHandle_CookExplosion;
+    FTimerHandle TimerHandle_LocalCookExplosion;
 
     UPROPERTY()
     TObjectPtr<AHama> CharacterOwner;
 
-    UPROPERTY()
-    TObjectPtr<AActor> HeldThrowableVisualActor;
-
+    // پارامیتەرەکان بە دەقیقی لەگەڵ .cpp هاوتا کراون
     UFUNCTION(Server, Reliable)
     void Server_StartCharge(bool bIsMonkey);
 
@@ -158,8 +161,13 @@ protected:
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_OnGrenadeCookExpiredFX();
 
+    UFUNCTION(Client, Reliable)
+    void Client_RejectThrow();
+
     void ExecuteStartCharge_Server(bool bIsMonkey);
-    
+    void Server_OnGrenadeCookExpired();
+    void Local_OnGrenadeCookExpired();
+
     UFUNCTION()
     void OnRep_GrenadeCount();
 
@@ -168,11 +176,6 @@ protected:
 
     UFUNCTION()
     void OnRep_ChargeState();
-
-    UFUNCTION(Client, Reliable)
-    void Client_RejectThrow();
-
-    void Local_OnGrenadeCookExpired();
 
     UFUNCTION()
     void OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted);
@@ -187,11 +190,9 @@ protected:
     FVector TraceCrosshairTarget(const FVector& ViewLoc, const FVector& AimDir) const;
     void GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const;
 
-    FTimerHandle TimerHandle_CookExplosion;
-    FTimerHandle TimerHandle_LocalCookExplosion;
-
 private:
     void PlayThrowMontageWithDelegate(UAnimMontage* MontageToPlay, FName SectionName = NAME_None);
+
     uint8 PendingGrenadeThrows = 0;
     uint8 PendingMonkeyThrows = 0;
 };

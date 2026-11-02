@@ -4,7 +4,6 @@
 #include "Hama.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
-#include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Kismet/GameplayStatics.h"
@@ -13,7 +12,7 @@
 #include "Grenade.h"
 #include "MonkeyBomb.h"
 #include "LastStandLegacyGameState.h"
-#include "Engine/OverlapResult.h"
+#include "ThrowablePoolSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogThrowableSystem, Log, All);
 
@@ -52,27 +51,13 @@ void UThrowableComponent::BeginPlay()
     if (GrenadeThrowMontage)
     {
         const int32 SectionIndex = GrenadeThrowMontage->GetSectionIndex(ReleaseSectionName);
-        if (SectionIndex != INDEX_NONE)
-        {
-            GrenadeThrowCooldown = GrenadeThrowMontage->GetSectionLength(SectionIndex);
-        }
-        else
-        {
-            GrenadeThrowCooldown = 0.6f; 
-        }
+        GrenadeThrowCooldown = (SectionIndex != INDEX_NONE) ? GrenadeThrowMontage->GetSectionLength(SectionIndex) : 0.6f;
     }
 
     if (MonkeyThrowMontage)
     {
         const int32 SectionIndex = MonkeyThrowMontage->GetSectionIndex(ReleaseSectionName);
-        if (SectionIndex != INDEX_NONE)
-        {
-            MonkeyThrowCooldown = MonkeyThrowMontage->GetSectionLength(SectionIndex);
-        }
-        else
-        {
-            MonkeyThrowCooldown = 0.8f; 
-        }
+        MonkeyThrowCooldown = (SectionIndex != INDEX_NONE) ? MonkeyThrowMontage->GetSectionLength(SectionIndex) : 0.8f;
     }
 
     if (CharacterOwner && CharacterOwner->IsLocallyControlled())
@@ -102,12 +87,7 @@ void UThrowableComponent::StartMonkeyCharge() { Internal_StartCharge(true); }
 
 void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
 {
-    if (!CharacterOwner || !GetWorld())
-    {
-        UE_LOG(LogThrowableSystem, Warning, TEXT("[StartCharge FAILED] CharacterOwner or World is NULL!"));
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("StartCharge Fail: Invalid Owner/World"));
-        return;
-    }
+    if (!CharacterOwner || !GetWorld()) return;
 
     const uint8 ServerCount = bIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const uint8 PendingCount = bIsMonkey ? PendingMonkeyThrows : PendingGrenadeThrows;
@@ -115,12 +95,7 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
 
     const TSubclassOf<AActor> TargetClass = bIsMonkey ? MonkeyClass : GrenadeClass;
 
-    if (EffectiveCount <= 0)
-    {
-        return;
-    }
-
-    if (!TargetClass)
+    if (EffectiveCount <= 0 || !TargetClass || bIsThrowingLocal || ChargeState != EThrowChargeState::Idle)
     {
         return;
     }
@@ -128,34 +103,15 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-    if (bIsThrowingLocal)
-    {
-        return;
-    }
-
-    if (ChargeState != EThrowChargeState::Idle)
-    {
-        return;
-    }
-
     if (CurrentTime - LastThrowTime < ActiveCooldown)
     {
-        const float Remaining = ActiveCooldown - (CurrentTime - LastThrowTime);
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, FString::Printf(TEXT("StartCharge Fail: Cooldown (%.1fs)"), Remaining));
         return;
     }
 
     if (CharacterOwner->CurrentWeapon)
     {
-        if (CharacterOwner->CurrentWeapon->IsReloading())
-        {
-            CharacterOwner->CurrentWeapon->CancelReload();
-        }
-
-        if (CharacterOwner->bIsFireButtonHold)
-        {
-            CharacterOwner->CurrentWeapon->StopFire();
-        }
+        if (CharacterOwner->CurrentWeapon->IsReloading()) CharacterOwner->CurrentWeapon->CancelReload();
+        if (CharacterOwner->bIsFireButtonHold) CharacterOwner->CurrentWeapon->StopFire();
     }
 
     bIsThrowingLocal = true;
@@ -165,7 +121,7 @@ void UThrowableComponent::Internal_StartCharge(bool bIsMonkey)
     {
         if (!bIsMonkey)
         {
-            const float LocalCookTimerBuffer = MaxGrenadeCookTime + 0.25f;
+            const float LocalCookTimerBuffer = MaxGrenadeCookTime + 0.2f;
             GetWorld()->GetTimerManager().SetTimer(
                 TimerHandle_LocalCookExplosion,
                 this,
@@ -205,12 +161,17 @@ void UThrowableComponent::ExecuteStartCharge_Server(bool bIsMonkey)
         return;
     }
 
-    if(CharacterOwner->IsSprinting())
+    if (CharacterOwner->IsSprinting())
     {
         CharacterOwner->StopSprint();
     }
 
-    bIsMonkeyThrow = bIsMonkey;
+    if (bIsMonkeyThrow != bIsMonkey)
+    {
+        bIsMonkeyThrow = bIsMonkey;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, bIsMonkeyThrow, this);
+    }
+
     ChargeState = EThrowChargeState::Charging;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
 
@@ -234,13 +195,8 @@ void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
 {
     if (!CharacterOwner) return;
 
-    if (ChargeState != EThrowChargeState::Idle)
-    {
-        Client_RejectThrow();
-        return;
-    }
-
-    if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
+    if (ChargeState != EThrowChargeState::Idle ||
+        CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
         CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
     {
         Client_RejectThrow();
@@ -249,17 +205,10 @@ void UThrowableComponent::Server_StartCharge_Implementation(bool bIsMonkey)
 
     if (CharacterOwner->CurrentWeapon)
     {
-        if (CharacterOwner->CurrentWeapon->IsReloading())
-        {
-            CharacterOwner->CurrentWeapon->CancelReload();
-        }
-
-        if (CharacterOwner->bIsFireButtonHold)
-        {
-            CharacterOwner->CurrentWeapon->StopFire();
-        }
+        if (CharacterOwner->CurrentWeapon->IsReloading()) CharacterOwner->CurrentWeapon->CancelReload();
+        if (CharacterOwner->bIsFireButtonHold) CharacterOwner->CurrentWeapon->StopFire();
     }
-            
+
     const int32 TargetCount = bIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const TSubclassOf<AActor> TargetClass = bIsMonkey ? MonkeyClass : GrenadeClass;
     const float ActiveCooldown = bIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
@@ -288,17 +237,7 @@ void UThrowableComponent::ReleaseMonkeyThrow() { Internal_ReleaseThrow(true); }
 
 void UThrowableComponent::Internal_ReleaseThrow(bool bIsMonkey)
 {
-    if (!CharacterOwner)
-    {
-        return;
-    }
-
-    if (bIsMonkey != bIsMonkeyThrow)
-    {
-        return;
-    }
-
-    if (ChargeState != EThrowChargeState::Charging)
+    if (!CharacterOwner || bIsMonkey != bIsMonkeyThrow || ChargeState != EThrowChargeState::Charging)
     {
         return;
     }
@@ -323,7 +262,6 @@ void UThrowableComponent::Internal_ReleaseThrow(bool bIsMonkey)
 
     FVector ClientAimDir = ClientViewRot.Vector();
 
-  
     if (!GetOwner()->HasAuthority())
     {
         if (bIsMonkey) { PendingMonkeyThrows++; }
@@ -346,14 +284,8 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     if (!CharacterOwner) return;
 
     if (CharacterOwner->IsDrinkingPerk() || CharacterOwner->IsMeleeing() ||
-        CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead)
-    {
-        ResetThrowState_Server();
-        Client_RejectThrow();
-        return;
-    }
-
-    if (bIsMonkey != bIsMonkeyThrow)
+        CharacterOwner->IsDiving() || CharacterOwner->IsDowned() || CharacterOwner->bIsDead ||
+        bIsMonkey != bIsMonkeyThrow)
     {
         ResetThrowState_Server();
         Client_RejectThrow();
@@ -361,7 +293,6 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     }
 
     const bool bActualIsMonkey = bIsMonkeyThrow;
-    TSubclassOf<AActor> TargetClass = bActualIsMonkey ? MonkeyClass : GrenadeClass;
     uint8& TargetCount = bActualIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
     const float ActiveCooldown = bActualIsMonkey ? MonkeyThrowCooldown : GrenadeThrowCooldown;
     const float CurrentTime = GetWorld()->GetTimeSeconds();
@@ -375,28 +306,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     const bool bIsCooldownActive = (CurrentTime - LastThrowTime) < (ActiveCooldown - DynamicMargin);
     const bool bValidState = (ChargeState == EThrowChargeState::Charging);
 
-    if (!TargetClass)
-    {
-        ResetThrowState_Server();
-        Client_RejectThrow();
-        return;
-    }
-
-    if (TargetCount <= 0)
-    {
-        ResetThrowState_Server();
-        Client_RejectThrow();
-        return;
-    }
-
-    if (!bValidState)
-    {
-        ResetThrowState_Server();
-        Client_RejectThrow();
-        return;
-    }
-
-    if (bIsCooldownActive)
+    if (TargetCount <= 0 || !bValidState || bIsCooldownActive)
     {
         ResetThrowState_Server();
         Client_RejectThrow();
@@ -410,98 +320,181 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     LastThrowTime = CurrentTime;
     ChargeState = EThrowChargeState::Released;
-
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
-
     HandleChargeStateChanged();
 
-    const FVector ServerEyeLoc = CharacterOwner->GetPawnViewLocation();
+    const FVector ValidatedViewLoc = ClientViewLoc;
+    const FVector ValidatedAimDir = ClientAimDir.GetSafeNormal();
 
-    FVector ValidatedViewLoc = ClientViewLoc;
-    if (FVector::DistSquared(ClientViewLoc, ServerEyeLoc) > FMath::Square(200.0f))
-    {
-        ValidatedViewLoc = ServerEyeLoc;
-    }
-
-    FVector ServerAimDir = CharacterOwner->GetBaseAimRotation().Vector();
-    FVector ValidatedAimDir = ClientAimDir.GetSafeNormal();
-
-    if (ValidatedAimDir.IsNearlyZero() || FVector::DotProduct(ValidatedAimDir, ServerAimDir) < 0.7f)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("[Server ExecuteThrow] Invalid AimDir from Client! Using Server AimDir instead."));
-        ValidatedAimDir = ServerAimDir;
-    }
-
-    FVector TargetPoint = TraceCrosshairTarget(ValidatedViewLoc, ValidatedAimDir);
-    FVector StartLoc = ServerEyeLoc + (ValidatedAimDir * 40.0f);
+    const FVector TargetPoint = TraceCrosshairTarget(ValidatedViewLoc, ValidatedAimDir);
+    const FVector StartLoc = ValidatedViewLoc + (ValidatedAimDir * 80.f);
 
     FVector FinalSpawnLoc;
-    GetSafeSpawnLocation(ServerEyeLoc, StartLoc, FinalSpawnLoc);
-    FVector TrueLaunchDir = (TargetPoint - FinalSpawnLoc).GetSafeNormal();
+    GetSafeSpawnLocation(ValidatedViewLoc, StartLoc, FinalSpawnLoc);
 
-    FRotator SpawnRotation = TrueLaunchDir.Rotation();
-    FTransform SpawnTransform(SpawnRotation, FinalSpawnLoc);
+    const FVector ToTarget = TargetPoint - FinalSpawnLoc;
+    FVector TrueLaunchDir = ValidatedAimDir;
+
+    if (ToTarget.SizeSquared() > FMath::Square(25.0f))
+    {
+        TrueLaunchDir = ToTarget.GetSafeNormal();
+    }
+
+    TrueLaunchDir = (TrueLaunchDir + FVector(0.0f, 0.0f, 0.05f)).GetSafeNormal();
+
+    const FRotator SpawnRotation = TrueLaunchDir.Rotation();
+    const FTransform SpawnTransform(SpawnRotation, FinalSpawnLoc);
 
     float RemainingFuseTime = MaxGrenadeCookTime;
     if (!bActualIsMonkey)
     {
-        float ElapsedCookTime = CurrentTime - ServerCookStartTime;
+        const float ElapsedCookTime = CurrentTime - ServerCookStartTime;
         RemainingFuseTime = FMath::Max(0.1f, MaxGrenadeCookTime - ElapsedCookTime);
     }
 
-    AActor* SpawnedThrowable = GetWorld()->SpawnActorDeferred<AActor>(
-        TargetClass, SpawnTransform, CharacterOwner, CharacterOwner, ESpawnActorCollisionHandlingMethod::AlwaysSpawn
-    );
-
-    if (SpawnedThrowable)
-    {
-        if (AGrenade* GrenadeActor = Cast<AGrenade>(SpawnedThrowable))
-        {
-            GrenadeActor->SetFuseDuration(RemainingFuseTime);
-            UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
-            GrenadeActor->InitVelocity(TrueLaunchDir * GrenadeThrowImpulseStrength);
-        }
-        else if (AMonkeyBomb* MonkeyActor = Cast<AMonkeyBomb>(SpawnedThrowable))
-        {
-            UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
-            MonkeyActor->InitVelocity(TrueLaunchDir * MonkeyThrowImpulseStrength);
-        }
-        else
-        {
-            UGameplayStatics::FinishSpawningActor(SpawnedThrowable, SpawnTransform);
-        }
-
-        TargetCount--;
-        if (bActualIsMonkey)
-        {
-            MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
-
-            if (CharacterOwner && CharacterOwner->IsLocallyControlled())
-            {
-                OnRep_MonkeyCount();
-            }
-        }
-        else
-        {
-            MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
-
-            if (CharacterOwner && CharacterOwner->IsLocallyControlled())
-            {
-                OnRep_GrenadeCount();
-            }
-        }
-    }
-    else
+    UThrowablePoolSubsystem* Pool = GetWorld()->GetSubsystem<UThrowablePoolSubsystem>();
+    if (!Pool)
     {
         ResetThrowState_Server();
         Client_RejectThrow();
         return;
     }
 
-    const float ResetDelay = FMath::Max(0.2f, ActiveCooldown - 0.1f);
+    if (!bActualIsMonkey)
+    {
+        AGrenade* GrenadeActor = Pool->AcquireGrenade(GrenadeClass, SpawnTransform);
+        if (GrenadeActor)
+        {
+            GrenadeActor->SetOwner(CharacterOwner);
+            GrenadeActor->SetInstigator(CharacterOwner);
+
+            if (UPrimitiveComponent* GrenadeRoot = Cast<UPrimitiveComponent>(GrenadeActor->GetRootComponent()))
+            {
+                GrenadeRoot->IgnoreActorWhenMoving(CharacterOwner, true);
+                if (CharacterOwner->CurrentWeapon)
+                {
+                    GrenadeRoot->IgnoreActorWhenMoving(CharacterOwner->CurrentWeapon, true);
+                }
+            }
+
+            GrenadeActor->ActivateFromPool(
+                SpawnTransform,
+                TrueLaunchDir * GrenadeThrowImpulseStrength,
+                RemainingFuseTime,
+                CharacterOwner->GetController()
+            );
+
+            TargetCount--;
+            MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
+            if (CharacterOwner->IsLocallyControlled())
+            {
+                OnRep_GrenadeCount();
+            }
+        }
+        else
+        {
+            ResetThrowState_Server();
+            Client_RejectThrow();
+            return;
+        }
+    }
+    else
+    {
+        AMonkeyBomb* MonkeyActor = Pool->AcquireMonkey(MonkeyClass, SpawnTransform);
+        if (MonkeyActor)
+        {
+            MonkeyActor->SetOwner(CharacterOwner);
+            MonkeyActor->SetInstigator(CharacterOwner);
+
+            if (UPrimitiveComponent* MonkeyRoot = Cast<UPrimitiveComponent>(MonkeyActor->GetRootComponent()))
+            {
+                MonkeyRoot->IgnoreActorWhenMoving(CharacterOwner, true);
+                if (CharacterOwner->CurrentWeapon)
+                {
+                    MonkeyRoot->IgnoreActorWhenMoving(CharacterOwner->CurrentWeapon, true);
+                }
+            }
+
+            MonkeyActor->ActivateFromPool(
+                SpawnTransform,
+                TrueLaunchDir * MonkeyThrowImpulseStrength,
+                8.0f,
+                CharacterOwner->GetController()
+            );
+
+            TargetCount--;
+            MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
+            if (CharacterOwner->IsLocallyControlled())
+            {
+                OnRep_MonkeyCount();
+            }
+        }
+        else
+        {
+            ResetThrowState_Server();
+            Client_RejectThrow();
+            return;
+        }
+    }
+
+    const float ResetDelay = FMath::Max(0.2f, ActiveCooldown - DynamicMargin);
     GetWorld()->GetTimerManager().SetTimer(
         TimerHandle_ResetThrowState, this, &UThrowableComponent::ResetThrowState_Server, ResetDelay, false
     );
+}
+
+FVector UThrowableComponent::TraceCrosshairTarget(const FVector& ViewLoc, const FVector& AimDir) const
+{
+    if (!GetWorld() || !CharacterOwner)
+    {
+        return ViewLoc + (AimDir * 10000.0f);
+    }
+
+    const FVector TraceEnd = ViewLoc + (AimDir * 10000.0f);
+    FHitResult Hit;
+
+    FCollisionQueryParams TraceParams;
+    TraceParams.AddIgnoredActor(CharacterOwner);
+
+    if (CharacterOwner->CurrentWeapon)
+    {
+        TraceParams.AddIgnoredActor(CharacterOwner->CurrentWeapon);
+    }
+
+    if (GetWorld()->LineTraceSingleByChannel(Hit, ViewLoc, TraceEnd, ECC_Visibility, TraceParams))
+    {
+        return Hit.ImpactPoint;
+    }
+
+    return TraceEnd;
+}
+
+void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const
+{
+    if (!GetWorld() || !CharacterOwner)
+    {
+        OutSpawnLoc = TargetLoc;
+        return;
+    }
+
+    FHitResult HitResult;
+    FCollisionQueryParams QueryParams;
+    QueryParams.AddIgnoredActor(CharacterOwner);
+
+    if (CharacterOwner->CurrentWeapon)
+    {
+        QueryParams.AddIgnoredActor(CharacterOwner->CurrentWeapon);
+    }
+
+    const FCollisionShape SphereShape = FCollisionShape::MakeSphere(8.0f);
+    if (GetWorld()->SweepSingleByChannel(HitResult, StartLoc, TargetLoc, FQuat::Identity, ECC_WorldStatic, SphereShape, QueryParams))
+    {
+        OutSpawnLoc = HitResult.Location + (HitResult.ImpactNormal * 2.0f);
+    }
+    else
+    {
+        OutSpawnLoc = TargetLoc;
+    }
 }
 
 void UThrowableComponent::Server_OnGrenadeCookExpired()
@@ -555,7 +548,7 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
         CharacterOwner,
         CharacterOwner->GetController(),
         false,
-        ECC_WorldStatic
+        ECC_MAX
     );
 
     CurrentGrenadeCount = FMath::Max(0, CurrentGrenadeCount - 1);
@@ -584,6 +577,7 @@ void UThrowableComponent::Local_OnGrenadeCookExpired()
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_LocalCookExplosion);
     }
 
     HandleChargeStateChanged();
@@ -591,16 +585,18 @@ void UThrowableComponent::Local_OnGrenadeCookExpired()
 
 void UThrowableComponent::ResetThrowState_Server()
 {
-    ChargeState = EThrowChargeState::Idle;
-
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
         GetWorld()->GetTimerManager().ClearTimer(TimerHandle_ResetThrowState);
     }
 
-    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
-    HandleChargeStateChanged();
+    if (ChargeState != EThrowChargeState::Idle)
+    {
+        ChargeState = EThrowChargeState::Idle;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
+        HandleChargeStateChanged();
+    }
 }
 
 void UThrowableComponent::Client_RejectThrow_Implementation()
@@ -621,6 +617,8 @@ void UThrowableComponent::Client_RejectThrow_Implementation()
 
 void UThrowableComponent::OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
+    if (ChargeState == EThrowChargeState::Idle) return;
+
     if (GetOwner() && GetOwner()->HasAuthority())
     {
         ResetThrowState_Server();
@@ -665,41 +663,49 @@ void UThrowableComponent::HandleChargeStateChanged()
     if (!CharacterOwner || !CharacterOwner->GetMesh()) return;
 
     UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
-    UAnimMontage* MontageToPlay = bIsMonkeyThrow ? MonkeyThrowMontage : GrenadeThrowMontage;
+    if (!AnimInstance) return;
 
-    if (!AnimInstance || !MontageToPlay) return;
+    UAnimMontage* MontageToPlay = bIsMonkeyThrow ? MonkeyThrowMontage : GrenadeThrowMontage;
 
     switch (ChargeState)
     {
     case EThrowChargeState::Charging:
     {
-        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
-
-        PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
+        if (MontageToPlay)
+        {
+            AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+            PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
+            AnimInstance->Montage_Pause(MontageToPlay);
+        }
         SetWeaponHidden(true);
         ToggleHandThrowableVisibility(true);
-
-        AnimInstance->Montage_Pause(MontageToPlay);
         break;
     }
     case EThrowChargeState::Released:
     {
-        AnimInstance->Montage_Resume(MontageToPlay);
-        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
-
-        PlayThrowMontageWithDelegate(MontageToPlay, ReleaseSectionName);
+        if (MontageToPlay)
+        {
+            AnimInstance->Montage_Resume(MontageToPlay);
+            AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
+            PlayThrowMontageWithDelegate(MontageToPlay, ReleaseSectionName);
+        }
         ToggleHandThrowableVisibility(false);
         break;
     }
     case EThrowChargeState::Idle:
     default:
     {
-        AnimInstance->Montage_Resume(MontageToPlay);
-        AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
-
-        if (AnimInstance->Montage_IsPlaying(MontageToPlay))
+        if (GrenadeThrowMontage && AnimInstance->Montage_IsPlaying(GrenadeThrowMontage))
         {
-            AnimInstance->Montage_Stop(0.2f, MontageToPlay);
+            AnimInstance->Montage_Resume(GrenadeThrowMontage);
+            AnimInstance->Montage_SetPlayRate(GrenadeThrowMontage, 1.0f);
+            AnimInstance->Montage_Stop(0.2f, GrenadeThrowMontage);
+        }
+        if (MonkeyThrowMontage && AnimInstance->Montage_IsPlaying(MonkeyThrowMontage))
+        {
+            AnimInstance->Montage_Resume(MonkeyThrowMontage);
+            AnimInstance->Montage_SetPlayRate(MonkeyThrowMontage, 1.0f);
+            AnimInstance->Montage_Stop(0.2f, MonkeyThrowMontage);
         }
 
         SetWeaponHidden(false);
@@ -740,66 +746,32 @@ void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPl
     }
 }
 
-FVector UThrowableComponent::TraceCrosshairTarget(const FVector& ViewLoc, const FVector& AimDir) const
-{
-    if (!GetWorld() || !CharacterOwner)
-    {
-        return ViewLoc + (AimDir * 10000.0f);
-    }
-
-    const FVector TraceEnd = ViewLoc + (AimDir * 10000.0f);
-    FHitResult Hit;
-
-    FCollisionQueryParams TraceParams;
-    TraceParams.AddIgnoredActor(CharacterOwner);
-
-    if (GetWorld()->LineTraceSingleByChannel(Hit, ViewLoc, TraceEnd, ECC_Visibility, TraceParams))
-    {
-        return Hit.ImpactPoint;
-    }
-
-    return TraceEnd;
-}
-
-void UThrowableComponent::GetSafeSpawnLocation(const FVector& StartLoc, const FVector& TargetLoc, FVector& OutSpawnLoc) const
-{
-    if (!GetWorld() || !CharacterOwner)
-    {
-        OutSpawnLoc = TargetLoc;
-        return;
-    }
-
-    FHitResult HitResult;
-    FCollisionQueryParams QueryParams;
-    QueryParams.AddIgnoredActor(CharacterOwner);
-
-    if (GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, TargetLoc, ECC_WorldStatic, QueryParams))
-    {
-        OutSpawnLoc = HitResult.Location - (TargetLoc - StartLoc).GetSafeNormal() * 10.0f;
-    }
-    else
-    {
-        OutSpawnLoc = TargetLoc;
-    }
-}
-
 void UThrowableComponent::ToggleHandThrowableVisibility(bool bVisible)
 {
     if (IsRunningDedicatedServer() || !CharacterOwner) return;
 
-    if (bIsMonkeyThrow)
+    if (!bVisible)
     {
         if (CharacterOwner->MonkeyHandMesh)
         {
-            CharacterOwner->MonkeyHandMesh->SetVisibility(bVisible);
+            CharacterOwner->MonkeyHandMesh->SetVisibility(false);
         }
+        if (CharacterOwner->GrenadeHandMesh)
+        {
+            CharacterOwner->GrenadeHandMesh->SetVisibility(false);
+        }
+        return;
+    }
+
+    if (bIsMonkeyThrow)
+    {
+        if (CharacterOwner->GrenadeHandMesh) CharacterOwner->GrenadeHandMesh->SetVisibility(false);
+        if (CharacterOwner->MonkeyHandMesh) CharacterOwner->MonkeyHandMesh->SetVisibility(true);
     }
     else
     {
-        if (CharacterOwner->GrenadeHandMesh)
-        {
-            CharacterOwner->GrenadeHandMesh->SetVisibility(bVisible);
-        }
+        if (CharacterOwner->MonkeyHandMesh) CharacterOwner->MonkeyHandMesh->SetVisibility(false);
+        if (CharacterOwner->GrenadeHandMesh) CharacterOwner->GrenadeHandMesh->SetVisibility(true);
     }
 }
 
@@ -857,14 +829,15 @@ void UThrowableComponent::HandleOwnerDowned()
     if (ChargeState == EThrowChargeState::Charging)
     {
         UWorld* World = GetWorld();
-        if (World && CharacterOwner)
+        UThrowablePoolSubsystem* Pool = World ? World->GetSubsystem<UThrowablePoolSubsystem>() : nullptr;
+
+        if (World && CharacterOwner && Pool)
         {
             const float CurrentTime = World->GetTimeSeconds();
             const bool bActualIsMonkey = bIsMonkeyThrow;
-            TSubclassOf<AActor> TargetClass = bActualIsMonkey ? MonkeyClass : GrenadeClass;
             uint8& TargetCount = bActualIsMonkey ? CurrentMonkeyCount : CurrentGrenadeCount;
 
-            if (TargetClass && TargetCount > 0)
+            if (TargetCount > 0)
             {
                 if (!bActualIsMonkey)
                 {
@@ -872,41 +845,43 @@ void UThrowableComponent::HandleOwnerDowned()
                 }
 
                 const float ElapsedCookTime = CurrentTime - ServerCookStartTime;
-                const float RemainingFuseTime = bActualIsMonkey ? MaxGrenadeCookTime : FMath::Max(0.1f, MaxGrenadeCookTime - ElapsedCookTime);
+                const float RemainingFuseTime = bActualIsMonkey ? 8.0f : FMath::Max(0.1f, MaxGrenadeCookTime - ElapsedCookTime);
 
                 FVector DropLocation = CharacterOwner->GetActorLocation() + FVector(0.0f, 0.0f, 20.0f);
                 FTransform DropTransform(CharacterOwner->GetActorRotation(), DropLocation);
 
-                AActor* DroppedThrowable = World->SpawnActorDeferred<AActor>(
-                    TargetClass, DropTransform, CharacterOwner, CharacterOwner, ESpawnActorCollisionHandlingMethod::AlwaysSpawn
-                );
-
-                if (DroppedThrowable)
+                if (!bActualIsMonkey)
                 {
-                    if (AGrenade* GrenadeActor = Cast<AGrenade>(DroppedThrowable))
+                    if (AGrenade* DroppedGrenade = Pool->AcquireGrenade(GrenadeClass, DropTransform))
                     {
-                        GrenadeActor->SetFuseDuration(RemainingFuseTime);
-                        UGameplayStatics::FinishSpawningActor(DroppedThrowable, DropTransform);
-                        GrenadeActor->InitVelocity(FVector(FMath::RandRange(-80.0f, 80.0f), FMath::RandRange(-80.0f, 80.0f), 50.0f));
-                    }
-                    else if (AMonkeyBomb* MonkeyActor = Cast<AMonkeyBomb>(DroppedThrowable))
-                    {
-                        UGameplayStatics::FinishSpawningActor(DroppedThrowable, DropTransform);
-                        MonkeyActor->InitVelocity(FVector(0.0f, 0.0f, 30.0f));
-                    }
-                    else
-                    {
-                        UGameplayStatics::FinishSpawningActor(DroppedThrowable, DropTransform);
-                    }
+                        DroppedGrenade->SetOwner(CharacterOwner);
+                        DroppedGrenade->SetInstigator(CharacterOwner);
+                        DroppedGrenade->ActivateFromPool(
+                            DropTransform,
+                            FVector(FMath::RandRange(-80.0f, 80.0f), FMath::RandRange(-80.0f, 80.0f), 50.0f),
+                            RemainingFuseTime,
+                            CharacterOwner->GetController()
+                        );
 
-                    TargetCount--;
-                    if (bActualIsMonkey)
-                    {
-                        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
-                    }
-                    else
-                    {
+                        TargetCount--;
                         MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
+                    }
+                }
+                else
+                {
+                    if (AMonkeyBomb* DroppedMonkey = Pool->AcquireMonkey(MonkeyClass, DropTransform))
+                    {
+                        DroppedMonkey->SetOwner(CharacterOwner);
+                        DroppedMonkey->SetInstigator(CharacterOwner);
+                        DroppedMonkey->ActivateFromPool(
+                            DropTransform,
+                            FVector(0.0f, 0.0f, 30.0f),
+                            8.0f,
+                            CharacterOwner->GetController()
+                        );
+
+                        TargetCount--;
+                        MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentMonkeyCount, this);
                     }
                 }
             }

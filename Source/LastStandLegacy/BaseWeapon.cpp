@@ -370,36 +370,18 @@ void ABaseWeapon::HandleFireLocal()
 }
 
 
-void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLocation, const TArray<FVector_NetQuantizeNormal>& ShotDirections)
+void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize CameraLocation, const TArray<FVector_NetQuantizeNormal>& ShotDirections)
 {
     if (!OwnerCharacter) return;
 
-    float CurrentTime = GetWorld()->GetTimeSeconds();
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    const int32 MaxAllowedShots = OwnerCharacter->HasDoubleTap() ? 2 : 1;
 
-    const float BaseToleranceSq = 100000.f;
-    const float VelocityToleranceSq = OwnerCharacter->GetVelocity().SizeSquared() * 0.0225f;
-    float MaxAllowedDistSq = BaseToleranceSq + VelocityToleranceSq;
-    float DistSquared = FVector::DistSquared(OwnerCharacter->GetActorLocation(), MuzzleLocation);
-    int32 MaxAllowedShots = OwnerCharacter->HasDoubleTap() ? 2 : 1;
+    const bool bFireRateViolation = CurrentTime < (ServerNextAllowedFireTime - 0.2f);
+    const bool bTooManyShots = ShotDirections.Num() > MaxAllowedShots;
 
-    bool bFireRateViolation = CurrentTime < (ServerNextAllowedFireTime - 0.15f);
-    bool bMuzzleSpoofing = DistSquared > MaxAllowedDistSq;
-    bool bTooManyShots = ShotDirections.Num() > MaxAllowedShots;
-
-
-    if (bFireRateViolation || bMuzzleSpoofing || bTooManyShots)
+    if (bFireRateViolation || bTooManyShots)
     {
-        FString RejectReason = TEXT("");
-        if (bFireRateViolation) RejectReason += TEXT("FireRate ");
-        if (bMuzzleSpoofing) RejectReason += TEXT("MuzzleSpoofing ");
-        if (bTooManyShots) RejectReason += TEXT("TooManyShots ");
-
-        if (GEngine)
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
-                FString::Printf(TEXT("[SERVER] Shot Rejected! Reason: %s| Syncing Ammo..."), *RejectReason));
-        }
-
         Client_ForceSyncAmmo(CurrentAmmo);
         return;
     }
@@ -421,7 +403,7 @@ void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize MuzzleLo
 
     for (const FVector_NetQuantizeNormal& Dir : ShotDirections)
     {
-        ProcessShotLogic(MuzzleLocation, Dir);
+        ProcessShotLogic(CameraLocation, Dir);
     }
 }
 
