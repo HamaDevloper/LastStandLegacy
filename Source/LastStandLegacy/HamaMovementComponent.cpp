@@ -9,6 +9,11 @@ UHamaMovementComponent::UHamaMovementComponent()
     bDiving = false;
     bDowned = false;
     bSlide = false;
+    bWasSliding = false;
+    bWasDiving = false;
+    bPrevSlide = false;
+    bPrevDiving = false;
+    bPrevSprinting = false;
 
     DefaultGroundFriction = 8.0f;
     DefaultBrakingDecelerationWalking = 2048.0f;
@@ -29,11 +34,11 @@ void UHamaMovementComponent::BeginPlay()
 
 UHamaComponent* UHamaMovementComponent::GetHamaComp()
 {
-    if (!CachedHamaComp.IsValid() && CharacterOwner)
+    if (!CachedHamaComp && CharacterOwner)
     {
         CachedHamaComp = CharacterOwner->FindComponentByClass<UHamaComponent>();
     }
-    return CachedHamaComp.Get();
+    return CachedHamaComp;
 }
 
 float UHamaMovementComponent::GetMaxSpeed() const
@@ -75,18 +80,21 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         }
     }
 
-    const float SlideStopThresholdSquared = FMath::Square(60.f);
-    if (bSlide && (Velocity.SizeSquared2D() < SlideStopThresholdSquared || !IsMovingOnGround()))
+    // ڕاگرتنی سلاکد لە کاتی دابەزینی خێرایی یان لە هەوادا بوون
+    const float SlideStopThresholdSquared = FMath::Square(SlideStopSpeed);
+    if (bSlide && bWasSliding && (Velocity.SizeSquared2D() < SlideStopThresholdSquared || !IsMovingOnGround()))
     {
         bSlide = false;
     }
 
+    // کاتێک کارەکتەر لە هەوا دێتە خوارەوە و لە زەوی دەدات
     if (bDiving && bWasDiving && MovementMode != MOVE_Falling)
     {
+        // لێرەدا دەتوانیت خێرایی ئاسۆیی کەم بکەیتەوە (Friction زیاد بکەیت بۆ ڕاکێشانی جەستە لەسەر زەوی)
         bDiving = false;
     }
 
-   if (bSprinting)
+    if (bSprinting)
     {
         if (bDowned || bAiming || bSlide || bDiving || IsFalling())
         {
@@ -94,6 +102,7 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         }
     }
 
+    // دەستپێکردنی سلاکد
     if (bSlide && !bWasSliding)
     {
         if (IsMovingOnGround())
@@ -112,6 +121,7 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         }
     }
 
+    // دەستپێکردنی دایڤ (هەڵدانی فیزیکی بۆ ناو هەوا)
     if (bDiving && !bWasDiving && IsMovingOnGround())
     {
         FVector DiveDir = Velocity.GetSafeNormal2D();
@@ -125,10 +135,11 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         CurrentFloor.Clear();
     }
 
+    // ڕێکخستنی لێخشاندن بۆ سلاکد
     if (bSlide && IsMovingOnGround())
     {
-        GroundFriction = 0.5f;
-        BrakingDecelerationWalking = 200.f;
+        GroundFriction = SlideGroundFriction;
+        BrakingDecelerationWalking = SlideBrakingDeceleration;
     }
     else
     {
@@ -143,6 +154,39 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 void UHamaMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity)
 {
     Super::OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
+
+#if !UE_BUILD_SHIPPING
+    if (GEngine && CharacterOwner && !CharacterOwner->bClientUpdating)
+    {
+        const bool bIsServer = CharacterOwner->HasAuthority();
+        const bool bIsLocallyControlled = CharacterOwner->IsLocallyControlled();
+        const FString RoleStr = bIsServer ? TEXT("[SERVER]") : (bIsLocallyControlled ? TEXT("[LOCAL CLIENT]") : TEXT("[REMOTE CLIENT]"));
+
+        const uint64 BaseKey = bIsServer ? 100 : (bIsLocallyControlled ? 200 : 300);
+        const FColor DisplayColor = bIsServer ? FColor::Cyan : (bIsLocallyControlled ? FColor::Green : FColor::Yellow);
+
+        GEngine->AddOnScreenDebugMessage(
+            BaseKey + 0, 0.0f, DisplayColor,
+            FString::Printf(TEXT("%s | Vel2D: %.1f | Mode: %d"), *RoleStr, Velocity.Size2D(), (int32)MovementMode.GetValue())
+        );
+
+        GEngine->AddOnScreenDebugMessage(
+            BaseKey + 1, 0.0f, DisplayColor,
+            FString::Printf(TEXT("%s [CMC] -> Sprint: %d | Slide: %d | Dive: %d | Aim: %d"),
+                *RoleStr, bSprinting ? 1 : 0, bSlide ? 1 : 0, bDiving ? 1 : 0, bAiming ? 1 : 0)
+        );
+
+        if (UHamaComponent* HamaComp = GetHamaComp())
+        {
+            const bool bMismatch = (bSlide != HamaComp->bIsSlide) || (bDiving != HamaComp->bIsDiving);
+            GEngine->AddOnScreenDebugMessage(
+                BaseKey + 2, 0.0f, bMismatch ? FColor::Orange : DisplayColor,
+                FString::Printf(TEXT("%s [Comp] -> Sprint: %d | Slide: %d | Dive: %d | Aim: %d"),
+                    *RoleStr, HamaComp->bIsSprinting ? 1 : 0, HamaComp->bIsSlide ? 1 : 0, HamaComp->bIsDiving ? 1 : 0, HamaComp->bIsAiming ? 1 : 0)
+            );
+        }
+    }
+#endif
 
     if (CharacterOwner && CharacterOwner->bClientUpdating)
     {
@@ -175,10 +219,7 @@ void UHamaMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector
         {
             HamaComp->StopSlide();
         }
-        if (!bDiving && HamaComp->bIsDiving)
-        {
-            HamaComp->StopDive();
-        }
+
         if (!bSprinting && HamaComp->bIsSprinting)
         {
             HamaComp->SetSprinting(false);
@@ -223,6 +264,23 @@ void UHamaMovementComponent::FSavedMove_Hama::SetMoveFor(ACharacter* C, float DT
     bSavedWasDiving = Comp->bWasDiving;
 }
 
+void UHamaMovementComponent::FSavedMove_Hama::PostUpdate(ACharacter* C, EPostUpdateMode PostUpdateMode)
+{
+    FSavedMove_Character::PostUpdate(C, PostUpdateMode);
+
+    // ئەگەر لە ناو UpdateCharacterStateBeforeMovement دۆخێک بوەستێندرێت، لێرەدا فلاجەکە بۆ ناردن نوێ دەبێتەوە
+    if (PostUpdateMode == PostUpdate_Record)
+    {
+        if (const UHamaMovementComponent* Comp = static_cast<const UHamaMovementComponent*>(C->GetCharacterMovement()))
+        {
+            bSavedWantsToSprint = Comp->bSprinting;
+            bSavedWantsToAim = Comp->bAiming;
+            bSavedWantsToDive = Comp->bDiving;
+            bSavedWantsToSlide = Comp->bSlide;
+        }
+    }
+}
+
 void UHamaMovementComponent::FSavedMove_Hama::PrepMoveFor(ACharacter* C)
 {
     FSavedMove_Character::PrepMoveFor(C);
@@ -243,11 +301,11 @@ bool UHamaMovementComponent::FSavedMove_Hama::CanCombineWith(const FSavedMovePtr
     const FSavedMove_Hama* Other = static_cast<const FSavedMove_Hama*>(NewMove.Get());
 
     if (bSavedWantsToSprint != Other->bSavedWantsToSprint) return false;
-    if (bSavedWantsToAim != Other->bSavedWantsToAim)    return false;
-    if (bSavedWantsToDive != Other->bSavedWantsToDive)   return false;
-    if (bSavedWantsToSlide != Other->bSavedWantsToSlide)  return false;
-    if (bSavedWasSliding != Other->bSavedWasSliding) return false;
-    if (bSavedWasDiving != Other->bSavedWasDiving)  return false;
+    if (bSavedWantsToAim != Other->bSavedWantsToAim)       return false;
+    if (bSavedWantsToDive != Other->bSavedWantsToDive)     return false;
+    if (bSavedWantsToSlide != Other->bSavedWantsToSlide)   return false;
+    if (bSavedWasSliding != Other->bSavedWasSliding)       return false;
+    if (bSavedWasDiving != Other->bSavedWasDiving)         return false;
 
     return FSavedMove_Character::CanCombineWith(NewMove, C, MaxDelta);
 }

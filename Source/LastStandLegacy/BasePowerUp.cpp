@@ -18,7 +18,7 @@ ABasePowerUp::ABasePowerUp()
     CollisionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionSphere"));
     RootComponent = CollisionSphere;
     CollisionSphere->SetSphereRadius(60.f);
-    CollisionSphere->SetMobility(EComponentMobility::Static);
+    CollisionSphere->SetMobility(EComponentMobility::Movable);
     CollisionSphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
     CollisionSphere->SetCollisionObjectType(ECC_WorldDynamic);
     CollisionSphere->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -27,7 +27,7 @@ ABasePowerUp::ABasePowerUp()
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
     MeshComp->SetupAttachment(RootComponent);
-    MeshComp->SetMobility(EComponentMobility::Static);
+    MeshComp->SetMobility(EComponentMobility::Movable);
     MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     MeshComp->PrimaryComponentTick.bCanEverTick = false;
 }

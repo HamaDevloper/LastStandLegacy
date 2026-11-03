@@ -33,7 +33,6 @@ void ALastStandLegacyGameState::GetLifetimeReplicatedProps(TArray<FLifetimePrope
     DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bIsGlobalBulletStormActive, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bIsDoublePointsActive, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bHasInstaKill, Params);
-    DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bIsAdrenalineActive, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(ALastStandLegacyGameState, bIsPowerOn, Params);
     DOREPLIFETIME_CONDITION(ALastStandLegacyGameState, bIsSoloMatch, COND_InitialOnly);
 }
@@ -96,30 +95,6 @@ void ALastStandLegacyGameState::OnRep_PowerOn()
     if (OnPowerStateChangedDelegate.IsBound())
     {
         OnPowerStateChangedDelegate.Broadcast(bIsPowerOn);
-    }
-}
-
-void ALastStandLegacyGameState::StartTeamAdrenaline(float Duration)
-{
-    if (HasAuthority())
-    {
-        bIsAdrenalineActive = true;
-        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsAdrenalineActive, this);
-
-        OnRep_Adrenaline();
-        GetWorldTimerManager().SetTimer(AdrenalineTimerHandle, this, &ALastStandLegacyGameState::EndTeamAdrenaline, Duration, false);
-    }
-}
-
-void ALastStandLegacyGameState::EndTeamAdrenaline()
-{
-    if (HasAuthority())
-    {
-        bIsAdrenalineActive = false;
-        
-        MARK_PROPERTY_DIRTY_FROM_NAME(ALastStandLegacyGameState, bIsAdrenalineActive, this);
-
-        OnRep_Adrenaline();
     }
 }
 
@@ -192,11 +167,6 @@ void ALastStandLegacyGameState::EndInstaKill()
 
         OnRep_InstaKill();
     }
-}
-
-void ALastStandLegacyGameState::OnRep_Adrenaline()
-{
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.f, bIsAdrenalineActive ? FColor::Orange : FColor::Red, bIsAdrenalineActive ? TEXT("CLIENT: Blitz Adrenaline Active!") : TEXT("CLIENT: Blitz Ended!"));
 }
 
 void ALastStandLegacyGameState::OnRep_DoublePoints()

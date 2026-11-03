@@ -189,14 +189,15 @@ bool UHamaComponent::CanDive() const
 
 void UHamaComponent::StartDive()
 {
-    SetSprinting(false);
-    DecreaseStamina(20.f);
     bIsDiving = true;
+    DecreaseStamina(20.f);
 
     if (MoveComp)
     {
         MoveComp->bDiving = true;
     }
+
+    SetSprinting(false);
 }
 
 void UHamaComponent::StopDive()
@@ -281,7 +282,10 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 
     if (bIsSprinting)
     {
-        SetAiming(false);
+        if (OwnerCharacter && !bIsSlide && !bIsDiving)
+        {
+            OwnerCharacter->ResetValuesAfterSprint();
+        }
         World->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
         World->GetTimerManager().SetTimer(StaminaDrainTimerHandle, this, &UHamaComponent::DrainStamina, 0.1f, true);
     }
@@ -315,7 +319,12 @@ void UHamaComponent::DrainStamina()
     }
 
     const FVector CurrentAccel = MoveComp->GetCurrentAcceleration();
-    if (CurrentAccel.SizeSquared() < 0.64f)
+
+    const float MinSprintRatio = 0.75f;
+    const float MinRequiredAccel = MoveComp->GetMaxAcceleration() * MinSprintRatio;
+    const float MinRequiredAccelSq = FMath::Square(MinRequiredAccel);
+
+    if (CurrentAccel.SizeSquared2D() < MinRequiredAccelSq)
     {
         SetSprinting(false);
         return;
@@ -325,18 +334,10 @@ void UHamaComponent::DrainStamina()
     const FVector NormalizedAccel = CurrentAccel.GetSafeNormal2D();
     const float ForwardDot = FVector::DotProduct(Forward2D, NormalizedAccel);
 
-    if (ForwardDot < 0.5f)
+    if (ForwardDot < 0.6f) 
     {
         SetSprinting(false);
         return;
-    }
-
-    if (const ALastStandLegacyGameState* GS = GetGameStateCached())
-    {
-        if (GS->IsTeamAdrenalineActive())
-        {
-            return;
-        }
     }
 
     Stamina = FMath::Clamp(Stamina - StaminaDrainRate * 0.1f, 0.f, MaxStamina);

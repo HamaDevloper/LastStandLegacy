@@ -400,7 +400,7 @@ protected:
     void SwitchCameraPressed(const FInputActionInstance& Instance);
     void SwitchCameraReleased();
     void SprintActionPressed();
-    void OnSprintStopped();
+    //void OnSprintStopped();
     void StartCrossHairTimer();
     void CrossHairTrace();
     void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
@@ -676,6 +676,7 @@ protected:
 public:
     void OnBrawlerStateChanged(bool bInBrawlerMode);
     bool IsBrawlerModeActive() const;
+    void UpdateWeaponVisibility();
 
 protected:
     UPROPERTY(EditDefaultsOnly, Category = "Combat|Melee")
@@ -689,7 +690,6 @@ protected:
     UAnimMontage* GetActiveMeleeMontage() const;
     void PlayMeleeMontageByCounter(UAnimMontage* MontageToPlay);
 
-    void UpdateWeaponVisibility();
     void OnMeleeMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
     void CheckAndAutoReloadWeapon();

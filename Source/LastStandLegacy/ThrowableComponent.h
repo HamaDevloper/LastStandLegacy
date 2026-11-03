@@ -184,7 +184,7 @@ protected:
     void Internal_ReleaseThrow(bool bIsMonkey);
 
     void ResetThrowState_Server();
-    void SetWeaponHidden(bool bHidden);
+    void SetWeaponHidden();
     void HandleChargeStateChanged();
 
     FVector TraceCrosshairTarget(const FVector& ViewLoc, const FVector& AimDir) const;

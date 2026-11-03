@@ -22,7 +22,7 @@ public:
     virtual void OnMovementUpdated(float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity) override;
 
     // -------------------------------------------------------------------------
-    // Movement States (Accessible in Blueprints / AnimInstance)
+    // Movement States
     // -------------------------------------------------------------------------
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement | State")
     uint8 bSprinting : 1;
@@ -95,10 +95,11 @@ private:
     uint8 bPrevDiving : 1;
     uint8 bPrevSprinting : 1;
 
-    TWeakObjectPtr<UHamaComponent> CachedHamaComp;
+    UPROPERTY(Transient)
+    TObjectPtr<UHamaComponent> CachedHamaComp;
 
     // -------------------------------------------------------------------------
-    // Network Prediction Classes (SavedMove & PredictionData)
+    // Network Prediction Classes
     // -------------------------------------------------------------------------
     class FSavedMove_Hama : public FSavedMove_Character
     {
@@ -115,6 +116,7 @@ private:
         virtual bool CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* C, float MaxDelta) const override;
         virtual void SetMoveFor(ACharacter* C, float DT, FVector const& Accel, FNetworkPredictionData_Client_Character& Data) override;
         virtual void PrepMoveFor(ACharacter* C) override;
+        virtual void PostUpdate(ACharacter* C, EPostUpdateMode PostUpdateMode) override;
     };
 
     class FNetworkPredictionData_Client_Hama : public FNetworkPredictionData_Client_Character

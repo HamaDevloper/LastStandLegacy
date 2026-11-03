@@ -677,7 +677,7 @@ void UThrowableComponent::HandleChargeStateChanged()
             PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
             AnimInstance->Montage_Pause(MontageToPlay);
         }
-        SetWeaponHidden(true);
+        SetWeaponHidden();
         ToggleHandThrowableVisibility(true);
         break;
     }
@@ -708,7 +708,7 @@ void UThrowableComponent::HandleChargeStateChanged()
             AnimInstance->Montage_Stop(0.2f, MonkeyThrowMontage);
         }
 
-        SetWeaponHidden(false);
+        SetWeaponHidden();
         ToggleHandThrowableVisibility(false);
         break;
     }
@@ -775,11 +775,11 @@ void UThrowableComponent::ToggleHandThrowableVisibility(bool bVisible)
     }
 }
 
-void UThrowableComponent::SetWeaponHidden(bool bHidden)
+void UThrowableComponent::SetWeaponHidden()
 {
     if (IsValid(CharacterOwner) && IsValid(CharacterOwner->CurrentWeapon))
     {
-        CharacterOwner->CurrentWeapon->SetActorHiddenInGame(bHidden);
+        CharacterOwner->UpdateWeaponVisibility();
     }
 }
 

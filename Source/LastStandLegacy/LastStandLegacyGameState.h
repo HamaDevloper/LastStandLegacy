@@ -43,9 +43,6 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_GlobalBulletStorm, BlueprintReadOnly, Category = "Abilities")
     bool bIsGlobalBulletStormActive = false;
 
-    UPROPERTY(ReplicatedUsing = OnRep_Adrenaline, BlueprintReadOnly, Category = "Abilities")
-    bool bIsAdrenalineActive = false;
-
     UPROPERTY(ReplicatedUsing = OnRep_DoublePoints, BlueprintReadOnly, Category = "Abilities")
     bool bIsDoublePointsActive = false;
 
@@ -60,9 +57,6 @@ public:
 
     void SetPowerState(bool bState);
     bool IsPowerOn() const { return bIsPowerOn; }
-
-    void StartTeamAdrenaline(float Duration);
-    bool IsTeamAdrenalineActive() const { return bIsAdrenalineActive; }
 
     bool GetInstaKill() const { return bHasInstaKill; }
 
@@ -80,7 +74,7 @@ protected:
     void EndDoublePoints();
     void EndGlobalBulletStorm();
     void EndInstaKill();
-    void EndTeamAdrenaline();
+
 
     UFUNCTION()
     void OnRep_PowerOn();
@@ -93,9 +87,6 @@ protected:
 
     UFUNCTION()
     void OnRep_InstaKill();
-
-    UFUNCTION()
-    void OnRep_Adrenaline();
 
 private:
     FTimerHandle BulletStormTimer;

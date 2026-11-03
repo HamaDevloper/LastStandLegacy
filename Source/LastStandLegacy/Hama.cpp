@@ -1612,6 +1612,8 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 // -----------------------------------------------------------------------------
 void AHama::FireActionPressed()
 {
+    bIsFireButtonHold = true;
+
     if (!HamaComponent) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
     if (IsDrinkingPerk()) return;
@@ -1623,7 +1625,6 @@ void AHama::FireActionPressed()
     }
 
     if (!CurrentWeapon || IsMeleeing()) return;
-    bIsFireButtonHold = true;
     CurrentWeapon->StartFire();
 }
 
@@ -1635,10 +1636,12 @@ void AHama::FireActionReleased()
 }
 
 void AHama::AimActionPressed()
-{
-   
+{  
+    bIsAimButtonHold = true;
+
     if (IsDrinkingPerk()) return;
     if (IsMeleeing()) return;
+    if (IsDiving()) return;
 
     if (IsBrawlerModeActive())
     {
@@ -1653,7 +1656,6 @@ void AHama::AimActionPressed()
         HamaComponent->StopSprinting();
     }
 
-    bIsAimButtonHold = true;
     HamaComponent->SetAiming(true);
 
     if (!HamaComponent->IsDowned())
@@ -1780,7 +1782,7 @@ void AHama::ReloadActionPressed()
 
 void AHama::Move(const FInputActionValue& Value)
 {
-    //if (!OwnerController) return;
+    if (!OwnerController) return;
     FVector2D MovementVector = Value.Get<FVector2D>();
     FRotator ControllRotation = OwnerController->GetControlRotation();
     FRotator YawRotation(0.f, ControllRotation.Yaw, 0.f);
@@ -1794,7 +1796,7 @@ void AHama::Move(const FInputActionValue& Value)
 
 void AHama::Look(const FInputActionValue& Value)
 {
-    //if (!OwnerController) return;
+    if (!OwnerController) return;
 
     FVector2D lookVector = Value.Get<FVector2D>();
     float ApplySensitivity = bIsAimButtonHold ? AimingSensitivity : NormalSensitivity;
@@ -1950,6 +1952,7 @@ void AHama::OnDiveMontageEnded(UAnimMontage* Montage, bool bInterrupted)
     if (Montage == DiveMontage && HamaComponent)
     {
         HamaComponent->StopDive();
+        ResetValuesAfterSprint();
     }
 }
 
@@ -2051,10 +2054,15 @@ void AHama::SprintActionPressed()
     if (IsDiving()) return;
     if (HamaComponent->GetStamina() <= 20.f) return;
     if (GetCharacterMovement()->IsFalling()) return;
-    if (HamaComponent->IsAiming())   OnAim(false);
     if (bIsFireButtonHold && CurrentWeapon) CurrentWeapon->StopFire();
     if (CurrentWeapon && CurrentWeapon->bIsReloading) CurrentWeapon->CancelReload();
     if (GetCharacterMovement() && GetCharacterMovement()->IsCrouching()) UnCrouch();
+
+    if(bIsAimButtonHold)
+    {
+        HamaComponent->SetAiming(false);
+        OnAim(false);
+    }
 
     HamaComponent->StartSprinting();
 }
@@ -2068,11 +2076,23 @@ void AHama::StopSprint()
 
 void AHama::ResetValuesAfterSprint()
 {
+    if (HamaComponent)
+    {
+        if (HamaComponent->IsSlide() || HamaComponent->IsDiving())
+        {
+            return;
+        }
+    }
+
     if (bIsAimButtonHold)
     {
-        HamaComponent->SetAiming(true);
+        if (HamaComponent)
+        {
+            HamaComponent->SetAiming(true);
+        }
         OnAim(true);
     }
+
     if (CurrentWeapon)
     {
         if (bIsFireButtonHold)
@@ -2083,26 +2103,6 @@ void AHama::ResetValuesAfterSprint()
         {
             CurrentWeapon->Reload();
         }
-    }
-}
-
-void AHama::OnSprintStopped()
-{
-    if (!CurrentWeapon) return;
-
-    if (bIsAimButtonHold)
-    {
-        OnAim(true);
-    }
-
-    if (bIsFireButtonHold)
-    {
-        FireActionPressed();
-    }
-   
-    if (CurrentWeapon->CanReload())
-    {
-        CurrentWeapon->Reload();
     }
 }
 
@@ -2414,10 +2414,7 @@ void AHama::OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool 
         PerkBottleMesh->SetStaticMesh(nullptr);
     }
 
-    if (CurrentWeapon)
-    {
-        CurrentWeapon->SetActorHiddenInGame(false);
-    }
+    UpdateWeaponVisibility();
 
     if (bInterrupted && HasAuthority())
     {
@@ -3228,10 +3225,10 @@ bool AHama::SetCanInteract() const
        return false;
    }
 
-   if (IsBrawlerModeActive())
+  /* if (IsBrawlerModeActive())
    {
        return false;
-   }
+   }*/
    
    return true;
 }
