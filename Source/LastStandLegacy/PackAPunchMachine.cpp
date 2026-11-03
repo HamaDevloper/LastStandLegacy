@@ -99,17 +99,10 @@ bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
 bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
-
-    if (!CanInteract(InteractingPlayer))
+    if (!CanInteract(InteractingPlayer))  return false;
 
     if (MachineState == EPaPState::Idle)
     {
-        ABaseWeapon* Weapon = InteractingPlayer->GetCurrentWeapon();
-        if (!Weapon || !Weapon->GetUpgradedWeaponClass())
-        {
-            return false;
-        }
-
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
         if (!PS || PS->GetPoints() < UpgradeCost)
         {
@@ -132,6 +125,9 @@ bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
         }
     }
 
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return false;
+
     return true;
 }
 
@@ -139,6 +135,9 @@ void APackAPunchMachine::Interact(AHama* InteractingPlayer)
 {
     if (!HasAuthority() || !IsValid(InteractingPlayer)) return;
     if (!CanInteract(InteractingPlayer)) return;
+
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return;
 
     if (MachineState == EPaPState::Idle)
     {
@@ -148,6 +147,7 @@ void APackAPunchMachine::Interact(AHama* InteractingPlayer)
             return;
         }
     }
+
 
     if (HasAuthority())
     {
@@ -218,7 +218,6 @@ void APackAPunchMachine::StartUpgradeProcess(AHama* InteractingPlayer)
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, UpgradedWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
 
-    UpdateVisuals();
     OnRep_PapMachineState();
 
     GetWorldTimerManager().SetTimer(
@@ -247,7 +246,6 @@ void APackAPunchMachine::CompleteUpgradeProcess()
 
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
 
-    UpdateVisuals();
     OnRep_PapMachineState();
 
     GetWorldTimerManager().SetTimer(
@@ -301,7 +299,6 @@ void APackAPunchMachine::ResetMachineState()
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, RawWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, UpgradedWeaponClass, this);
 
-    UpdateVisuals();
     OnRep_PapMachineState();
 }
 

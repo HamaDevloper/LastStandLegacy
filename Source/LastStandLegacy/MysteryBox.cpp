@@ -186,6 +186,7 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 
 bool AMysteryBox::Client_PreInteract(AHama* InteractingPlayer)
 {
+    if (!IsValid(InteractingPlayer)) return false;
     if (!CanInteract(InteractingPlayer)) return false;
 
     if (BoxState == EMysteryBoxState::Idle)
