@@ -282,16 +282,12 @@ void UHamaComponent::SetSprinting(bool bNewSprinting)
 
     if (bIsSprinting)
     {
-        if (OwnerCharacter && !bIsSlide && !bIsDiving)
-        {
-            OwnerCharacter->ResetValuesAfterSprint();
-        }
         World->GetTimerManager().ClearTimer(StaminaRegenTimerHandle);
         World->GetTimerManager().SetTimer(StaminaDrainTimerHandle, this, &UHamaComponent::DrainStamina, 0.1f, true);
     }
     else
     {
-        if (OwnerCharacter)
+        if (OwnerCharacter && !bIsSlide && !bIsDiving)
         {
             OwnerCharacter->ResetValuesAfterSprint();
         }
