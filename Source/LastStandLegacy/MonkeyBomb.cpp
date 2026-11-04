@@ -169,11 +169,39 @@ void AMonkeyBomb::ApplyLaunchData()
 
     bHasExploded = false;
 
-    IgnoreOwnerAndAttachedActors(GetOwner() ? GetOwner() : GetInstigator());
+    AActor* OwnerActor = GetOwner() ? GetOwner() : GetInstigator();
+    IgnoreOwnerAndAttachedActors(OwnerActor);
+
+    const FVector BaseDirection = LaunchData.LaunchDirection;
+    const float BaseSpeed = LaunchData.LaunchSpeed;
+    FVector InitialVel = BaseDirection * BaseSpeed;
+    FVector InitialLoc = LaunchData.SpawnLocation;
+
+    // =========================================================================
+    // قەرەبووکردنەوەی پینگ (Fast-Forward Simulation) بۆ کڵایەنت
+    // =========================================================================
+    if (!HasAuthority())
+    {
+        float PingSeconds = 0.03f;
+        if (APawn* InstigatorPawn = GetInstigator())
+        {
+            if (APlayerState* PS = InstigatorPawn->GetPlayerState())
+            {
+                // نیوەی کاتی هاتووچۆ (One-Way Ping) بە چرکە
+                PingSeconds = FMath::Clamp(PS->GetPingInMilliseconds() * 0.0005f, 0.01f, 0.15f);
+            }
+        }
+
+        // هاوکێشەی فیزیکی کێشکردن بۆ تێپەڕاندنی ئەو کاتەی پاکێت لە ڕێگادا بووە:
+        // P = P0 + (V * t) + (0.5 * a * t^2)
+        const FVector Gravity(0.0f, 0.0f, GetWorld() ? GetWorld()->GetGravityZ() : -980.0f);
+        InitialLoc += (InitialVel * PingSeconds) + (0.5f * Gravity * FMath::Square(PingSeconds));
+        InitialVel += (Gravity * PingSeconds);
+    }
 
     SetActorLocationAndRotation(
-        LaunchData.SpawnLocation,
-        LaunchData.LaunchDirection.Rotation(),
+        InitialLoc,
+        BaseDirection.Rotation(),
         false,
         nullptr,
         ETeleportType::ResetPhysics
@@ -190,7 +218,7 @@ void AMonkeyBomb::ApplyLaunchData()
     {
         ProjectileMovementComp->StopMovementImmediately();
         ProjectileMovementComp->SetUpdatedComponent(CollisionComp);
-        ProjectileMovementComp->Velocity = LaunchData.LaunchDirection * LaunchData.LaunchSpeed;
+        ProjectileMovementComp->Velocity = InitialVel;
         ProjectileMovementComp->UpdateComponentVelocity();
         ProjectileMovementComp->Activate(true);
         ProjectileMovementComp->SetComponentTickEnabled(true);

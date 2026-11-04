@@ -323,6 +323,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
     HandleChargeStateChanged();
 
+    // بەکارهێنانی ڕاستەوخۆی پۆزیشنی کامێرای کڵایەنت
     const FVector ValidatedViewLoc = ClientViewLoc;
     const FVector ValidatedAimDir = ClientAimDir.GetSafeNormal();
 
@@ -342,11 +343,9 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     TrueLaunchDir = (TrueLaunchDir + FVector(0.0f, 0.0f, 0.05f)).GetSafeNormal();
 
-    FVector InheritedVelocity = CharacterOwner->GetVelocity();
-    InheritedVelocity.Z = 0.0f;
-
-    const FVector GrenadeLaunchVelocity = (TrueLaunchDir * GrenadeThrowImpulseStrength) + InheritedVelocity;
-    const FVector MonkeyLaunchVelocity = (TrueLaunchDir * MonkeyThrowImpulseStrength) + InheritedVelocity;
+    // خێرایی هاویشتنی ڕاستەوخۆ بەرەو چەقی نیشانەکە (بەبێ خواربوونەوە بۆ چەپ و ڕاست)
+    const FVector GrenadeLaunchVelocity = TrueLaunchDir * GrenadeThrowImpulseStrength;
+    const FVector MonkeyLaunchVelocity = TrueLaunchDir * MonkeyThrowImpulseStrength;
 
     const FRotator SpawnRotation = TrueLaunchDir.Rotation();
     const FTransform SpawnTransform(SpawnRotation, FinalSpawnLoc);
