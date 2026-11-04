@@ -323,16 +323,20 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
     HandleChargeStateChanged();
 
-    // بەکارهێنانی ڕاستەوخۆی پۆزیشنی کامێرای کڵایەنت
-    const FVector ValidatedViewLoc = ClientViewLoc;
+    // ١. دۆزینەوەی خاڵی نیشانە بە سوودوەرگرتن لە ئاراستە و شوێنی ڕاستەقینەی کامێرای کڵایەنت
     const FVector ValidatedAimDir = ClientAimDir.GetSafeNormal();
+    const FVector TargetPoint = TraceCrosshairTarget(ClientViewLoc, ValidatedAimDir);
 
-    const FVector TargetPoint = TraceCrosshairTarget(ValidatedViewLoc, ValidatedAimDir);
-    const FVector StartLoc = ValidatedViewLoc + (ValidatedAimDir * 80.f);
+    // ٢. دروستکردنی خاڵی دەستپێکی سەنتەرکراو لە جەستەی کارەکتەر (بۆ لابردنی ئۆفسێتی کامێرای شانی ڕاست/چەپ)
+    FVector CentralSpawnOrigin = CharacterOwner->GetActorLocation();
+    CentralSpawnOrigin.Z += CharacterOwner->BaseEyeHeight;
+
+    const FVector StartLoc = CentralSpawnOrigin + (ValidatedAimDir * 60.0f);
 
     FVector FinalSpawnLoc;
-    GetSafeSpawnLocation(ValidatedViewLoc, StartLoc, FinalSpawnLoc);
+    GetSafeSpawnLocation(CentralSpawnOrigin, StartLoc, FinalSpawnLoc);
 
+    // ٣. ئاراستەکردنی ڕۆمانەکە لە ناوەڕاستی جەستەوە بە ڕاستەوخۆیی بەرەو خاڵی نیشانەکە
     const FVector ToTarget = TargetPoint - FinalSpawnLoc;
     FVector TrueLaunchDir = ValidatedAimDir;
 
@@ -341,9 +345,10 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
         TrueLaunchDir = ToTarget.GetSafeNormal();
     }
 
-    TrueLaunchDir = (TrueLaunchDir + FVector(0.0f, 0.0f, 0.05f)).GetSafeNormal();
+    // بەرزکردنەوەیەکی کەوانەیی زۆر کەم بۆ فڕێدانی سروشتی
+    TrueLaunchDir = (TrueLaunchDir + FVector(0.0f, 0.0f, 0.04f)).GetSafeNormal();
 
-    // خێرایی هاویشتنی ڕاستەوخۆ بەرەو چەقی نیشانەکە (بەبێ خواربوونەوە بۆ چەپ و ڕاست)
+    // خێرایی پاڵنانی تەواو بەبێ خێرایی لاوەکی بۆ ئەوەی لە کاتی ڕاکردندا کەوانە لێنەدات
     const FVector GrenadeLaunchVelocity = TrueLaunchDir * GrenadeThrowImpulseStrength;
     const FVector MonkeyLaunchVelocity = TrueLaunchDir * MonkeyThrowImpulseStrength;
 
