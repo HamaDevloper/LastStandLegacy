@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -9,8 +7,17 @@
 UCLASS()
 class LASTSTANDLEGACY_API AZombieSpawnPoint : public AActor
 {
-	GENERATED_BODY()
-	
-public:	
-	AZombieSpawnPoint();
+    GENERATED_BODY()
+
+public:
+    AZombieSpawnPoint();
+  
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Spawn Settings")
+    int32 ZoneID = 0;
+
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Spawn Settings")
+    bool bIsActive = false;
+
+    FORCEINLINE bool IsSpawnActive() const { return bIsActive; }
+    FORCEINLINE void SetSpawnActive(bool bInActive) { bIsActive = bInActive; }
 };

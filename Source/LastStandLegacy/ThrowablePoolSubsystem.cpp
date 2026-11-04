@@ -19,6 +19,41 @@ void UThrowablePoolSubsystem::Deinitialize()
     Super::Deinitialize();
 }
 
+void UThrowablePoolSubsystem::WarmupPool(TSubclassOf<AActor> GrenadeClass, int32 GrenadeCount, TSubclassOf<AActor> MonkeyClass, int32 MonkeyCount)
+{
+    UWorld* World = GetWorld();
+    if (!World || !World->GetAuthGameMode()) return;
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    // سپۆنکردنی پێشوەختەی نارنجۆکەکان لە دوورترین خاڵ و ڕاستەوخۆ خەواندنیان لە ناو پووڵدا
+    if (GrenadeClass)
+    {
+        for (int32 i = 0; i < GrenadeCount; ++i)
+        {
+            FTransform SpawnTransform(FRotator::ZeroRotator, FVector(0.0f, 0.0f, -500.0f));
+            if (AGrenade* NewGrenade = World->SpawnActor<AGrenade>(GrenadeClass, SpawnTransform, SpawnParams))
+            {
+                NewGrenade->PrepareForPool();
+            }
+        }
+    }
+
+    // سپۆنکردنی پێشوەختەی مەیموونەکان
+    if (MonkeyClass)
+    {
+        for (int32 i = 0; i < MonkeyCount; ++i)
+        {
+            FTransform SpawnTransform(FRotator::ZeroRotator, FVector(0.0f, 0.0f, -50000.0f));
+            if (AMonkeyBomb* NewMonkey = World->SpawnActor<AMonkeyBomb>(MonkeyClass, SpawnTransform, SpawnParams))
+            {
+                NewMonkey->PrepareForPool();
+            }
+        }
+    }
+}
+
 AGrenade* UThrowablePoolSubsystem::AcquireGrenade(TSubclassOf<AActor> GrenadeClass, const FTransform& SpawnTransform)
 {
     UWorld* World = GetWorld();
@@ -120,40 +155,5 @@ void UThrowablePoolSubsystem::ReturnMonkey(AMonkeyBomb* Monkey)
     if (!InactiveMonkeys.Contains(Monkey))
     {
         InactiveMonkeys.Add(Monkey);
-    }
-}
-
-void UThrowablePoolSubsystem::WarmupPool(TSubclassOf<AActor> GrenadeClass, int32 GrenadeCount, TSubclassOf<AActor> MonkeyClass, int32 MonkeyCount)
-{
-    UWorld* World = GetWorld();
-    if (!World || !World->GetAuthGameMode()) return;
-
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-    // سپۆنکردنی پێشوەختەی نارنجۆکەکان لە دوورترین خاڵ و ڕاستەوخۆ خەواندنیان لە ناو پووڵدا
-    if (GrenadeClass)
-    {
-        for (int32 i = 0; i < GrenadeCount; ++i)
-        {
-            FTransform SpawnTransform(FRotator::ZeroRotator, FVector(0.0f, 0.0f, -500.0f));
-            if (AGrenade* NewGrenade = World->SpawnActor<AGrenade>(GrenadeClass, SpawnTransform, SpawnParams))
-            {
-                NewGrenade->PrepareForPool();
-            }
-        }
-    }
-
-    // سپۆنکردنی پێشوەختەی مەیموونەکان
-    if (MonkeyClass)
-    {
-        for (int32 i = 0; i < MonkeyCount; ++i)
-        {
-            FTransform SpawnTransform(FRotator::ZeroRotator, FVector(0.0f, 0.0f, -50000.0f));
-            if (AMonkeyBomb* NewMonkey = World->SpawnActor<AMonkeyBomb>(MonkeyClass, SpawnTransform, SpawnParams))
-            {
-                NewMonkey->PrepareForPool();
-            }
-        }
     }
 }

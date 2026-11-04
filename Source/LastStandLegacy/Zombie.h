@@ -67,6 +67,16 @@ public:
     void ApplyServerLOD(uint8 Tier);
     void Die(AController* KillerController);
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie|Combat")
+    float AttackTriggerDistance = 110.f; // مەودای دەستپێکردنی مۆنتاژ (کورتتر لە AttackDistance)
+
+    float AttackTriggerDistanceSq = 12100.f;
+
+    float LastSpawnOrRelocateTime = 0.f;
+    float NextRecycleCheckTime = 0.f;
+
+    void RelocateTo(const FVector& NewLocation, const FRotator& NewRotation);
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

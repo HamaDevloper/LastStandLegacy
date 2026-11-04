@@ -31,8 +31,6 @@ AZombie::AZombie()
     MaxHealth = BaseHealth;
     Health = MaxHealth;
 
-    AttackDistanceSq = FMath::Square(AttackDistance);
-
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
         Capsule->SetCanEverAffectNavigation(false);
@@ -43,6 +41,9 @@ AZombie::AZombie()
     {
         MeshComp->bComponentUseFixedSkelBounds = true;
     }
+
+    AttackDistanceSq = FMath::Square(AttackDistance);
+    AttackTriggerDistanceSq = FMath::Square(AttackTriggerDistance);
 }
 
 void AZombie::PossessedBy(AController* NewController)
@@ -186,11 +187,19 @@ void AZombie::ApplyServerLOD(uint8 Tier)
 
 void AZombie::OnRep_ReplicatedMovement()
 {
+    const FVector OldLocation = GetActorLocation();
     Super::OnRep_ReplicatedMovement();
 
     if (CachedMovement)
     {
-        CachedMovement->bJustTeleported = true;
+        if (FVector::DistSquared(OldLocation, GetActorLocation()) > FMath::Square(500.f))
+        {
+            CachedMovement->bJustTeleported = true;
+            if (!HasAuthority())
+            {
+                CachedMovement->ResetPredictionData_Client();
+            }
+        }
     }
 }
 
@@ -305,6 +314,10 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
         CachedDirector->RegisterZombie(this);
         bRegisteredWithDirector = true;
     }
+
+    const float Now = GetWorld()->GetTimeSeconds();
+    LastSpawnOrRelocateTime = Now;
+    NextRecycleCheckTime = Now + 5.0f;
 
     ForceNetUpdate();
 }
@@ -577,18 +590,16 @@ void AZombie::ApplySelectedMesh()
 
 void AZombie::TryAttack()
 {
-    if (!HasAuthority() || bIsDead || !CurrentTarget) return;
+    if (!HasAuthority() || bIsDead || !CurrentTarget || bIsAttacking) return;
+
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (CurrentTime < NextAllowedAttackTime) return;
 
     const FVector DirToTarget = (CurrentTarget->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
     if (!DirToTarget.IsNearlyZero())
     {
         SetActorRotation(DirToTarget.Rotation());
     }
-
-    if (bIsAttacking) return;
-
-    const float CurrentTime = GetWorld()->GetTimeSeconds();
-    if (CurrentTime < NextAllowedAttackTime) return;
 
     if (AttackMontages.IsEmpty())
     {
@@ -611,7 +622,6 @@ void AZombie::TryAttack()
         MeshComp->SetComponentTickEnabled(true);
     }
 
-    // لێدانی مۆنتاژ لەسەر سێرڤەر بە خێرایی دیاریکراو (CurrentAttackPlayRate)
     const float Duration = AnimInst->Montage_Play(SelectedMontage, CurrentAttackPlayRate);
     if (Duration <= 0.f)
     {
@@ -625,12 +635,8 @@ void AZombie::TryAttack()
 
     bIsAttacking = true;
 
-    NextAllowedAttackTime = CurrentTime + (Duration / CurrentAttackPlayRate) + CurrentAttackCooldown;
-
-    if (CachedAIController)
-    {
-        CachedAIController->StopMovement();
-    }
+    // تێبینی: لە UE5 فەنکشنی Montage_Play درێژیی بنەڕەتی دەگەڕێنێتەوە، بۆیە دابەشی PlayRate دەکرێت
+    NextAllowedAttackTime = CurrentTime + (Duration / FMath::Max(CurrentAttackPlayRate, 0.1f)) + CurrentAttackCooldown;
 
     FOnMontageEnded EndedDelegate;
     EndedDelegate.BindUObject(this, &AZombie::OnAttackMontageEnded);
@@ -642,7 +648,6 @@ void AZombie::TryAttack()
     AttackPlayCount++;
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, AttackPlayCount, this);
 }
-
 
 void AZombie::OnRep_AttackPlayRate()
 {
@@ -856,4 +861,70 @@ void AZombie::Die(AController* KillerController)
     ForceNetUpdate();
 
     GetWorldTimerManager().SetTimer(TimerHandle_ReturnToPool, this, &AZombie::ReturnToPool, 2.0f, false);
+}
+
+void AZombie::RelocateTo(const FVector& NewLocation, const FRotator& NewRotation)
+{
+    if (!HasAuthority() || bIsDead || PoolState != EZombiePoolState::Alive) return;
+
+    bIsAttacking = false;
+    NextRepathAllowedTime = 0.f;
+    NextForceRepathTime = 0.f;
+    LastTargetLocation = FVector::ZeroVector;
+
+    const float Now = GetWorld()->GetTimeSeconds();
+    LastSpawnOrRelocateTime = Now;
+    NextRecycleCheckTime = Now + 5.0f;
+
+    if (CachedAIController)
+    {
+        CachedAIController->StopMovement();
+        CachedAIController->ClearFocus(EAIFocusPriority::Gameplay);
+    }
+
+    if (CachedMovement)
+    {
+        CachedMovement->StopMovementImmediately();
+        CachedMovement->Velocity = FVector::ZeroVector;
+    }
+
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+        {
+            AnimInst->StopAllMontages(0.f);
+        }
+        if (IsRunningDedicatedServer())
+        {
+            MeshComp->bNoSkeletonUpdate = true;
+            MeshComp->SetComponentTickEnabled(false);
+        }
+    }
+
+    const FVector2D RandCircle = FMath::RandPointInCircle(45.f);
+    FVector AdjustedSpawn = NewLocation + FVector(RandCircle.X, RandCircle.Y, 0.f);
+    const float HalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 88.f;
+
+    FHitResult HitFloor;
+    const FVector TraceStart = AdjustedSpawn + FVector(0.f, 0.f, 60.f);
+    const FVector TraceEnd = AdjustedSpawn - FVector(0.f, 0.f, 300.f);
+    FCollisionQueryParams FloorParams(SCENE_QUERY_STAT(ZombieRelocateSnap), false, this);
+
+    if (GetWorld()->LineTraceSingleByChannel(HitFloor, TraceStart, TraceEnd, ECC_WorldStatic, FloorParams))
+    {
+        AdjustedSpawn = HitFloor.ImpactPoint + FVector(0.f, 0.f, HalfHeight + 2.f);
+    }
+
+    FVector FinalLocation = AdjustedSpawn;
+    GetWorld()->FindTeleportSpot(this, FinalLocation, NewRotation);
+
+    SetActorLocationAndRotation(FinalLocation, NewRotation, false, nullptr, ETeleportType::TeleportPhysics);
+
+    if (CachedMovement)
+    {
+        CachedMovement->bJustTeleported = true;
+        CachedMovement->SetMovementMode(MOVE_Walking);
+    }
+
+    ForceNetUpdate();
 }

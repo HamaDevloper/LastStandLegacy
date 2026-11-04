@@ -106,6 +106,7 @@ void ALastStandLegacyGameMode::BeginPlay()
 
     if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
+        Director->RegisterZombieSpawnPoints(SpawnPoints);
         const int32 TotalPoolSize = ZombiesSpawnLimit + 20;
         Director->InitializeZombiePool(ZombieClass, TotalPoolSize);
     }
@@ -477,7 +478,7 @@ void ALastStandLegacyGameMode::ProcessSpawning()
     UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>();
     if (!Director) return;
 
-    AActor* SpawnPoint = PickWeightedSpawnPoint(Director);
+    AActor* SpawnPoint = Director->PickWeightedSpawnPoint(MinSafeDistance, MaxSpawnDistance, false);
     if (!SpawnPoint) return;
 
     AZombie* Zombie = Director->AcquireZombieFromPool(
@@ -496,97 +497,6 @@ void ALastStandLegacyGameMode::ProcessSpawning()
             Zombie->OnZombieDeath.BindUObject(this, &ALastStandLegacyGameMode::HandleZombieDeath);
         }
     }
-}
-
-AActor* ALastStandLegacyGameMode::PickWeightedSpawnPoint(const UZombieDirectorSubsystem* Director)
-{
-    if (SpawnPoints.IsEmpty()) return nullptr;
-
-    const TArray<TWeakObjectPtr<APawn>>& Players = Director ? Director->GetActivePlayers() : TArray<TWeakObjectPtr<APawn>>();
-
-    // پاڵاوتنی یاریزانە دروست و زیندووەکان
-    TArray<APawn*, TInlineAllocator<4>> ValidPlayers;
-    for (const TWeakObjectPtr<APawn>& WeakPawn : Players)
-    {
-        if (APawn* P = WeakPawn.Get())
-        {
-            if (IsValid(P))
-            {
-                ValidPlayers.Add(P);
-            }
-        }
-    }
-
-    if (ValidPlayers.IsEmpty())
-    {
-        return SpawnPoints[FMath::RandRange(0, SpawnPoints.Num() - 1)];
-    }
-
-    // ١. هەڵبژاردنی یاریزانی ئامانج بە شێوازی نۆرە (Round-Robin)
-    TargetPlayerIndex = (TargetPlayerIndex + 1) % ValidPlayers.Num();
-    APawn* TargetPlayer = ValidPlayers[TargetPlayerIndex];
-    const FVector TargetLocation = TargetPlayer->GetActorLocation();
-
-    // ٢. کۆکردنەوەی ئەو سپۆن پۆینتانەی لە مەودای ئەم یاریزانە دیاریکراوەدان
-    struct FScoredPoint { AActor* Point; float Weight; };
-    TArray<FScoredPoint, TInlineAllocator<16>> ScoredPoints;
-    float TotalWeight = 0.f;
-
-    const float MinSafeDistSq = FMath::Square(MinSafeDistance);
-    const float MaxSpawnDistSq = FMath::Square(MaxSpawnDistance);
-
-    for (AActor* SP : SpawnPoints)
-    {
-        if (!SP) continue;
-
-        const float DistSq = FVector::DistSquared(SP->GetActorLocation(), TargetLocation);
-
-        if (DistSq < MinSafeDistSq || DistSq > MaxSpawnDistSq)
-        {
-            continue;
-        }
-
-        const float ActualDist = FMath::Sqrt(DistSq);
-        const float Weight = (MaxSpawnDistance - ActualDist) + 200.0f;
-
-        ScoredPoints.Add({ SP, Weight });
-        TotalWeight += Weight;
-    }
-
-    // ٣. Fallback: ئەگەر ئەو یاریزانە هیچ خاڵێکی لە دەور نەبوو (بۆ نموونە لە ناوچەیەکی بێ سپۆن بوو)
-    if (ScoredPoints.IsEmpty())
-    {
-        AActor* BestFallback = nullptr;
-        float BestDistSq = TNumericLimits<float>::Max();
-
-        for (AActor* SP : SpawnPoints)
-        {
-            if (!SP) continue;
-            const float DistSq = FVector::DistSquared(SP->GetActorLocation(), TargetLocation);
-            if (DistSq >= MinSafeDistSq && DistSq < BestDistSq)
-            {
-                BestDistSq = DistSq;
-                BestFallback = SP;
-            }
-        }
-
-        return BestFallback ? BestFallback : SpawnPoints[FMath::RandRange(0, SpawnPoints.Num() - 1)];
-    }
-
-    // ٤. هەڵبژاردنی هەڕەمەکی لە نێوان خاڵەکانی دەوروبەری ئەو یاریزانە
-    const float RandomValue = FMath::FRandRange(0.f, TotalWeight);
-    float CurrentWeight = 0.f;
-
-    for (const FScoredPoint& Entry : ScoredPoints)
-    {
-        CurrentWeight += Entry.Weight;
-        if (RandomValue <= CurrentWeight)
-        {
-            return Entry.Point;
-        }
-    }
-
-    return ScoredPoints.Last().Point;
 }
 
 void ALastStandLegacyGameMode::SpawnPowers(FVector SpawnLocation)

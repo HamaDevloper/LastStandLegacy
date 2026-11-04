@@ -5,6 +5,7 @@
 #include "Components/BoxComponent.h"
 #include "HamaPlayerState.h"
 #include "Hama.h"
+#include "ZombieDirectorSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 
 ABaseDoor::ABaseDoor()
@@ -23,6 +24,7 @@ ABaseDoor::ABaseDoor()
     DoorMesh->SetMobility(EComponentMobility::Movable);
     DoorMesh->SetCollisionProfileName(TEXT("BlockAll"));
     DoorMesh->PrimaryComponentTick.bCanEverTick = false;
+    DoorMesh->SetCanEverAffectNavigation(false);
 }
 
 void ABaseDoor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -48,7 +50,6 @@ bool ABaseDoor::CanInteract(AHama* InteractingPlayer)
     return true;
 }
 
-
 bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
 {
     if (!CanInteract(InteractingPlayer)) return false;
@@ -63,7 +64,7 @@ bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if (DistSq > FMath::Square(250.0f)) return false;
 
     return true;
@@ -72,8 +73,8 @@ bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
 void ABaseDoor::Interact(AHama* InteractingPlayer)
 {
     if (!HasAuthority() || !CanInteract(InteractingPlayer)) return;
-    
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if (DistSq > FMath::Square(250.0f)) return;
 
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
@@ -85,7 +86,7 @@ void ABaseDoor::Interact(AHama* InteractingPlayer)
 
 FString ABaseDoor::GetInteractMessage(AHama* InteractingPlayer)
 {
-    return FString::Printf(TEXT("Press F to Open Door [Cost %d]"), DoorPrice );
+    return FString::Printf(TEXT("Press F to Open Door [Cost %d]"), DoorPrice);
 }
 
 void ABaseDoor::OpenDoor(AHama* InteractingPlayer, AHamaPlayerState* PS)
@@ -97,8 +98,25 @@ void ABaseDoor::OpenDoor(AHama* InteractingPlayer, AHamaPlayerState* PS)
     bIsDoorOpen = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseDoor, bIsDoorOpen, this);
 
+    // چالاککردنی سپۆن پۆینتەکانی ئەو ژوورەی کە ئەم دەرگایە دەیکاتەوە
+    if (UWorld* World = GetWorld())
+    {
+        if (UZombieDirectorSubsystem* Director = World->GetSubsystem<UZombieDirectorSubsystem>())
+        {
+            if (UnlockZoneID > 0)
+            {
+                Director->UnlockZone(UnlockZoneID);
+            }
+            if (SecondaryZoneID > 0)
+            {
+                Director->UnlockZone(SecondaryZoneID);
+            }
+        }
+    }
+
     FlushNetDormancy();
     ForceNetUpdate();
+    SetNetDormancy(DORM_DormantAll);
 
     OnRep_OpenDoor();
 }

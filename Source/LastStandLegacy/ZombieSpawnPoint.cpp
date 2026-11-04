@@ -2,5 +2,4 @@
 AZombieSpawnPoint::AZombieSpawnPoint()
 {
     PrimaryActorTick.bCanEverTick = false;
-
 }

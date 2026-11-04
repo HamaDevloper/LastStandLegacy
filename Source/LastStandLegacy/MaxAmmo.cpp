@@ -1,6 +1,6 @@
-#include "MaxAmmo.h"
+﻿#include "MaxAmmo.h"
 #include "Hama.h"
-#include "LastStandLegacyGameState.h"
+#include "ZombieDirectorSubsystem.h" 
 
 AMaxAmmo::AMaxAmmo()
 {
@@ -10,14 +10,18 @@ void AMaxAmmo::ActivatePowerUp(AHama* Player)
 {
     if (!HasAuthority()) return;
 
-    if (ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
-        for (APlayerState* PlayerState : GS->PlayerArray)
+        const TArray<TWeakObjectPtr<APawn>>& Players = Director->GetActivePlayers();
+
+        for (const TWeakObjectPtr<APawn>& WeakPawn : Players)
         {
-            if (!PlayerState) continue;
-            if(AHama* Hama = Cast<AHama>(PlayerState->GetPawn()))
+            if (APawn* Pawn = WeakPawn.Get()) 
             {
-                Hama->RefillAllWeapons();
+                if (AHama* Hama = Cast<AHama>(Pawn))
+                {
+                    Hama->RefillAllWeapons();
+                }
             }
         }
     }

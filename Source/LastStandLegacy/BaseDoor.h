@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -31,6 +31,14 @@ public:
 
     UPROPERTY(ReplicatedUsing = OnRep_OpenDoor, BlueprintReadOnly, Category = "Door|State")
     bool bIsDoorOpen = false;
+
+    // ژمارەی ئەو ژوورەی کە ئەم دەرگایە دەیکاتەوە (لەناو مەپەکە بۆ هەر دەرگایەک دیاری دەکەیت: 1، 2، 3...)
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Door|Zones")
+    int32 UnlockZoneID = 1;
+
+    // ئیختیاری: ئەگەر دەرگاکە دوو ژووری جیاوازی بەیەکەوە دەبەستەوە کە لە دوو لای جیاوازەوە دەکرێنەوە (0 واتە ناچالاک)
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Door|Zones")
+    int32 SecondaryZoneID = 0;
 
 protected:
     UFUNCTION()

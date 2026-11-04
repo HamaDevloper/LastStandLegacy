@@ -9,6 +9,7 @@ class AZombie;
 class APawn;
 class AMysteryBoxSpawnPoint;
 class AMysteryBox;
+class AZombieSpawnPoint;
 
 struct FCachedTargetInfo
 {
@@ -48,6 +49,17 @@ public:
     void RegisterPlayer(APawn* Player);
     void UnregisterPlayer(APawn* Player);
     void SetPlayerTargetable(APawn* Player, bool bIsTargetable);
+
+    // --- Spawn Points & Zone Management (Door System) ---
+    void RegisterZombieSpawnPoints(const TArray<AZombieSpawnPoint*>& InSpawnPoints);
+
+    UFUNCTION(BlueprintCallable, Category = "Zombie Director|Zones")
+    void UnlockZone(int32 ZoneIDToUnlock);
+
+    UFUNCTION(BlueprintCallable, Category = "Zombie Director|Zones")
+    bool IsZoneUnlocked(int32 InZoneID) const { return UnlockedZones.Contains(InZoneID); }
+
+    AZombieSpawnPoint* PickWeightedSpawnPoint(float MinSafeDist = 500.f, float MaxSpawnDist = 3000.f, bool bIsRelocation = false);
 
     // --- MysteryBox & FireSale API ---
     void RegisterMysteryBoxSpawnPoint(AMysteryBoxSpawnPoint* Point);
@@ -108,6 +120,12 @@ private:
     UPROPERTY()
     TArray<TObjectPtr<AMysteryBox>> TempFireSaleBoxes;
 
+    UPROPERTY()
+    TArray<TObjectPtr<AZombieSpawnPoint>> ZombieSpawnPoints;
+
+    TSet<int32> UnlockedZones;
+    int32 RoundRobinPlayerIndex = 0;
+
     FTimerHandle TimerHandle_FireSale;
     bool bIsFireSaleActive = false;
 
@@ -119,4 +137,5 @@ private:
     TArray<FAttractorData> ActiveAttractors;
 
     void CleanInvalidAttractors();
+    bool IsLocationVisibleToAnyPlayer(const FVector& WorldLoc, float MaxCheckDistSq) const;
 };

@@ -1,7 +1,7 @@
 #include "BonusPoints.h"
 #include "Hama.h"
 #include "HamaPlayerState.h"
-#include "LastStandLegacyGameState.h"
+#include "ZombieDirectorSubsystem.h"
 
 ABonusPoints::ABonusPoints()
 {
@@ -9,14 +9,23 @@ ABonusPoints::ABonusPoints()
 
 void ABonusPoints::ActivatePowerUp(AHama* Player)
 {
-    if(ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>())
+    if (!HasAuthority()) return;
+
+    if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
-        for (APlayerState* PlayerState : GS->PlayerArray)
+        const TArray<TWeakObjectPtr<APawn>>& Players = Director->GetActivePlayers();
+
+        for (const TWeakObjectPtr<APawn>& WeakPawn : Players)
         {
-            if (!PlayerState) continue;
-            if (AHamaPlayerState* HamaPS = Cast<AHamaPlayerState>(PlayerState))
+            if (APawn* Pawn = WeakPawn.Get())
             {
-                HamaPS->AddPoints(AddPoints);
+                if (AHama* Hama = Cast<AHama>(Pawn))
+                {
+                    if (AHamaPlayerState* HamaPS = Hama->GetPlayerState<AHamaPlayerState>())
+                    {
+                        HamaPS->AddPoints(AddPoints);
+                    }
+                }
             }
         }
     }
