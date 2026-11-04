@@ -342,6 +342,12 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
     TrueLaunchDir = (TrueLaunchDir + FVector(0.0f, 0.0f, 0.05f)).GetSafeNormal();
 
+    FVector InheritedVelocity = CharacterOwner->GetVelocity();
+    InheritedVelocity.Z = 0.0f;
+
+    const FVector GrenadeLaunchVelocity = (TrueLaunchDir * GrenadeThrowImpulseStrength) + InheritedVelocity;
+    const FVector MonkeyLaunchVelocity = (TrueLaunchDir * MonkeyThrowImpulseStrength) + InheritedVelocity;
+
     const FRotator SpawnRotation = TrueLaunchDir.Rotation();
     const FTransform SpawnTransform(SpawnRotation, FinalSpawnLoc);
 
@@ -379,7 +385,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
             GrenadeActor->ActivateFromPool(
                 SpawnTransform,
-                TrueLaunchDir * GrenadeThrowImpulseStrength,
+                GrenadeLaunchVelocity,
                 RemainingFuseTime,
                 CharacterOwner->GetController()
             );
@@ -417,7 +423,7 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
 
             MonkeyActor->ActivateFromPool(
                 SpawnTransform,
-                TrueLaunchDir * MonkeyThrowImpulseStrength,
+                MonkeyLaunchVelocity,
                 8.0f,
                 CharacterOwner->GetController()
             );
