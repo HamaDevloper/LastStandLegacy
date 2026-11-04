@@ -473,13 +473,11 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                     continue;
                 }
             }
-            // ٤. ئەگەر ئامانجەکە یاریزان بوو و گەیشتە مەودای دەستپێکردنی هێرش (AttackTriggerDistanceSq)
+
             else if (ClosestDistanceSq <= Zombie->AttackTriggerDistanceSq)
             {
                 Zombie->CurrentTarget = FinalTargetActor;
                 Zombie->TryAttack();
-                // تێبینی گرنگ: لێرەدا continue ناکەین و بلۆکی IsAttacking لابراوە!
-                // دەهێڵین زۆمبییەکە لە کاتی وەشاندنی دەستیدا بەردەوام بێت لە ڕۆیشتن تا دەگاتە جەستەی یاریزانەکە (AcceptRadius)
             }
 
             const uint8 Tier = (ClosestDistanceSq < 1440000.f) ? 0 : (ClosestDistanceSq < 6250000.f ? 1 : 2);

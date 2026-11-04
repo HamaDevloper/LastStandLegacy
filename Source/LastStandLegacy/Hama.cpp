@@ -2052,7 +2052,8 @@ void AHama::SprintActionPressed()
 {
     if (!IsMovingForward()) return;
     if (!HamaComponent) return;
-    if (!SetCanInteract()) return;
+    if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
+    if (bIsDead || IsDowned() || IsDrinkingPerk() || IsMeleeing()) return;
     if (IsSliding()) return;
     if (IsDiving()) return;
     if (HamaComponent->GetStamina() <= 20.f) return;

@@ -501,9 +501,22 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
 {
     if (!CharacterOwner || !CharacterOwner->HasAuthority()) return;
 
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_CookExplosion);
+        GetWorld()->GetTimerManager().ClearTimer(TimerHandle_ResetThrowState);
+    }
+
     ChargeState = EThrowChargeState::Idle;
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
     HandleChargeStateChanged();
+
+    CurrentGrenadeCount = FMath::Max(0, CurrentGrenadeCount - 1);
+    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
+    if (CharacterOwner->IsLocallyControlled())
+    {
+        OnRep_GrenadeCount();
+    }
 
     const FVector ExpLocation = CharacterOwner->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
     const float ExplosionRadius = 400.0f;
@@ -518,7 +531,6 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
     );
 
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-
     TArray<AActor*> IgnoredActors;
     IgnoredActors.Reserve(GS ? GS->PlayerArray.Num() + 1 : 1);
     IgnoredActors.Add(CharacterOwner);
@@ -551,16 +563,6 @@ void UThrowableComponent::Server_OnGrenadeCookExpired()
         ECC_MAX
     );
 
-    CurrentGrenadeCount = FMath::Max(0, CurrentGrenadeCount - 1);
-    MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
-
-    if (CharacterOwner->IsLocallyControlled())
-    {
-        OnRep_GrenadeCount();
-    }
-
-    Multicast_OnGrenadeCookExpiredFX();
-    ResetThrowState_Server();
     Client_RejectThrow();
 }
 
@@ -673,7 +675,6 @@ void UThrowableComponent::HandleChargeStateChanged()
     {
         if (MontageToPlay)
         {
-            AnimInstance->Montage_SetPlayRate(MontageToPlay, 1.0f);
             PlayThrowMontageWithDelegate(MontageToPlay, HoldSectionName);
             AnimInstance->Montage_Pause(MontageToPlay);
         }
@@ -695,17 +696,13 @@ void UThrowableComponent::HandleChargeStateChanged()
     case EThrowChargeState::Idle:
     default:
     {
-        if (GrenadeThrowMontage && AnimInstance->Montage_IsPlaying(GrenadeThrowMontage))
+        if (GrenadeThrowMontage && AnimInstance->GetActiveInstanceForMontage(GrenadeThrowMontage))
         {
-            AnimInstance->Montage_Resume(GrenadeThrowMontage);
-            AnimInstance->Montage_SetPlayRate(GrenadeThrowMontage, 1.0f);
-            AnimInstance->Montage_Stop(0.2f, GrenadeThrowMontage);
+            AnimInstance->Montage_Stop(0.05f, GrenadeThrowMontage);
         }
-        if (MonkeyThrowMontage && AnimInstance->Montage_IsPlaying(MonkeyThrowMontage))
+        if (MonkeyThrowMontage && AnimInstance->GetActiveInstanceForMontage(MonkeyThrowMontage))
         {
-            AnimInstance->Montage_Resume(MonkeyThrowMontage);
-            AnimInstance->Montage_SetPlayRate(MonkeyThrowMontage, 1.0f);
-            AnimInstance->Montage_Stop(0.2f, MonkeyThrowMontage);
+            AnimInstance->Montage_Stop(0.05f, MonkeyThrowMontage);
         }
 
         SetWeaponHidden();
@@ -722,9 +719,9 @@ void UThrowableComponent::PlayThrowMontageWithDelegate(UAnimMontage* MontageToPl
     UAnimInstance* AnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
     if (!AnimInstance) return;
 
-    const bool bIsPlaying = AnimInstance->Montage_IsPlaying(MontageToPlay);
+    const bool bActive = (AnimInstance->GetActiveInstanceForMontage(MontageToPlay) != nullptr);
 
-    if (!bIsPlaying)
+    if (!bActive)
     {
         AnimInstance->Montage_Play(MontageToPlay, 1.0f);
     }
