@@ -1641,7 +1641,6 @@ void AHama::AimActionPressed()
 
     if (IsDrinkingPerk()) return;
     if (IsMeleeing()) return;
-    if (IsDiving()) return;
 
     if (IsBrawlerModeActive())
     {
@@ -1658,7 +1657,7 @@ void AHama::AimActionPressed()
 
     HamaComponent->SetAiming(true);
 
-    if (!HamaComponent->IsDowned())
+    if (!HamaComponent->IsDowned() && !IsDiving() && !IsSliding())
     {
         OnAim(true);
     }
@@ -1890,6 +1889,7 @@ void AHama::StartSlideRoutine()
     if (!HamaComponent) return;
     if (IsSprinting())  HamaComponent->StopSprinting();
     PlayAnimMontage(SlideMontage);
+    OnAim(false);
     HamaComponent->StartSlide();
 
     if (GetMesh() && GetMesh()->GetAnimInstance() && SlideMontage)
@@ -1916,7 +1916,7 @@ void AHama::StartDiving()
     if (!HamaComponent) return;
     if (!HamaComponent->CanDive()) return;
     if (IsSprinting())  HamaComponent->StopSprinting();
-
+    OnAim(false);
     HamaComponent->StartDive();
 
     PlayAnimMontage(DiveMontage);
@@ -1943,7 +1943,9 @@ void AHama::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
     if (Montage == SlideMontage && HamaComponent)
     {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Slide Montage Ended"));
         HamaComponent->StopSlide();
+        ResetValuesAfterSprint();
     }
 }
 
@@ -1951,6 +1953,7 @@ void AHama::OnDiveMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
     if (Montage == DiveMontage && HamaComponent)
     {
+        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Dive Montage Ended"));
         HamaComponent->StopDive();
         ResetValuesAfterSprint();
     }
