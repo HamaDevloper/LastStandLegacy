@@ -20,7 +20,7 @@ public:
     virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
     virtual FVector ScaleInputAcceleration(const FVector& InputAcceleration) const override;
     virtual void OnMovementUpdated(float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity) override;
-
+    virtual float GetMaxAcceleration() const override;
     // -------------------------------------------------------------------------
     // Movement States
     // -------------------------------------------------------------------------

@@ -57,6 +57,16 @@ float UHamaMovementComponent::GetMaxSpeed() const
     return Super::GetMaxSpeed();
 }
 
+float UHamaMovementComponent::GetMaxAcceleration() const
+{
+    if (bSlide)
+    {
+        return 0.0f;
+    }
+
+    return Super::GetMaxAcceleration();
+}
+
 FVector UHamaMovementComponent::ScaleInputAcceleration(const FVector& InputAcceleration) const
 {
     if (bSlide || bDiving)
@@ -80,17 +90,14 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         }
     }
 
-    // ڕاگرتنی سلاکد لە کاتی دابەزینی خێرایی یان لە هەوادا بوون
     const float SlideStopThresholdSquared = FMath::Square(SlideStopSpeed);
     if (bSlide && bWasSliding && (Velocity.SizeSquared2D() < SlideStopThresholdSquared || !IsMovingOnGround()))
     {
         bSlide = false;
     }
 
-    // کاتێک کارەکتەر لە هەوا دێتە خوارەوە و لە زەوی دەدات
     if (bDiving && bWasDiving && MovementMode != MOVE_Falling)
     {
-        // لێرەدا دەتوانیت خێرایی ئاسۆیی کەم بکەیتەوە (Friction زیاد بکەیت بۆ ڕاکێشانی جەستە لەسەر زەوی)
         bDiving = false;
     }
 
@@ -102,15 +109,15 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         }
     }
 
-    // دەستپێکردنی سلاکد
     if (bSlide && !bWasSliding)
     {
         if (IsMovingOnGround())
         {
-            FVector SlideDir = Velocity.GetSafeNormal2D();
-            if (SlideDir.IsNearlyZero() && CharacterOwner)
+            FVector SlideDir = CharacterOwner ? CharacterOwner->GetActorForwardVector().GetSafeNormal2D() : FVector::ForwardVector;
+
+            if (SlideDir.IsNearlyZero())
             {
-                SlideDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+                SlideDir = Velocity.GetSafeNormal2D();
             }
 
             Velocity = FVector(SlideDir.X * SlideSpeed, SlideDir.Y * SlideSpeed, Velocity.Z);
@@ -121,13 +128,13 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         }
     }
 
-    // دەستپێکردنی دایڤ (هەڵدانی فیزیکی بۆ ناو هەوا)
     if (bDiving && !bWasDiving && IsMovingOnGround())
     {
-        FVector DiveDir = Velocity.GetSafeNormal2D();
-        if (DiveDir.IsNearlyZero() && CharacterOwner)
+        FVector DiveDir = CharacterOwner ? CharacterOwner->GetActorForwardVector().GetSafeNormal2D() : FVector::ForwardVector;
+
+        if (DiveDir.IsNearlyZero())
         {
-            DiveDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+            DiveDir = Velocity.GetSafeNormal2D();
         }
 
         Velocity = FVector(DiveDir.X * DiveImpulseHorizontal, DiveDir.Y * DiveImpulseHorizontal, DiveImpulseVertical);
@@ -135,7 +142,6 @@ void UHamaMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
         CurrentFloor.Clear();
     }
 
-    // ڕێکخستنی لێخشاندن بۆ سلاکد
     if (bSlide && IsMovingOnGround())
     {
         GroundFriction = SlideGroundFriction;
