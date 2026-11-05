@@ -1617,7 +1617,8 @@ void AHama::FireActionPressed()
     if (!HamaComponent) return;
     if (ThrowableComponent && ThrowableComponent->IsThrowingInProcess()) return;
     if (IsDrinkingPerk()) return;
-
+    if (bIsCurrentlyReviving || IsRevivingSomeone()) return;
+   
     if (IsBrawlerModeActive())
     {
         MeleeActionPressed();
@@ -1641,7 +1642,9 @@ void AHama::AimActionPressed()
 
     if (IsDrinkingPerk()) return;
     if (IsMeleeing()) return;
-
+    if (CurrentReviveTarget.Get()) return;
+    if (bIsCurrentlyReviving || IsRevivingSomeone()) return;
+    
     if (IsBrawlerModeActive())
     {
         MeleeActionPressed();
@@ -2404,9 +2407,10 @@ void AHama::Multicast_PlayDrinkPerkAnimation_Implementation(ABasePerk* TargetPer
     if (AnimInstance)
     {
         AnimInstance->Montage_Play(DrinkPerkMontage, 1.0f);
-        FOnMontageEnded MontageEndedDelegate;
-        MontageEndedDelegate.BindUObject(this, &AHama::OnDrinkPerkAnimationCompleteFromMontage);
-        AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, DrinkPerkMontage);
+
+        FOnMontageBlendingOutStarted BlendingOutDelegate;
+        BlendingOutDelegate.BindUObject(this, &AHama::OnDrinkPerkAnimationCompleteFromMontage);
+        AnimInstance->Montage_SetBlendingOutDelegate(BlendingOutDelegate, DrinkPerkMontage);
     }
 }
 
@@ -2420,10 +2424,19 @@ void AHama::OnDrinkPerkAnimationCompleteFromMontage(UAnimMontage* Montage, bool 
 
     UpdateWeaponVisibility();
 
-    if (bInterrupted && HasAuthority())
+    if (bInterrupted)
     {
-        GetWorldTimerManager().ClearTimer(PerkDrinkTimerHandle);
-        PendingPerkID = NAME_None;
+        if (HasAuthority())
+        {
+            GetWorldTimerManager().ClearTimer(PerkDrinkTimerHandle);
+            PendingPerkID = NAME_None;
+        }
+        return;
+    }
+
+    if (IsLocallyControlled() && !bIsDead && !IsDowned())
+    {
+        ProcessBufferedInputs();
     }
 }
 
@@ -2483,9 +2496,13 @@ void AHama::InteractActionPressed()
         {
             if (AHama* DownedPlayer = Cast<AHama>(InteractActor))
             {
-                if (CurrentWeapon && CurrentWeapon->IsReloading())
+                if (CurrentWeapon)
                 {
-                    CurrentWeapon->CancelReload();
+                    CurrentWeapon->StopFire();
+                    if (CurrentWeapon->IsReloading())
+                    {
+                        CurrentWeapon->CancelReload();
+                    }
                 }
 
                 bIsCurrentlyReviving = true;
@@ -2984,13 +3001,8 @@ void AHama::Server_BeginRevive_Implementation(AHama* DownedPlayer)
     QueryParams.AddIgnoredActor(this);
     QueryParams.AddIgnoredActor(DownedPlayer);
 
-    TArray<AActor*> AttachedActors;
-    GetAttachedActors(AttachedActors);
-    QueryParams.AddIgnoredActors(AttachedActors);
-
-    AttachedActors.Reset();
-    DownedPlayer->GetAttachedActors(AttachedActors);
-    QueryParams.AddIgnoredActors(AttachedActors);
+    if (CurrentWeapon) QueryParams.AddIgnoredActor(CurrentWeapon);
+    if (DownedPlayer->CurrentWeapon) QueryParams.AddIgnoredActor(DownedPlayer->CurrentWeapon);
 
     const FVector TargetTraceLocation = DownedPlayer->GetActorLocation() + FVector(0.0f, 0.0f, 30.0f);
     if (GetWorld()->LineTraceSingleByChannel(Hit, GetPawnViewLocation(), TargetTraceLocation, ECC_Visibility, QueryParams))
@@ -3113,12 +3125,28 @@ void AHama::ClearAllReviveTimers()
     }
 }
 
+bool AHama::IsRevivingSomeone() const
+{
+    return ReviveEndTime > 0.0f;
+}
+
 void AHama::OnRep_ReviveData()
 {
+    const bool bIsRevivingOthers = (ReviveTotalDuration > 0.0f && ReviveEndTime > 0.0f);
+
     if (HealthComponent)
     {
-        const bool bIsRevivingOthers = (ReviveTotalDuration > 0.0f && ReviveEndTime > 0.0f);
         HealthComponent->OnReviveStateChanged.Broadcast(HealthComponent->IsBeingRevived(), bIsRevivingOthers);
+    }
+
+    if (!bIsRevivingOthers)
+    {
+        bIsCurrentlyReviving = false;
+
+        if (IsLocallyControlled())
+        {
+            ProcessBufferedInputs();
+        }
     }
 }
 
@@ -3144,6 +3172,22 @@ void AHama::Server_CompleteRevive()
     }
 
     ClearAllReviveTimers();
+}
+
+
+void AHama::ProcessBufferedInputs()
+{
+    if (!IsLocallyControlled() || bIsDead || IsDowned()) return;
+
+    if (bIsAimButtonHold)
+    {
+        AimActionPressed();
+    }
+
+    if (bIsFireButtonHold)
+    {
+        FireActionPressed();
+    }
 }
 
 void AHama::SetIsDead(bool bNewIsDead)

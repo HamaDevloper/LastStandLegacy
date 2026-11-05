@@ -314,8 +314,8 @@ void UHamaComponent::DrainStamina()
         return;
     }
 
+    // ١. پشکنینی ئینپوتی یاریزان (Acceleration)
     const FVector CurrentAccel = MoveComp->GetCurrentAcceleration();
-
     const float MinSprintRatio = 0.75f;
     const float MinRequiredAccel = MoveComp->GetMaxAcceleration() * MinSprintRatio;
     const float MinRequiredAccelSq = FMath::Square(MinRequiredAccel);
@@ -330,7 +330,27 @@ void UHamaComponent::DrainStamina()
     const FVector NormalizedAccel = CurrentAccel.GetSafeNormal2D();
     const float ForwardDot = FVector::DotProduct(Forward2D, NormalizedAccel);
 
-    if (ForwardDot < 0.6f) 
+    if (ForwardDot < 0.6f)
+    {
+        SetSprinting(false);
+        return;
+    }
+
+    // =========================================================================
+    // ٢. چارەسەری بەربەست: پشکنینی خێرایی فیزیایی ڕاستەقینە (Physical Velocity)
+    // =========================================================================
+    const FVector CurrentVelocity = MoveComp->Velocity;
+    const float CurrentSpeedSq = CurrentVelocity.SizeSquared2D();
+    const float MinSprintingVelocityThreshold = 400.f;
+
+    if (CurrentSpeedSq < FMath::Square(MinSprintingVelocityThreshold))
+    {
+        SetSprinting(false);
+        return;
+    }
+
+    const float VelocityForwardDot = FVector::DotProduct(Forward2D, CurrentVelocity.GetSafeNormal2D());
+    if (VelocityForwardDot < 0.5f)
     {
         SetSprinting(false);
         return;

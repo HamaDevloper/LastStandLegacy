@@ -623,6 +623,8 @@ public:
         void Server_CheckReviveConditions();
         void CancelReviveInternal();
         void ClearAllReviveTimers();
+        bool IsRevivingSomeone() const;
+        void ProcessBufferedInputs();
 
         UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama | Revive")
         float DefaultReviveTime = 5.0f;

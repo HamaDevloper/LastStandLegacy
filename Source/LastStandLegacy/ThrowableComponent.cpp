@@ -323,11 +323,9 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, ChargeState, this);
     HandleChargeStateChanged();
 
-    // ١. دۆزینەوەی خاڵی نیشانە بە سوودوەرگرتن لە ئاراستە و شوێنی ڕاستەقینەی کامێرای کڵایەنت
     const FVector ValidatedAimDir = ClientAimDir.GetSafeNormal();
     const FVector TargetPoint = TraceCrosshairTarget(ClientViewLoc, ValidatedAimDir);
 
-    // ٢. دروستکردنی خاڵی دەستپێکی سەنتەرکراو لە جەستەی کارەکتەر (بۆ لابردنی ئۆفسێتی کامێرای شانی ڕاست/چەپ)
     FVector CentralSpawnOrigin = CharacterOwner->GetActorLocation();
     CentralSpawnOrigin.Z += CharacterOwner->BaseEyeHeight;
 
@@ -336,7 +334,6 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
     FVector FinalSpawnLoc;
     GetSafeSpawnLocation(CentralSpawnOrigin, StartLoc, FinalSpawnLoc);
 
-    // ٣. ئاراستەکردنی ڕۆمانەکە لە ناوەڕاستی جەستەوە بە ڕاستەوخۆیی بەرەو خاڵی نیشانەکە
     const FVector ToTarget = TargetPoint - FinalSpawnLoc;
     FVector TrueLaunchDir = ValidatedAimDir;
 
