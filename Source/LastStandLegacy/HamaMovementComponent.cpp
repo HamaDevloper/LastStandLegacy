@@ -161,7 +161,7 @@ void UHamaMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector
 {
     Super::OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
 
-#if !UE_BUILD_SHIPPING
+/*#if !UE_BUILD_SHIPPING
     if (GEngine && CharacterOwner && !CharacterOwner->bClientUpdating)
     {
         const bool bIsServer = CharacterOwner->HasAuthority();
@@ -192,7 +192,7 @@ void UHamaMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector
             );
         }
     }
-#endif
+#endif*/
 
     if (CharacterOwner && CharacterOwner->bClientUpdating)
     {

@@ -133,6 +133,12 @@ private:
 
     int32 CurrentZombieIndex = 0;
 
+    TWeakObjectPtr<AZombieSpawnPoint> LastUsedSpawnPoint;
+    int32 ConsecutiveSpawnsOnLastPoint = 0;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie Director|Spawning")
+    int32 MaxConsecutiveSpawnsPerPoint = 2;
+
     UPROPERTY()
     TArray<FAttractorData> ActiveAttractors;
 

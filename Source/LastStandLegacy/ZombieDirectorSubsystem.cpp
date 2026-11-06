@@ -8,6 +8,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Hama.h"
 #include "ZombieSpawnPoint.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 void UZombieDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -22,8 +23,10 @@ void UZombieDirectorSubsystem::Deinitialize()
     }
 
     ActiveZombies.Empty();
+    InactiveZombiePool.Empty();
     ActivePlayers.Empty();
     ValidTargetPlayers.Empty();
+    ActiveAttractors.Empty();
     MysteryBoxSpawnPoints.Empty();
     ReusableMysteryBoxPoints.Empty();
     RegisteredBoxes.Empty();
@@ -31,6 +34,11 @@ void UZombieDirectorSubsystem::Deinitialize()
     ZombieSpawnPoints.Empty();
     UnlockedZones.Empty();
     CachedPlayerLocations.Reset();
+
+    LastUsedSpawnPoint.Reset();
+    ConsecutiveSpawnsOnLastPoint = 0;
+    CurrentZombieIndex = 0;
+    RoundRobinPlayerIndex = 0;
 
     Super::Deinitialize();
 }
@@ -431,9 +439,8 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             constexpr float RecycleDistSq = 3500.f * 3500.f;
             if (!bIsTargetAttractor && ClosestDistanceSq > RecycleDistSq && CurrentTime >= Zombie->NextRecycleCheckTime)
             {
-                Zombie->NextRecycleCheckTime = CurrentTime + 1.5f; // پشکنین تەنها هەر ١.٥ چرکە جارێک
+                Zombie->NextRecycleCheckTime = CurrentTime + 1.5f;
 
-                // ئەگەر زۆمبییەکە لانیکەم ٦ چرکە بێت سپۆن بووبێت و لەسەر شاشەی هیچ یاریزانێک دیار نەبێت
                 if ((CurrentTime - Zombie->LastSpawnOrRelocateTime) > 6.0f &&
                     !IsLocationVisibleToAnyPlayer(ZombieLoc, 5000.f * 5000.f))
                 {
@@ -445,8 +452,17 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 }
             }
 
-            // ٢. فۆکەس خستنە سەر ئامانج کاتێک نزیکە
-            if (ClosestDistanceSq < 400000.f)
+            const EPathFollowingStatus::Type MoveStatus = AICon->GetMoveStatus();
+            const float CurrentSpeedSq = Zombie->GetVelocity().SizeSquared2D();
+            const bool bIsBlocked = (MoveStatus == EPathFollowingStatus::Moving) && (CurrentSpeedSq < 900.f);
+            const bool bIsAIIdle = (MoveStatus == EPathFollowingStatus::Idle);
+
+            // ٢. جیاکردنەوەی سوڕانەوەی کاتی ڕۆیشتن لە کاتی نزیکبوونەوە/وەستان و هێرشکردن
+            // ئەگەر زۆمبییەکە لە مەودای ٣.٥ مەتر نزیکتر بوو یان وەستابوو، ڕاستەوخۆ ڕوو دەکاتە ئامانجەکە
+            const float DirectFaceDistSq = FMath::Max(Zombie->AttackTriggerDistanceSq * 2.25f, 122500.f);
+            const bool bUseDirectFocusRotation = !bIsBlocked && (ClosestDistanceSq <= DirectFaceDistSq || bIsAIIdle || CurrentSpeedSq < 400.f);
+
+            if (ClosestDistanceSq < 640000.f && !bIsBlocked) // لە خوار ٨ مەترەوە Focus ئامادە دەکەین
             {
                 if (AICon->GetFocusActor() != FinalTargetActor)
                 {
@@ -458,6 +474,12 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 AICon->ClearFocus(EAIFocusPriority::Gameplay);
             }
 
+            if (UCharacterMovementComponent* MoveComp = Zombie->GetCharacterMovement())
+            {
+                MoveComp->bOrientRotationToMovement = !bUseDirectFocusRotation;
+                MoveComp->bUseControllerDesiredRotation = bUseDirectFocusRotation;
+            }
+
             // ٣. ئەگەر ئامانجەکە مەیموون بوو (Attractor)
             if (bIsTargetAttractor)
             {
@@ -466,14 +488,13 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 {
                     Zombie->CurrentTarget = FinalTargetActor;
                     Zombie->LastTargetLocation = FinalTargetLoc;
-                    if (AICon->GetMoveStatus() != EPathFollowingStatus::Idle)
+                    if (!bIsAIIdle)
                     {
                         AICon->StopMovement();
                     }
                     continue;
                 }
             }
-
             else if (ClosestDistanceSq <= Zombie->AttackTriggerDistanceSq)
             {
                 Zombie->CurrentTarget = FinalTargetActor;
@@ -484,23 +505,22 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             Zombie->ApplyServerLOD(Tier);
 
             const float MinRepathInterval =
-                (ClosestDistanceSq < 360000.f) ? 0.15f :
-                (ClosestDistanceSq < 2250000.f) ? 0.35f : 0.8f;
+                (ClosestDistanceSq < 360000.f) ? 0.12f :
+                (ClosestDistanceSq < 2250000.f) ? 0.30f : 0.75f;
 
-            float DynamicMovedThresholdSq = 180.f * 180.f;
+            float DynamicMovedThresholdSq = 140.f * 140.f;
             if (ClosestDistanceSq < 360000.f)
             {
-                DynamicMovedThresholdSq = 70.f * 70.f; // هەستیارتر کاتێک زۆر نزیکە
+                DynamicMovedThresholdSq = 45.f * 45.f; // هەستیارتر کاتێک زۆر نزیکە تا زوو پێچ بکاتەوە
+            }
+            else if (ClosestDistanceSq < 1440000.f)
+            {
+                DynamicMovedThresholdSq = 85.f * 85.f;
             }
 
             const float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, FinalTargetLoc);
-            const EPathFollowingStatus::Type MoveStatus = AICon->GetMoveStatus();
-            const bool bIsAIIdle = (MoveStatus == EPathFollowingStatus::Idle);
             const bool bTargetChanged = (Zombie->CurrentTarget != FinalTargetActor);
             const bool bThrottleOpen = (CurrentTime >= Zombie->NextRepathAllowedTime);
-
-            const float CurrentSpeedSq = Zombie->GetVelocity().SizeSquared2D();
-            const bool bIsBlocked = (MoveStatus == EPathFollowingStatus::Moving) && (CurrentSpeedSq < 900.f);
 
             if (bIsTargetAttractor && bIsBlocked && ClosestDistanceSq <= FMath::Square(220.f))
             {
@@ -563,7 +583,6 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 }
 
                 FAIMoveRequest MoveReq(MoveGoalLoc);
-                // کەمکردنەوەی AcceptanceRadius بۆ 50سم تا زۆمبییەکە تا تەنیشت کەپسولی یاریزانەکە نەوەستێت
                 const float AcceptRadius = bIsBlocked ? 25.f : (bIsTargetAttractor ? 45.f : 50.f);
                 MoveReq.SetAcceptanceRadius(AcceptRadius);
                 MoveReq.SetUsePathfinding(true);
@@ -581,6 +600,12 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 Zombie->CurrentTarget = nullptr;
                 AICon->ClearFocus(EAIFocusPriority::Gameplay);
                 AICon->StopMovement();
+
+                if (UCharacterMovementComponent* MoveComp = Zombie->GetCharacterMovement())
+                {
+                    MoveComp->bOrientRotationToMovement = true;
+                    MoveComp->bUseControllerDesiredRotation = false;
+                }
             }
         }
     }
@@ -636,7 +661,6 @@ AZombieSpawnPoint* UZombieDirectorSubsystem::PickWeightedSpawnPoint(float MinSaf
 {
     if (ZombieSpawnPoints.IsEmpty()) return nullptr;
 
-    // ئەگەر هێشتا هیچ یاریزانێک لە CachedPlayerLocations نەبوو، لە ActivePlayers وەریبگرە
     if (CachedPlayerLocations.IsEmpty())
     {
         for (const TWeakObjectPtr<APawn>& WeakPawn : ActivePlayers)
@@ -651,11 +675,32 @@ AZombieSpawnPoint* UZombieDirectorSubsystem::PickWeightedSpawnPoint(float MinSaf
         }
     }
 
+    // لامبدا (Lambda) بۆ تۆمارکردنی خاڵی هەڵبژێردراو و ڕیسێتکردنەوەی خاڵی پێشوو
+    auto RecordAndReturnSpawn = [this](AZombieSpawnPoint* ChosenPoint) -> AZombieSpawnPoint*
+        {
+            if (ChosenPoint)
+            {
+                if (LastUsedSpawnPoint.Get() == ChosenPoint)
+                {
+                    ConsecutiveSpawnsOnLastPoint++;
+                }
+                else
+                {
+                    LastUsedSpawnPoint = ChosenPoint;
+                    ConsecutiveSpawnsOnLastPoint = 1;
+                }
+            }
+            return ChosenPoint;
+        };
+
     if (CachedPlayerLocations.IsEmpty())
     {
         for (AZombieSpawnPoint* SP : ZombieSpawnPoints)
         {
-            if (IsValid(SP) && SP->IsSpawnActive()) return SP;
+            if (IsValid(SP) && SP->IsSpawnActive())
+            {
+                return RecordAndReturnSpawn(SP);
+            }
         }
         return nullptr;
     }
@@ -672,8 +717,11 @@ AZombieSpawnPoint* UZombieDirectorSubsystem::PickWeightedSpawnPoint(float MinSaf
 
     for (AZombieSpawnPoint* SP : ZombieSpawnPoints)
     {
-        // گرنگترین مەرج: ئەگەر ناوچەکە/دەرگاکە نەکرابێتەوە، هەرگیز لێرە سپۆن مەکە!
         if (!IsValid(SP) || !SP->IsSpawnActive()) continue;
+
+        // ئەگەر ئەم خاڵە گەیشتبێتە سنووری لەسەریەک (بۆ نموونە ٢ جار)، باز بدە بۆ خاڵێکی تر
+        const bool bIsOverusedPoint = (SP == LastUsedSpawnPoint.Get() && ConsecutiveSpawnsOnLastPoint >= MaxConsecutiveSpawnsPerPoint);
+        if (bIsOverusedPoint) continue;
 
         const FVector SpLoc = SP->GetActorLocation();
 
@@ -703,11 +751,15 @@ AZombieSpawnPoint* UZombieDirectorSubsystem::PickWeightedSpawnPoint(float MinSaf
         TotalWeight += Weight;
     }
 
-    // Fallback: ئەگەر هیچ خاڵێک لە مەودای نموونەییدا نەبوو
+    // Fallback: ئەگەر هیچ خاڵێک لە مەودای نموونەییدا نەبوو یان خاڵە نزیکەکە قفڵ ببوو
     if (ScoredPoints.IsEmpty())
     {
         AZombieSpawnPoint* BestSafeFallback = nullptr;
         float BestSafeDistSq = TNumericLimits<float>::Max();
+
+        // ئەگەر لە تەواوی ناوچەکەدا تەنها ١ خاڵی سەلامەت هەبوو، وەک دواچارەسەر هەڵیدەگرین
+        AZombieSpawnPoint* OverusedSafeFallback = nullptr;
+        float OverusedSafeDistSq = TNumericLimits<float>::Max();
 
         AZombieSpawnPoint* FurthestEmergencyFallback = nullptr;
         float MaxMinDistSqToPlayers = -1.f;
@@ -725,7 +777,6 @@ AZombieSpawnPoint* UZombieDirectorSubsystem::PickWeightedSpawnPoint(float MinSaf
                 if (D < ClosestPlayerDistSq) ClosestPlayerDistSq = D;
             }
 
-            // هەڵگرتنی دوورترین خاڵ لە یاریزانەکانەوە (بۆ کاتێک ٤ یاریزان لە ژوورێکی زۆر بچووکدان)
             if (ClosestPlayerDistSq > MaxMinDistSqToPlayers)
             {
                 MaxMinDistSqToPlayers = ClosestPlayerDistSq;
@@ -740,21 +791,36 @@ AZombieSpawnPoint* UZombieDirectorSubsystem::PickWeightedSpawnPoint(float MinSaf
             }
 
             const float DistSqToTarget = FVector::DistSquared(SpLoc, TargetLocation);
-            if (DistSqToTarget < BestSafeDistSq)
+            const bool bIsOverusedPoint = (SP == LastUsedSpawnPoint.Get() && ConsecutiveSpawnsOnLastPoint >= MaxConsecutiveSpawnsPerPoint);
+
+            if (!bIsOverusedPoint)
             {
-                BestSafeDistSq = DistSqToTarget;
-                BestSafeFallback = SP;
+                if (DistSqToTarget < BestSafeDistSq)
+                {
+                    BestSafeDistSq = DistSqToTarget;
+                    BestSafeFallback = SP;
+                }
+            }
+            else if (DistSqToTarget < OverusedSafeDistSq)
+            {
+                OverusedSafeDistSq = DistSqToTarget;
+                OverusedSafeFallback = SP;
             }
         }
 
+        // ١. یەکەم جار نزیکترین خاڵی تر هەڵدەبژێرێت کە دووبارە نەبووبێتەوە
         if (BestSafeFallback)
         {
-            return BestSafeFallback;
+            return RecordAndReturnSpawn(BestSafeFallback);
         }
 
-        // ئەگەر Relocation بوو و هیچ خاڵێکی سەلامەت نەبوو، مەیگوازەرەوە (nullptr بگەڕێنەرەوە)
-        // بەڵام ئەگەر سپۆنی ئاسایی ڕاوەند بوو لەناو ژوورێکی بچووک، دوورترین خاڵی بەردەست بگەڕێنەرەوە تا ڕاوەندەکە نەوەستێت!
-        return bIsRelocation ? nullptr : FurthestEmergencyFallback;
+        // ٢. ئەگەر لە مەپەکەدا تەنها هەر ئەو خاڵە سەلامەتە هەبوو، ناچار بەکاریدەهێنێتەوە
+        if (OverusedSafeFallback)
+        {
+            return RecordAndReturnSpawn(OverusedSafeFallback);
+        }
+
+        return bIsRelocation ? nullptr : RecordAndReturnSpawn(FurthestEmergencyFallback);
     }
 
     const float RandomValue = FMath::FRandRange(0.f, TotalWeight);
@@ -765,11 +831,11 @@ AZombieSpawnPoint* UZombieDirectorSubsystem::PickWeightedSpawnPoint(float MinSaf
         CurrentWeight += Entry.Weight;
         if (RandomValue <= CurrentWeight)
         {
-            return Entry.Point;
+            return RecordAndReturnSpawn(Entry.Point);
         }
     }
 
-    return ScoredPoints.Last().Point;
+    return RecordAndReturnSpawn(ScoredPoints.Last().Point);
 }
 
 // ==========================================

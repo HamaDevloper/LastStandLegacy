@@ -14,8 +14,8 @@ public:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Animation")
-    float GroundSpeed;
+    UPROPERTY(BlueprintReadOnly, meta = (BlueprintThreadSafe))
+    float GroundSpeed = 0.f;
 
 private:
     UPROPERTY()
