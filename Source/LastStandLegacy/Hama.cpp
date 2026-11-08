@@ -22,6 +22,10 @@
 #include "MeleeDamageType.h"
 #include "Components/SphereComponent.h"
 #include "ZombieDirectorSubsystem.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "Engine/OverlapResult.h"
+#include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
 
 // -----------------------------------------------------------------------------
@@ -35,8 +39,8 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
 
     bReplicates = true;
     SetReplicateMovement(true);
-    SetNetUpdateFrequency(60.f);
-    SetMinNetUpdateFrequency(10.f);
+    SetNetUpdateFrequency(66.f);
+    SetMinNetUpdateFrequency(20.f);
 
     if (GetCharacterMovement())
     {
@@ -3286,5 +3290,87 @@ void AHama::Client_AnnouncePersonalPowerUp_Implementation(EPowerUpType PowerUpTy
     if (OnPersonalPowerUpAcquiredDelegate.IsBound())
     {
         OnPersonalPowerUpAcquiredDelegate.Broadcast(PowerUpType);
+    }
+}
+
+void AHama::TriggerElectricCherry(int32 CurrentClip, int32 MaxClip)
+{
+    // تەواوی لێکدانەوەکان تەنها لەسەر سێرڤەر دەبن
+    if (!HasAuthority() || bIsDead || IsDowned() || MaxClip <= 0) return;
+
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (CurrentTime - LastElectricCherryTime < ElectricCherryCooldown)
+    {
+        return; // هێشتا لە کۆڵداوندایە 
+    }
+    LastElectricCherryTime = CurrentTime;
+
+    // ڕێژەی بەتاڵیی مەخزەن: 0.0 پڕە، 1.0 بە تەواوی بەتاڵە
+    const float EmptyRatio = FMath::Clamp(1.0f - ((float)CurrentClip / (float)MaxClip), 0.0f, 1.0f);
+
+    // دیاریکردنی هێز و بازنە بەپێی ڕێژەی بەتاڵی
+    const float MinDamage = 40.0f;
+    const float MaxDamage = 1100.0f;
+    const float MinRadius = 200.0f;
+    const float MaxRadius = 500.0f;
+
+    const float FinalDamage = FMath::Lerp(MinDamage, MaxDamage, EmptyRatio);
+    const float FinalRadius = FMath::Lerp(MinRadius, MaxRadius, EmptyRatio);
+
+    const FVector ShockLocation = GetActorLocation();
+
+    // ناردنی افێکت بۆ هەموو یاریزانەکان
+    Multicast_PlayElectricCherryFX(ShockLocation, FinalRadius);
+
+    // پشکنینی پۆنەکان (زۆمبییەکان) لە دەوروبەر
+    TArray<FOverlapResult> Overlaps;
+    FCollisionShape Sphere = FCollisionShape::MakeSphere(FinalRadius);
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+
+    const bool bHit = GetWorld()->OverlapMultiByObjectType(
+        Overlaps,
+        ShockLocation,
+        FQuat::Identity,
+        FCollisionObjectQueryParams(ECollisionChannel::ECC_Pawn),
+        Sphere,
+        Params
+    );
+
+    if (bHit)
+    {
+        for (const FOverlapResult& Hit : Overlaps)
+        {
+            AActor* HitActor = Hit.GetActor();
+            if (HitActor && HitActor != this)
+            {
+                UGameplayStatics::ApplyDamage(HitActor, FinalDamage, GetController(), this, UDamageType::StaticClass());
+
+                // ئەگەر فەنکشنی ستەنت لەسەر زۆمبی هەیە لێرە بانگی بکە:
+                /*
+                if (AZombie* Zombie = Cast<AZombie>(HitActor))
+                {
+                    Zombie->StunZombie(2.5f * EmptyRatio);
+                }
+                */
+            }
+        }
+    }
+}
+
+void AHama::Multicast_PlayElectricCherryFX_Implementation(const FVector& ShockLocation, float Radius)
+{
+    if (ElectricCherryFX)
+    {
+        UNiagaraComponent* NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), ElectricCherryFX, ShockLocation);
+        if (NiagaraComp)
+        {
+            NiagaraComp->SetVariableFloat(FName("User.Radius"), Radius);
+        }
+    }
+
+    if (ElectricCherrySound)
+    {
+        UGameplayStatics::PlaySoundAtLocation(this, ElectricCherrySound, ShockLocation);
     }
 }

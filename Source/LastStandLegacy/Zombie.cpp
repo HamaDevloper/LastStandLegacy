@@ -28,7 +28,7 @@ AZombie::AZombie()
 
     AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
-    SetNetUpdateFrequency(20.f);
+    SetNetUpdateFrequency(5.f);
     SetMinNetUpdateFrequency(5.f);
     SetNetCullDistanceSquared(1600000000.0f);
 

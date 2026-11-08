@@ -532,6 +532,8 @@ public:
         bool HasDeadshot() const { return OwnedPerks.Contains(FName("Deadshot")); }
         bool HasMuleKick() const { return OwnedPerks.Contains(FName("MuleKick")); }
         bool HasQuickRevive() const { return OwnedPerks.Contains(FName("QuickRevive")); }
+        FORCEINLINE bool HasElectricCherry() const { return OwnedPerks.Contains(FName(TEXT("ElectricCherry"))); }
+
 
 protected:
         FTimerHandle PerkDrinkTimerHandle;
@@ -695,4 +697,26 @@ protected:
     void OnMeleeMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
     void CheckAndAutoReloadWeapon();
+
+public:
+    void TriggerElectricCherry(int32 CurrentClip, int32 MaxClip);
+
+protected:
+    // کاتی کۆتا لێدانی کارەبا بۆ کۆڵداون
+    float LastElectricCherryTime = -100.0f;
+
+    // کۆڵداونی نێوان تەقینەوەکان (بە چرکە)
+    UPROPERTY(EditDefaultsOnly, Category = "Perks|ElectricCherry")
+    float ElectricCherryCooldown = 3.5f;
+
+    // افێکتی بینراو و دەنگ
+    UPROPERTY(EditDefaultsOnly, Category = "Perks|ElectricCherry")
+    TObjectPtr<class UNiagaraSystem> ElectricCherryFX;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Perks|ElectricCherry")
+    TObjectPtr<USoundBase> ElectricCherrySound;
+
+    // ناردنی کاریگەرییە بینراوەکان بۆ هەموو کڵاینتەکان (Unreliable بۆ ئەوەی باندویس پڕ نەکات)
+    UFUNCTION(NetMulticast, Unreliable)
+    void Multicast_PlayElectricCherryFX(const FVector& ShockLocation, float Radius);
 };

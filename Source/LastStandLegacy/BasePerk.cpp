@@ -17,8 +17,7 @@ ABasePerk::ABasePerk()
     bReplicates = true;
     SetReplicatingMovement(false);
 
-    // ئەکتەرەکە بە تەواوی دەخەوێت تا کاتێک گۆڕانکاری ڕوودەدات
-    NetDormancy = DORM_DormantAll;
+    SetNetDormancy(ENetDormancy::DORM_DormantAll);
     SetNetUpdateFrequency(1.0f);
     SetMinNetUpdateFrequency(0.5f);
 

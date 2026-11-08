@@ -823,6 +823,11 @@ void ABaseWeapon::ServerReload_Implementation()
     bIsReloading = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, bIsReloading, this);
 
+    if (OwnerCharacter && OwnerCharacter->HasElectricCherry())
+    {
+        OwnerCharacter->TriggerElectricCherry(CurrentAmmo, MaxAmmoInClip);
+    }
+
     if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled()) OnRep_Reload();
 
     float FinalReloadTime = GetCalculatedReloadTime();
