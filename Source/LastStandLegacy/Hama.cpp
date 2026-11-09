@@ -3293,68 +3293,25 @@ void AHama::Client_AnnouncePersonalPowerUp_Implementation(EPowerUpType PowerUpTy
     }
 }
 
-void AHama::TriggerElectricCherry(int32 CurrentClip, int32 MaxClip)
+void AHama::TriggerElectricCherry()
 {
-    // تەواوی لێکدانەوەکان تەنها لەسەر سێرڤەر دەبن
-    if (!HasAuthority() || bIsDead || IsDowned() || MaxClip <= 0) return;
+    if (!HasAuthority() || bIsDead || IsDowned()) return;
 
     const float CurrentTime = GetWorld()->GetTimeSeconds();
-    if (CurrentTime - LastElectricCherryTime < ElectricCherryCooldown)
-    {
-        return; // هێشتا لە کۆڵداوندایە 
-    }
+    if (CurrentTime - LastElectricCherryTime < ElectricCherryCooldown) return;
     LastElectricCherryTime = CurrentTime;
 
-    // ڕێژەی بەتاڵیی مەخزەن: 0.0 پڕە، 1.0 بە تەواوی بەتاڵە
-    const float EmptyRatio = FMath::Clamp(1.0f - ((float)CurrentClip / (float)MaxClip), 0.0f, 1.0f);
-
-    // دیاریکردنی هێز و بازنە بەپێی ڕێژەی بەتاڵی
-    const float MinDamage = 40.0f;
-    const float MaxDamage = 1100.0f;
-    const float MinRadius = 200.0f;
-    const float MaxRadius = 500.0f;
-
-    const float FinalDamage = FMath::Lerp(MinDamage, MaxDamage, EmptyRatio);
-    const float FinalRadius = FMath::Lerp(MinRadius, MaxRadius, EmptyRatio);
+    // دەمەیجی بەرز و جێگیر + بازنەی جێگیر (دەتوانیت لە Hama.h بیانکەیتە UPROPERTY ئەگەر بتەوێت لە BP دەستکارییان بکەیت)
+    const float FixedHighDamage = 1500.0f;
+    const float FixedRadius = 100.f;
 
     const FVector ShockLocation = GetActorLocation();
 
-    // ناردنی افێکت بۆ هەموو یاریزانەکان
-    Multicast_PlayElectricCherryFX(ShockLocation, FinalRadius);
+    Multicast_PlayElectricCherryFX(ShockLocation, FixedRadius);
 
-    // پشکنینی پۆنەکان (زۆمبییەکان) لە دەوروبەر
-    TArray<FOverlapResult> Overlaps;
-    FCollisionShape Sphere = FCollisionShape::MakeSphere(FinalRadius);
-    FCollisionQueryParams Params;
-    Params.AddIgnoredActor(this);
-
-    const bool bHit = GetWorld()->OverlapMultiByObjectType(
-        Overlaps,
-        ShockLocation,
-        FQuat::Identity,
-        FCollisionObjectQueryParams(ECollisionChannel::ECC_Pawn),
-        Sphere,
-        Params
-    );
-
-    if (bHit)
+    if (UZombieDirectorSubsystem* Director = GetWorld()->GetSubsystem<UZombieDirectorSubsystem>())
     {
-        for (const FOverlapResult& Hit : Overlaps)
-        {
-            AActor* HitActor = Hit.GetActor();
-            if (HitActor && HitActor != this)
-            {
-                UGameplayStatics::ApplyDamage(HitActor, FinalDamage, GetController(), this, UDamageType::StaticClass());
-
-                // ئەگەر فەنکشنی ستەنت لەسەر زۆمبی هەیە لێرە بانگی بکە:
-                /*
-                if (AZombie* Zombie = Cast<AZombie>(HitActor))
-                {
-                    Zombie->StunZombie(2.5f * EmptyRatio);
-                }
-                */
-            }
-        }
+        Director->ExecuteElectricCherryBlast(this, GetController(), ShockLocation, FixedRadius, FixedHighDamage);
     }
 }
 

@@ -144,4 +144,7 @@ private:
 
     void CleanInvalidAttractors();
     bool IsLocationVisibleToAnyPlayer(const FVector& WorldLoc, float MaxCheckDistSq) const;
-};
+
+public:
+    void ExecuteElectricCherryBlast(AActor* InstigatorPawn, AController* InstigatorController, const FVector& Origin, float Radius, float FixedDamage);
+ };

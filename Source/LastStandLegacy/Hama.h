@@ -699,7 +699,7 @@ protected:
     void CheckAndAutoReloadWeapon();
 
 public:
-    void TriggerElectricCherry(int32 CurrentClip, int32 MaxClip);
+    void TriggerElectricCherry();
 
 protected:
     // کاتی کۆتا لێدانی کارەبا بۆ کۆڵداون

@@ -825,7 +825,7 @@ void ABaseWeapon::ServerReload_Implementation()
 
     if (OwnerCharacter && OwnerCharacter->HasElectricCherry())
     {
-        OwnerCharacter->TriggerElectricCherry(CurrentAmmo, MaxAmmoInClip);
+        OwnerCharacter->TriggerElectricCherry();
     }
 
     if (OwnerCharacter && !OwnerCharacter->IsLocallyControlled()) OnRep_Reload();

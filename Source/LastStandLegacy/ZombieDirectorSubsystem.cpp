@@ -201,6 +201,19 @@ void UZombieDirectorSubsystem::InitializeZombiePool(TSubclassOf<AZombie> InZombi
     UWorld* World = GetWorld();
     if (!World || World->GetNetMode() == NM_Client || !InZombieClass) return;
 
+    // چاککردنی Opt 3: Preload کردنی هەموو مێشەکانی زۆمبی لە سەرەتاوە تا کاتی سپاون دیار نەبن
+    if (const AZombie* DefaultZombie = InZombieClass->GetDefaultObject<AZombie>())
+    {
+        FStreamableManager& Streamable = UAssetManager::GetStreamableManager();
+        for (const TSoftObjectPtr<USkeletalMesh>& SoftMesh : DefaultZombie->MeshToSelect)
+        {
+            if (!SoftMesh.IsNull())
+            {
+                Streamable.RequestAsyncLoad(SoftMesh.ToSoftObjectPath());
+            }
+        }
+    }
+
     PooledZombieClass = InZombieClass;
     InactiveZombiePool.Reserve(PoolSize);
 
@@ -246,11 +259,64 @@ AZombie* UZombieDirectorSubsystem::AcquireZombieFromPool(const FVector& SpawnLoc
 
 void UZombieDirectorSubsystem::ReturnZombieToPool(AZombie* Zombie)
 {
-    if (!IsValid(Zombie)) return;
-
-    if (!InactiveZombiePool.Contains(Zombie))
+    if (IsValid(Zombie))
     {
         InactiveZombiePool.Add(Zombie);
+    }
+}
+
+void UZombieDirectorSubsystem::ExecuteElectricCherryBlast(AActor* InstigatorPawn, AController* InstigatorController, const FVector& Origin, float Radius, float FixedDamage)
+{
+    if (!InstigatorPawn || ActiveZombies.IsEmpty()) return;
+
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+#if ENABLE_DRAW_DEBUG
+    DrawDebugSphere(
+        World,
+        Origin,
+        Radius,
+        32,
+        FColor::Cyan,
+        false,
+        2.5f,
+        0,
+        2.5f
+    );
+#endif
+
+    const float RadiusSq = FMath::Square(Radius);
+
+    for (int32 i = ActiveZombies.Num() - 1; i >= 0; --i)
+    {
+        AZombie* Zombie = ActiveZombies[i].Get();
+        if (!IsValid(Zombie) || Zombie->IsDead()) continue;
+
+        const float DistSq = FVector::DistSquared(Origin, Zombie->GetActorLocation());
+        if (DistSq <= RadiusSq)
+        {
+#if ENABLE_DRAW_DEBUG
+            DrawDebugLine(
+                World,
+                Origin,
+                Zombie->GetActorLocation(),
+                FColor::Yellow,
+                false,
+                1.5f,
+                0,
+                1.5f
+            );
+#endif
+            // ١. لێدانی دەمەیجی جێگیر و بەرز بە هەموو زۆمبییەکانی ناو بازنەکە وەک یەک
+            UGameplayStatics::ApplyDamage(Zombie, FixedDamage, InstigatorController, InstigatorPawn, UDamageType::StaticClass());
+
+            // ٢. ئەگەر زۆمبییەکە لە ڕاوندی بەرز بوو و بە دەمەیجەکە نەمرد، ستەنی بکە تا ئەەنیمەیشنەکەی تەواو دەبێت
+            if (!Zombie->IsDead())
+            {
+                Zombie->ApplyElectricStun();
+            }
+        }
     }
 }
 
@@ -330,8 +396,9 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
     const double DynamicTimeBudget = FMath::Clamp(DeltaTime * 0.06f, 0.0004f, 0.0020f);
     const double StartTime = FPlatformTime::Seconds();
 
-    const int32 MaxRepathRequestsThisFrame = FMath::Clamp(ZombieCount / 4, 4, 10);
+    const int32 MaxRepathRequestsThisFrame = FMath::Clamp(ZombieCount / 4, 4, 8);
     int32 CurrentRepathCount = 0;
+    bool bRelocatedThisFrame = false; // چاککردنی Opt 2: تەنها ١ گواستنەوە لە هەر فڕەیمێکدا
 
     int32 i = CurrentZombieIndex;
     for (; i < ZombieCount; ++i)
@@ -344,7 +411,19 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         AZombie* Zombie = ActiveZombies[i].Get();
         if (!IsValid(Zombie) || Zombie->IsDead()) continue;
 
+        if (Zombie->IsStunned(CurrentTime) || Zombie->bIsAttacking)
+        {
+            continue;
+        }
+
         const FVector ZombieLoc = Zombie->GetActorLocation();
+
+        // چاککردنی Bug 4: دۆزینەوەی مەودای نزیکترین یاریزان بە سەربەخۆیی بۆ LOD و Recycle
+        float NearestPlayerDistSq = UE_BIG_NUMBER;
+        for (const FCachedTargetInfo& Info : CachedPlayerLocations)
+        {
+            NearestPlayerDistSq = FMath::Min(NearestPlayerDistSq, FVector::DistSquared(ZombieLoc, Info.Location));
+        }
 
         AActor* FinalTargetActor = nullptr;
         FVector FinalTargetLoc = FVector::ZeroVector;
@@ -375,7 +454,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
         }
 
         // =========================================================
-        // B. دیاریکردنی یاریزان و وەرگرتنی شوێنی ڕاستەقینەی ئێستا
+        // B. دیاریکردنی یاریزان
         // =========================================================
         if (!FinalTargetActor)
         {
@@ -418,7 +497,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
                 if (FinalTargetActor)
                 {
-                    float NextInterval = 0.2f;
+                    float NextInterval = 0.25f;
                     if (ClosestDistanceSq > 16000000.f) NextInterval = 1.2f;
                     else if (ClosestDistanceSq > 2250000.f) NextInterval = 0.5f;
 
@@ -435,9 +514,9 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
 
         if (FinalTargetActor)
         {
-            // ١. سیستەمی گواستنەوەی زۆمبی زۆر دوور (زیاتر لە ٣٥ مەتر لە نزیکترین یاریزانەوە)
+            // ١. گواستنەوەی زۆمبی زۆر دوور بەپێی NearestPlayerDistSq و سنووری ١ جار لە فڕەیمێکدا
             constexpr float RecycleDistSq = 3500.f * 3500.f;
-            if (!bIsTargetAttractor && ClosestDistanceSq > RecycleDistSq && CurrentTime >= Zombie->NextRecycleCheckTime)
+            if (!bRelocatedThisFrame && !bIsTargetAttractor && NearestPlayerDistSq > RecycleDistSq && CurrentTime >= Zombie->NextRecycleCheckTime)
             {
                 Zombie->NextRecycleCheckTime = CurrentTime + 1.5f;
 
@@ -447,6 +526,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                     if (AActor* NewSP = PickWeightedSpawnPoint(600.f, 2800.f, true))
                     {
                         Zombie->RelocateTo(NewSP->GetActorLocation(), NewSP->GetActorRotation());
+                        bRelocatedThisFrame = true;
                         continue;
                     }
                 }
@@ -457,12 +537,11 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             const bool bIsBlocked = (MoveStatus == EPathFollowingStatus::Moving) && (CurrentSpeedSq < 900.f);
             const bool bIsAIIdle = (MoveStatus == EPathFollowingStatus::Idle);
 
-            // ٢. جیاکردنەوەی سوڕانەوەی کاتی ڕۆیشتن لە کاتی نزیکبوونەوە/وەستان و هێرشکردن
-            // ئەگەر زۆمبییەکە لە مەودای ٣.٥ مەتر نزیکتر بوو یان وەستابوو، ڕاستەوخۆ ڕوو دەکاتە ئامانجەکە
+            // ٢. ڕێکخستنی سوڕانەوە
             const float DirectFaceDistSq = FMath::Max(Zombie->AttackTriggerDistanceSq * 2.25f, 122500.f);
             const bool bUseDirectFocusRotation = !bIsBlocked && (ClosestDistanceSq <= DirectFaceDistSq || bIsAIIdle || CurrentSpeedSq < 400.f);
 
-            if (ClosestDistanceSq < 640000.f && !bIsBlocked) // لە خوار ٨ مەترەوە Focus ئامادە دەکەین
+            if (ClosestDistanceSq < 640000.f && !bIsBlocked)
             {
                 if (AICon->GetFocusActor() != FinalTargetActor)
                 {
@@ -480,7 +559,7 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                 MoveComp->bUseControllerDesiredRotation = bUseDirectFocusRotation;
             }
 
-            // ٣. ئەگەر ئامانجەکە مەیموون بوو (Attractor)
+            // ٣. ئەگەر ئامانجەکە مەیموون بوو یان گەیشتە مەودای هێرشکردن
             if (bIsTargetAttractor)
             {
                 const float AttractorStopDistSq = FMath::Square(90.f);
@@ -498,24 +577,31 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
             else if (ClosestDistanceSq <= Zombie->AttackTriggerDistanceSq)
             {
                 Zombie->CurrentTarget = FinalTargetActor;
+                Zombie->LastTargetLocation = FinalTargetLoc;
+                if (!bIsAIIdle)
+                {
+                    AICon->StopMovement();
+                }
                 Zombie->TryAttack();
+                continue;
             }
 
-            const uint8 Tier = (ClosestDistanceSq < 1440000.f) ? 0 : (ClosestDistanceSq < 6250000.f ? 1 : 2);
+            // چاککردنی Bug 4: دیاریکردنی Tier بەپێی نزیکترین یاریزان نەک مەیموونەکە
+            const uint8 Tier = (NearestPlayerDistSq < 1440000.f) ? 0 : (NearestPlayerDistSq < 6250000.f ? 1 : 2);
             Zombie->ApplyServerLOD(Tier);
 
             const float MinRepathInterval =
-                (ClosestDistanceSq < 360000.f) ? 0.12f :
-                (ClosestDistanceSq < 2250000.f) ? 0.30f : 0.75f;
+                (ClosestDistanceSq < 360000.f) ? 0.25f :
+                (ClosestDistanceSq < 2250000.f) ? 0.45f : 0.85f;
 
             float DynamicMovedThresholdSq = 140.f * 140.f;
             if (ClosestDistanceSq < 360000.f)
             {
-                DynamicMovedThresholdSq = 45.f * 45.f; // هەستیارتر کاتێک زۆر نزیکە تا زوو پێچ بکاتەوە
+                DynamicMovedThresholdSq = 55.f * 55.f;
             }
             else if (ClosestDistanceSq < 1440000.f)
             {
-                DynamicMovedThresholdSq = 85.f * 85.f;
+                DynamicMovedThresholdSq = 90.f * 90.f;
             }
 
             const float TargetMovedDistSq = FVector::DistSquared(Zombie->LastTargetLocation, FinalTargetLoc);
@@ -566,26 +652,26 @@ void UZombieDirectorSubsystem::Tick(float DeltaTime)
                         MoveGoalLoc = CandidateA;
                     }
 
-                    Zombie->NextRepathAllowedTime = CurrentTime + 0.4f;
+                    Zombie->NextRepathAllowedTime = CurrentTime + 0.55f;
                 }
                 else
                 {
-                    const float NextDelay = bIsAIIdle ? FMath::Max(MinRepathInterval, 0.2f) : MinRepathInterval;
+                    const float NextDelay = bIsAIIdle ? FMath::Max(MinRepathInterval, 0.3f) : MinRepathInterval;
                     Zombie->NextRepathAllowedTime = CurrentTime + NextDelay;
                 }
 
                 Zombie->CurrentTarget = FinalTargetActor;
-                Zombie->LastTargetLocation = MoveGoalLoc;
+                Zombie->LastTargetLocation = FinalTargetLoc;
 
                 if (bIsAIIdle)
                 {
-                    Zombie->NextForceRepathTime = CurrentTime + 0.2f;
+                    Zombie->NextForceRepathTime = CurrentTime + 0.35f;
                 }
 
                 FAIMoveRequest MoveReq(MoveGoalLoc);
-                const float AcceptRadius = bIsBlocked ? 25.f : (bIsTargetAttractor ? 45.f : 50.f);
+                const float AcceptRadius = bIsBlocked ? 25.f : (bIsTargetAttractor ? 45.f : 55.f);
                 MoveReq.SetAcceptanceRadius(AcceptRadius);
-                MoveReq.SetUsePathfinding(true);
+                MoveReq.SetUsePathfinding(true); // چاککردنی Bug 5: هەمیشە لەسەر NavMesh بمێنێتەوە تا لە دیوار گیر نەخوات
                 MoveReq.SetAllowPartialPath(true);
                 MoveReq.SetProjectGoalLocation(true);
 
@@ -676,9 +762,9 @@ AZombieSpawnPoint* UZombieDirectorSubsystem::PickWeightedSpawnPoint(float MinSaf
     }
 
     // لامبدا (Lambda) بۆ تۆمارکردنی خاڵی هەڵبژێردراو و ڕیسێتکردنەوەی خاڵی پێشوو
-    auto RecordAndReturnSpawn = [this](AZombieSpawnPoint* ChosenPoint) -> AZombieSpawnPoint*
+    auto RecordAndReturnSpawn = [this, bIsRelocation](AZombieSpawnPoint* ChosenPoint) -> AZombieSpawnPoint*
         {
-            if (ChosenPoint)
+            if (ChosenPoint && !bIsRelocation)
             {
                 if (LastUsedSpawnPoint.Get() == ChosenPoint)
                 {

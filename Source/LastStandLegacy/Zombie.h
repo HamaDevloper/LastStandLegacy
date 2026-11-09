@@ -111,8 +111,6 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "Zombie|State")
     bool bIsDead = false;
 
-    bool bIsAttacking = false;
-
     uint8 ServerLODTier = 255;
 
     // --- ڕێپلیکەیشنی شەڕ و هێرش ---
@@ -160,9 +158,6 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "Zombie|Stats")
     float Health;
 
-    UPROPERTY(ReplicatedUsing = OnRep_SelectedIndex, BlueprintReadOnly, Category = "Zombie|Stats")
-    uint8 MeshIndexSelected = 255;
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
     float MaxHealthZombieReach = 60000.f;
 
@@ -178,10 +173,11 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zombie|Stats")
     float AbsoluteMaxSpeed = 650.f;
 
+public:
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Zombie|Visuals")
     TArray<TSoftObjectPtr<USkeletalMesh>> MeshToSelect;
 
-public:
     UPROPERTY(EditDefaultsOnly, Category = "Zombie|Stats")
     float AttackDistance = 150.f;
 
@@ -212,4 +208,31 @@ private:
     FTimerHandle TimerHandle_Dormant;
 
     void GoDormant();
+
+public:
+    UPROPERTY(ReplicatedUsing = OnRep_SelectedIndex, BlueprintReadOnly, Category = "Zombie|Stats")
+    uint8 MeshIndexSelected = 255;
+
+    bool bIsAttacking = false;
+
+    // پشکنینی ئەوەی ئایا زۆمبییەکە بە کارەبا سڕ بووە؟
+    FORCEINLINE bool IsStunned(float CurrentTime) const { return CurrentTime < StunEndTime; }
+
+    // لێدانی کارەبای Electric Cherry لەسەر سێرڤەر
+    void ApplyElectricStun();
+
+protected:
+    float StunEndTime = 0.f;
+
+    TWeakObjectPtr<UAnimMontage> ActiveAttackMontage;
+
+    // ئەگەر مۆنتێجی تایبەتت هەیە بۆ لەرزینی کارەبا لە بلۆپرینت دایبنێ
+    UPROPERTY(EditDefaultsOnly, Category = "Zombie|Combat")
+    TObjectPtr<UAnimMontage> ElectrocuteMontage;
+
+    UPROPERTY(ReplicatedUsing = OnRep_StunCount)
+    uint8 StunPlayCount = 0;
+
+    UFUNCTION()
+    void OnRep_StunCount();
 };

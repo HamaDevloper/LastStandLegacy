@@ -54,16 +54,15 @@ void AZombie::PossessedBy(AController* NewController)
 {
     Super::PossessedBy(NewController);
     CachedAIController = Cast<AAIController>(NewController);
-
-    if (CachedAIController)
-    {
-        CachedAIController->SetActorTickInterval(0.f);
-    }
 }
 
 void AZombie::BeginPlay()
 {
     Super::BeginPlay();
+
+    // چاککردنی Bug 2: هەژمارکردنی مەوداکان دوای خوێندنەوەی بەهاکانی Blueprint
+    AttackDistanceSq = FMath::Square(AttackDistance);
+    AttackTriggerDistanceSq = FMath::Square(AttackTriggerDistance);
 
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
@@ -74,39 +73,30 @@ void AZombie::BeginPlay()
     }
 
     bUseControllerRotationYaw = false;
-
-    CachedMovement = GetCharacterMovement();
-
     CachedMovement = GetCharacterMovement();
 
     if (CachedMovement)
     {
-        // بەکارهێنانی MOVE_Walking وەک دۆخی بنەڕەتی
         CachedMovement->DefaultLandMovementMode = MOVE_Walking;
 
-        // ١. سووککردنی تێچووی فیزیای زەوی و بەرکەوتن (CPU Optimization)
         CachedMovement->bEnablePhysicsInteraction = false;
         CachedMovement->bAlwaysCheckFloor = false;
         CachedMovement->bUseFlatBaseForFloorChecks = true;
-        CachedMovement->bComponentShouldUpdatePhysicsVolume = false; // پشکنینی PhysicsVolume ناکات
+        CachedMovement->bComponentShouldUpdatePhysicsVolume = false;
         CachedMovement->bPushForceScaledToMass = false;
         CachedMovement->bScalePushForceToVelocity = false;
-        CachedMovement->bEnablePhysicsInteraction = false;
-        CachedMovement->MaxSimulationIterations = 2; // زۆر کەم-تێچووترە لە 4 و بۆ AI بەتەواوی بەسە
+        CachedMovement->MaxSimulationIterations = 2; // چاککردنی Opt 4: پاراستنی وردیی فیزیا لە گۆشە و قادرمەکان
 
         CachedMovement->MaxStepHeight = 35.f;
         CachedMovement->SetWalkableFloorAngle(45.f);
 
-        // ٢. ڕێکخستنی سوڕانەوە (Director بەپێی مەودا دەیکاتە bUseControllerDesiredRotation)
         CachedMovement->bOrientRotationToMovement = true;
         CachedMovement->bUseControllerDesiredRotation = false;
         CachedMovement->RotationRate = FRotator(0.f, 540.f, 0.f);
 
-        // ٣. نەهێشتنی خۆلادانی ناوخۆیی (چونکە سیستەمی Director بەڕێوەی دەبات)
         CachedMovement->bUseRVOAvoidance = false;
         CachedMovement->SetAvoidanceEnabled(false);
 
-        // ٤. نەرمکردنەوەی جووڵە لەسەر کللاینت بۆ ڕێگری لە لاگ و پچڕانی سوڕانەوە
         CachedMovement->NetworkSmoothingMode = ENetworkSmoothingMode::Exponential;
         CachedMovement->NetworkSimulatedSmoothLocationTime = 0.11f;
         CachedMovement->NetworkSimulatedSmoothRotationTime = 0.09f;
@@ -120,20 +110,23 @@ void AZombie::BeginPlay()
         CachedMeshObjectType = MeshComp->GetCollisionObjectType();
         CachedMeshCollisionResponses = MeshComp->GetCollisionResponseToChannels();
 
-        const ECollisionEnabled::Type CurrentMeshCol = MeshComp->GetCollisionEnabled();
-        CachedMeshCollisionEnabled = (CurrentMeshCol != ECollisionEnabled::NoCollision)
-            ? CurrentMeshCol
-            : ECollisionEnabled::QueryOnly;
+        // زۆمبی زیندوو تەنها QueryOnly بەکاردەهێنێت بۆ فیشەک، نەک Physics
+        CachedMeshCollisionEnabled = ECollisionEnabled::QueryOnly;
+
+        MeshComp->bUpdateJointsFromAnimation = false;
+        MeshComp->bMultiBodyOverlap = false;
+        MeshComp->SetGenerateOverlapEvents(false);
 
         if (!IsRunningDedicatedServer())
         {
+            MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
             MeshComp->bEnableUpdateRateOptimizations = true;
             MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
             MeshComp->bCastFarShadow = false;
-            MeshComp->SetGenerateOverlapEvents(false);
         }
         else
         {
+            MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
             MeshComp->bNoSkeletonUpdate = true;
             MeshComp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
         }
@@ -183,6 +176,7 @@ void AZombie::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, AttackPlayCount, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, SelectedAttackMontageIndex, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, RepAttackPlayRateByte, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AZombie, StunPlayCount, Params);
 }
 
 void AZombie::ApplyServerLOD(uint8 Tier)
@@ -225,8 +219,9 @@ void AZombie::InitializeForPool()
 
     bIsDead = true;
     bIsAttacking = false;
+    StunEndTime = 0.f;
+    ActiveAttackMontage.Reset();
 
-    // دڵنیابوونەوە لە دەرکردنی زۆمبییەکە لە Director تەنانەت ئەگەر بێ Die() بخرێتەوە ناو Pool
     if (bRegisteredWithDirector && CachedDirector)
     {
         CachedDirector->UnregisterZombie(this);
@@ -249,17 +244,22 @@ void AZombie::InitializeForPool()
         CachedMovement->StopMovementImmediately();
         CachedMovement->Velocity = FVector::ZeroVector;
         CachedMovement->DisableMovement();
+        CachedMovement->SetComponentTickEnabled(false); // چاککردنی Opt 1: وەستانی تەواوەتی Tick لە ناو Pool
         CachedMovement->bOrientRotationToMovement = true;
         CachedMovement->bUseControllerDesiredRotation = false;
     }
 
-    if (IsRunningDedicatedServer())
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
-        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+        {
+            AnimInst->StopAllMontages(0.f); // چاککردنی Bug 3: وەستانی مۆنتێج لەسەر سێرڤەر و کڵاینت
+        }
+        if (IsRunningDedicatedServer())
         {
             MeshComp->bNoSkeletonUpdate = true;
-            MeshComp->SetComponentTickEnabled(false);
         }
+        MeshComp->SetComponentTickEnabled(false);
     }
 
     SetReplicateMovement(false);
@@ -280,6 +280,8 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
 
     bIsDead = false;
     bIsAttacking = false;
+    StunEndTime = 0.f;
+    ActiveAttackMontage.Reset();
     CurrentTarget = nullptr;
     LastTargetLocation = FVector::ZeroVector;
     NextTargetSearchTime = 0.f;
@@ -288,11 +290,20 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
     NextAllowedAttackTime = 0.f;
     ServerLODTier = 255;
 
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+        {
+            AnimInst->StopAllMontages(0.f); // چاککردنی Bug 3 بۆ هەموو NetModeـەکان
+        }
+    }
+
     if (CachedMovement)
     {
+        CachedMovement->SetComponentTickEnabled(true); // چالاککردنەوەی Tick
+        CachedMovement->SetComponentTickInterval(0.f);
         CachedMovement->StopMovementImmediately();
         CachedMovement->Velocity = FVector::ZeroVector;
-        CachedMovement->SetComponentTickInterval(0.f);
         CachedMovement->bOrientRotationToMovement = true;
         CachedMovement->bUseControllerDesiredRotation = false;
     }
@@ -348,7 +359,8 @@ void AZombie::ActivateFromPool(const FVector& SpawnLocation, const FRotator& Spa
 
 void AZombie::ReturnToPool()
 {
-    if (!HasAuthority()) return;
+    // چاککردنی Opt 5: ڕێگری لە دووبارە گەڕانەوە بۆ Pool بەبێ پشکنینی O(N)
+    if (!HasAuthority() || PoolState == EZombiePoolState::Pooled) return;
 
     InitializeForPool();
 
@@ -390,6 +402,11 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
     {
         SetActorHiddenInGame(true);
 
+        if (CachedMovement)
+        {
+            CachedMovement->SetComponentTickEnabled(false); // Opt 1: کوژاندنەوەی CMC Tick لەسەر کڵاینت و سێرڤەر
+        }
+
         if (Capsule)
         {
             Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -397,6 +414,11 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
 
         if (CharacterMesh)
         {
+            if (UAnimInstance* AnimInst = CharacterMesh->GetAnimInstance())
+            {
+                AnimInst->StopAllMontages(0.f);
+            }
+
             if (!IsRunningDedicatedServer())
             {
                 CharacterMesh->SetSimulatePhysics(false);
@@ -405,14 +427,25 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
                 CharacterMesh->SetHiddenInGame(true);
             }
             CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            CharacterMesh->SetComponentTickEnabled(false); // Opt 1: کوژاندنەوەی Mesh Tick لە ناو Pool
             CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
             CharacterMesh->SetRelativeLocationAndRotation(CachedMeshRelativeLocation, CachedMeshRelativeRotation);
         }
     }
     else if (NewState == EZombiePoolState::Alive)
     {
-        // ئەکتەرەکە خۆی دیارە، تەنها مێشەکە بە شێوەی لۆکاڵی بۆ ٠.٠٤ چرکە دەشارینەوە تا کێشەی Replication نەبێت
         SetActorHiddenInGame(false);
+
+        if (CachedMovement)
+        {
+            CachedMovement->SetComponentTickEnabled(true);
+            CachedMovement->SetComponentTickInterval(0.f);
+            CachedMovement->bJustTeleported = true;
+            if (!HasAuthority())
+            {
+                CachedMovement->ResetPredictionData_Client();
+            }
+        }
 
         if (Capsule)
         {
@@ -421,13 +454,23 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
 
         if (CharacterMesh)
         {
+            if (UAnimInstance* AnimInst = CharacterMesh->GetAnimInstance())
+            {
+                AnimInst->StopAllMontages(0.f);
+            }
+
             if (!IsRunningDedicatedServer())
             {
-                // زۆر گرنگ: پێش AttachToComponent دەبێت فیزیای Ragdoll بکوژێنرێتەوە!
                 CharacterMesh->SetSimulatePhysics(false);
                 CharacterMesh->ResetAllBodiesSimulatePhysics();
                 CharacterMesh->PutAllRigidBodiesToSleep();
                 CharacterMesh->SetHiddenInGame(true);
+                CharacterMesh->SetComponentTickEnabled(true); // چالاککردنەوەی Mesh Tick بۆ کڵاینت
+            }
+            else
+            {
+                CharacterMesh->bNoSkeletonUpdate = true;
+                CharacterMesh->SetComponentTickEnabled(false); // لەسەر Dedicated Server تەنها لە کاتی هێرش کار دەکات
             }
 
             CharacterMesh->AttachToComponent(Capsule, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
@@ -442,24 +485,10 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
                 CharacterMesh->SetCollisionObjectType(CachedMeshObjectType);
                 CharacterMesh->SetCollisionResponseToChannels(CachedMeshCollisionResponses);
                 CharacterMesh->SetCollisionEnabled(CachedMeshCollisionEnabled);
-
-                if (UAnimInstance* AnimInst = CharacterMesh->GetAnimInstance())
-                {
-                    AnimInst->StopAllMontages(0.f);
-                }
             }
             else
             {
                 CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-            }
-        }
-
-        if (CachedMovement)
-        {
-            CachedMovement->bJustTeleported = true;
-            if (!HasAuthority())
-            {
-                CachedMovement->ResetPredictionData_Client();
             }
         }
 
@@ -481,6 +510,11 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
     {
         SetActorHiddenInGame(false);
 
+        if (CachedMovement)
+        {
+            CachedMovement->SetComponentTickEnabled(false);
+        }
+
         if (Capsule)
         {
             Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -490,6 +524,7 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
         {
             if (!IsRunningDedicatedServer())
             {
+                CharacterMesh->SetComponentTickEnabled(true);
                 CharacterMesh->SetHiddenInGame(false);
                 CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
                 CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -497,6 +532,7 @@ void AZombie::ApplyStateVisualsAndPhysics(EZombiePoolState NewState)
             }
             else
             {
+                CharacterMesh->SetComponentTickEnabled(false);
                 CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
             }
         }
@@ -615,11 +651,10 @@ void AZombie::TryAttack()
 {
     if (!HasAuthority() || bIsDead || !CurrentTarget || bIsAttacking) return;
 
+    // چاککردنی Bug 1: ناساندنی CurrentTime پێش بەکارهێنانی لە IsStunned
     const float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (IsStunned(CurrentTime)) return;
     if (CurrentTime < NextAllowedAttackTime) return;
-
-    // تێبینی: SetActorRotation لێرە لابرا، چونکە Director خۆی لە ڕێگەی SetFocus و bUseControllerDesiredRotation
-    // بە نەرمی ڕووی زۆمبییەکە لە یاریزانەکە دەکات بێ ئەوەی لەسەر کللاینت تووشی سناپی کتوپڕ ببێت.
 
     if (AttackMontages.IsEmpty())
     {
@@ -654,6 +689,7 @@ void AZombie::TryAttack()
     }
 
     bIsAttacking = true;
+    ActiveAttackMontage = SelectedMontage; // چاککردنی Bug 3: تۆمارکردنی مۆنتێجی چالاک
     NextAllowedAttackTime = CurrentTime + (Duration / FMath::Max(CurrentAttackPlayRate, 0.1f)) + CurrentAttackCooldown;
 
     FOnMontageEnded EndedDelegate;
@@ -667,16 +703,10 @@ void AZombie::TryAttack()
     MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, AttackPlayCount, this);
 }
 
-void AZombie::OnRep_AttackPlayRate()
-{
-    CurrentAttackPlayRate = (RepAttackPlayRateByte > 0)
-        ? (static_cast<float>(RepAttackPlayRateByte) / 100.0f)
-        : 1.0f;
-}
-
 void AZombie::OnRep_AttackPlayCount()
 {
-    // دڵنیابوونەوە لە خێرایی ڕاست تەنانەت ئەگەر ئەم RepNotifyـە پێش OnRep_AttackPlayRate کار بکات
+    if (PoolState != EZombiePoolState::Alive || bIsDead) return;
+
     if (RepAttackPlayRateByte > 0)
     {
         CurrentAttackPlayRate = static_cast<float>(RepAttackPlayRateByte) / 100.0f;
@@ -694,10 +724,18 @@ void AZombie::OnRep_AttackPlayCount()
     }
 }
 
+void AZombie::OnRep_AttackPlayRate()
+{
+    CurrentAttackPlayRate = (RepAttackPlayRateByte > 0)
+        ? (static_cast<float>(RepAttackPlayRateByte) / 100.0f)
+        : 1.0f;
+}
+
 void AZombie::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
-    if (!HasAuthority()) return;
+    if (!HasAuthority() || Montage != ActiveAttackMontage.Get()) return;
 
+    ActiveAttackMontage.Reset();
     bIsAttacking = false;
 
     if (IsRunningDedicatedServer())
@@ -851,10 +889,16 @@ void AZombie::Die(AController* KillerController)
 
     bIsDead = true;
     bIsAttacking = false;
+    StunEndTime = 0.f;
+    ActiveAttackMontage.Reset();
 
-    if (IsRunningDedicatedServer())
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
     {
-        if (USkeletalMeshComponent* MeshComp = GetMesh())
+        if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+        {
+            AnimInst->StopAllMontages(0.f);
+        }
+        if (IsRunningDedicatedServer())
         {
             MeshComp->bNoSkeletonUpdate = true;
             MeshComp->SetComponentTickEnabled(false);
@@ -882,6 +926,7 @@ void AZombie::Die(AController* KillerController)
     {
         CachedMovement->StopMovementImmediately();
         CachedMovement->DisableMovement();
+        CachedMovement->SetComponentTickEnabled(false);
     }
 
     SetReplicateMovement(false);
@@ -961,4 +1006,84 @@ void AZombie::RelocateTo(const FVector& NewLocation, const FRotator& NewRotation
     }
 
     ForceNetUpdate();
+}
+
+void AZombie::ApplyElectricStun()
+{
+    if (!HasAuthority() || bIsDead || PoolState != EZombiePoolState::Alive) return;
+
+    // وەرگرتنی کاتی تەواوی ئەەنیمەیشنەکە؛ ئەگەر مۆنتێجت دانەنابوو بە دیفۆڵت ٢.٥ چرکە دەوەستێت
+    const float MontageLength = ElectrocuteMontage ? ElectrocuteMontage->GetPlayLength() : 2.5f;
+    if (MontageLength <= 0.f) return;
+
+    const float Now = GetWorld()->GetTimeSeconds();
+
+    // قفڵکردنی زۆمبییەکە تا کۆتایی مۆنتێجەکە
+    StunEndTime = Now + MontageLength;
+    bIsAttacking = false;
+    ActiveAttackMontage.Reset();
+
+    // ڕێگری لە گەڕان و هێرشکردن تا دوای تەواوبوونی ئەەنیمەیشنەکە
+    NextRepathAllowedTime = StunEndTime + 0.05f;
+    NextAllowedAttackTime = StunEndTime + 0.15f;
+
+    // ١. وەستانی کۆنتڕۆڵەری زیرەکی دەستکرد
+    if (CachedAIController)
+    {
+        CachedAIController->StopMovement();
+        CachedAIController->ClearFocus(EAIFocusPriority::Gameplay);
+    }
+
+    // ٢. سفرکردنەوەی خێرایی و وەستانی دەستبەجێی جووڵە لە شوێنی خۆی
+    if (CachedMovement)
+    {
+        CachedMovement->StopMovementImmediately();
+        CachedMovement->Velocity = FVector::ZeroVector;
+    }
+
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+        {
+            if (!IsRunningDedicatedServer() && ElectrocuteMontage)
+            {
+                AnimInst->Montage_Play(ElectrocuteMontage, 1.0f);
+            }
+            else
+            {
+                AnimInst->StopAllMontages(0.1f);
+            }
+        }
+
+        if (IsRunningDedicatedServer())
+        {
+            MeshComp->bNoSkeletonUpdate = true;
+            MeshComp->SetComponentTickEnabled(false);
+        }
+    }
+
+    // ناردنی فەرمانی لێدانی ئەەنیمەیشن بۆ هەموو کڵاینتەکان
+    StunPlayCount++;
+    MARK_PROPERTY_DIRTY_FROM_NAME(AZombie, StunPlayCount, this);
+    ForceNetUpdate();
+}
+
+void AZombie::OnRep_StunCount()
+{
+    if (PoolState != EZombiePoolState::Alive || bIsDead) return;
+
+    if (USkeletalMeshComponent* MeshComp = GetMesh())
+    {
+        if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+        {
+            if (ElectrocuteMontage)
+            {
+                AnimInst->Montage_Play(ElectrocuteMontage, 1.0f);
+            }
+            else
+            {
+                AnimInst->StopAllMontages(0.15f);
+            }
+        }
+    }
 }
