@@ -38,6 +38,15 @@ void ABaseDoor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseDoor, bIsDoorOpen, Param);
 }
 
+int32 ABaseDoor::GetCurrentCost(const AHama* Player) const
+{
+    if (Player && Player->IsShoppingFreeActive())
+    {
+        return 0;
+    }
+    return DoorPrice;
+}
+
 bool ABaseDoor::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || bIsDoorOpen) return false;
@@ -54,8 +63,12 @@ bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
 {
     if (!CanInteract(InteractingPlayer)) return false;
 
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return false;
+
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-    if (!PS || PS->GetPoints() < DoorPrice)
+    if (!PS || PS->GetPoints() < Cost)
     {
         if (RejectSound && InteractingPlayer->IsLocallyControlled())
         {
@@ -63,9 +76,6 @@ bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
         }
         return false;
     }
-
-    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > FMath::Square(250.0f)) return false;
 
     return true;
 }
@@ -77,23 +87,34 @@ void ABaseDoor::Interact(AHama* InteractingPlayer)
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if (DistSq > FMath::Square(250.0f)) return;
 
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-    if (PS && PS->GetPoints() >= DoorPrice)
+    if (PS && PS->GetPoints() >= Cost)
     {
-        OpenDoor(InteractingPlayer, PS);
+        OpenDoor(InteractingPlayer, PS, Cost);
     }
 }
 
 FString ABaseDoor::GetInteractMessage(AHama* InteractingPlayer)
 {
-    return FString::Printf(TEXT("Press F to Open Door [Cost %d]"), DoorPrice);
+    if (!IsValid(InteractingPlayer)) return FString();
+
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
+    if (Cost == 0)
+    {
+        return TEXT("Press F to Open Door [FREE]");
+    }
+    return FString::Printf(TEXT("Press F to Open Door [Cost %d]"), Cost);
 }
 
-void ABaseDoor::OpenDoor(AHama* InteractingPlayer, AHamaPlayerState* PS)
+void ABaseDoor::OpenDoor(AHama* InteractingPlayer, AHamaPlayerState* PS, int32 Cost) 
 {
     if (!HasAuthority() || !PS || bIsDoorOpen) return;
 
-    PS->RemovePoints(DoorPrice);
+    if (Cost > 0)
+    {
+        PS->RemovePoints(Cost);
+    }
 
     bIsDoorOpen = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABaseDoor, bIsDoorOpen, this);

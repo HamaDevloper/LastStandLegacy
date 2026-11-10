@@ -52,6 +52,7 @@ class UStaticMeshComponent;
 class URecoilComponent;
 class IInteractInterface;
 class AHamaPlayerController;
+class UGobbleGumComponent;
 
 struct FInputActionValue;
 struct FInputActionInstance;
@@ -103,12 +104,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
     TObjectPtr<USphereComponent> InteractSphere;
 
-    // AHama.h
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<UStaticMeshComponent> GrenadeHandMesh;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hama|Components")
     TObjectPtr<UStaticMeshComponent> MonkeyHandMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|GobbleGum", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UGobbleGumComponent> GobbleGumComponent;
 
 public:
     // -----------------------------------------------------------------------------
@@ -286,11 +289,14 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> MeleeAction;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Input")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> IA_ThrowGrenade;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Input")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Input")
     TObjectPtr<UInputAction> IA_ThrowMonkey;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hama|Input")
+    TObjectPtr<UInputAction> IA_UseGobbleGum;
 
     // -----------------------------------------------------------------------------
     // UI & HUD (MainWidgetRef Removed)
@@ -400,7 +406,6 @@ protected:
     void SwitchCameraPressed(const FInputActionInstance& Instance);
     void SwitchCameraReleased();
     void SprintActionPressed();
-    //void OnSprintStopped();
     void StartCrossHairTimer();
     void CrossHairTrace();
     void OnCrossHairTraceCompleted(const FTraceHandle& TraceHandle, FTraceDatum& TraceDatum);
@@ -417,6 +422,7 @@ protected:
     void Input_ThrowGrenadeReleased();
     void Input_ThrowMonkeyPressed();
     void Input_ThrowMonkeyReleased();
+    void HandleUseGobbleGum();
 
     UFUNCTION()
     void OnMeleeMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
@@ -471,6 +477,7 @@ public:
     bool IsSliding() const { return HamaComponent->IsSlide(); }
     bool IsDiving() const { return HamaComponent->IsDiving(); }
     bool IsSwappingWeapon() const;
+    UGobbleGumComponent* GetGobbleGumComponent() const { return GobbleGumComponent; }
 
     protected:
         UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
@@ -719,4 +726,17 @@ protected:
     // ناردنی کاریگەرییە بینراوەکان بۆ هەموو کڵاینتەکان (Unreliable بۆ ئەوەی باندویس پڕ نەکات)
     UFUNCTION(NetMulticast, Unreliable)
     void Multicast_PlayElectricCherryFX(const FVector& ShockLocation, float Radius);
+
+
+public:
+    void SetShoppingFreeActive(bool bActive);
+
+    bool IsShoppingFreeActive() const { return bIsShoppingFree; }
+
+protected:
+    UPROPERTY(ReplicatedUsing = OnRep_ShoppingFree, BlueprintReadOnly, Category = "Gameplay|Economy")
+    bool bIsShoppingFree = false;
+
+    UFUNCTION()
+    void OnRep_ShoppingFree();
 };

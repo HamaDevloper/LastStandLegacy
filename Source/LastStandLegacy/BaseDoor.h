@@ -57,5 +57,6 @@ protected:
     TObjectPtr<USoundBase> RejectSound;
 
 private:
-    void OpenDoor(AHama* Player, AHamaPlayerState* PS);
+    void OpenDoor(AHama* Player, AHamaPlayerState* PS, int32 Cost);
+    int32 GetCurrentCost(const AHama* Player) const;
 };

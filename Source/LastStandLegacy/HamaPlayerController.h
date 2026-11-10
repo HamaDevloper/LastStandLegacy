@@ -10,6 +10,8 @@ class UInputAction;
 class URecoilComponent;
 class UHamaMainWidget;
 class AHama;
+class ALastStandLegacyGameState;
+class AHamaPlayerState;
 
 UCLASS()
 class LASTSTANDLEGACY_API AHamaPlayerController : public APlayerController

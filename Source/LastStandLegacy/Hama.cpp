@@ -26,6 +26,7 @@
 #include "NiagaraComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Kismet/GameplayStatics.h"
+#include "GobbleGumComponent.h"
 #include "DrawDebugHelpers.h"
 
 // -----------------------------------------------------------------------------
@@ -84,6 +85,8 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     MonkeyHandMesh->SetupAttachment(GetMesh(), TEXT("GrenadeHandSocket"));
     MonkeyHandMesh->SetVisibility(false);
     MonkeyHandMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    GobbleGumComponent = CreateDefaultSubobject<UGobbleGumComponent>(TEXT("GobbleGumComponent"));
 }
 
 const float AHama::CrossHairTimer = 0.05f;
@@ -156,6 +159,7 @@ void AHama::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, CurrentlyUpgradingWeaponClass, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ReviveEndTime, Params);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, ReviveTotalDuration, Params);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHama, bIsShoppingFree, Params);
 
     Params.Condition = COND_SkipOwner;
     DOREPLIFETIME_WITH_PARAMS_FAST(AHama, MeleeCounter, Params);
@@ -1608,6 +1612,8 @@ void AHama::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
         EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Started, this, &AHama::Input_ThrowMonkeyPressed);
         EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Completed, this, &AHama::Input_ThrowMonkeyReleased);
         EnhancedInput->BindAction(IA_ThrowMonkey, ETriggerEvent::Canceled, this, &AHama::Input_ThrowMonkeyReleased);
+        
+        EnhancedInput->BindAction(IA_UseGobbleGum, ETriggerEvent::Started, this, &AHama::HandleUseGobbleGum);
     }
 }
 
@@ -3303,7 +3309,7 @@ void AHama::TriggerElectricCherry()
 
     // دەمەیجی بەرز و جێگیر + بازنەی جێگیر (دەتوانیت لە Hama.h بیانکەیتە UPROPERTY ئەگەر بتەوێت لە BP دەستکارییان بکەیت)
     const float FixedHighDamage = 1500.0f;
-    const float FixedRadius = 100.f;
+    const float FixedRadius = 150.f;
 
     const FVector ShockLocation = GetActorLocation();
 
@@ -3330,4 +3336,29 @@ void AHama::Multicast_PlayElectricCherryFX_Implementation(const FVector& ShockLo
     {
         UGameplayStatics::PlaySoundAtLocation(this, ElectricCherrySound, ShockLocation);
     }
+}
+
+void AHama::HandleUseGobbleGum()
+{
+    if (GobbleGumComponent)
+    {
+        GobbleGumComponent->TryActivateCurrentGum();
+    }
+}
+
+void AHama::SetShoppingFreeActive(bool bActive)
+{
+    if (!HasAuthority()) return;
+
+    bIsShoppingFree = bActive;
+
+    if (IsLocallyControlled())
+    {
+        OnRep_ShoppingFree();
+    }
+}
+
+void AHama::OnRep_ShoppingFree()
+{
+    // لە UI نرخی کڕینی سەر دەرگا و پێرکەکان دەگۆڕێت بۆ FREE یان $0
 }
