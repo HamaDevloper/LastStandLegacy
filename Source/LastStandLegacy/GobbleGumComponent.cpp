@@ -20,7 +20,7 @@ void UGobbleGumComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, CurrentActiveGum, PushParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, RemainingUses, PushParams);
-    DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, bHasBoughtThisRound, PushParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, PurchasesThisRound, PushParams);
 }
 
 void UGobbleGumComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -38,12 +38,12 @@ void UGobbleGumComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
-void UGobbleGumComponent::SetHasBoughtThisRound(bool bNewValue)
+void UGobbleGumComponent::IncrementPurchasesThisRound()
 {
-    if (GetOwner() && GetOwner()->HasAuthority() && bHasBoughtThisRound != bNewValue)
+    if (GetOwner() && GetOwner()->HasAuthority())
     {
-        bHasBoughtThisRound = bNewValue;
-        MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, bHasBoughtThisRound, this);
+        PurchasesThisRound++;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, PurchasesThisRound, this);
     }
 }
 
@@ -51,8 +51,12 @@ void UGobbleGumComponent::Server_OnNewRoundStarted()
 {
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 
-    // ١. کردنەوەی مافی کڕینی گۆبڵگەم بۆ خولی نوێ
-    SetHasBoughtThisRound(false);
+    // ١. سفرکردنەوەی ژمارەی کڕینەکان و گەڕاندنەوەی نرخ بۆ دۆخی ئاسایی لە خولی نوێدا
+    if (PurchasesThisRound != 0)
+    {
+        PurchasesThisRound = 0;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, PurchasesThisRound, this);
+    }
 
     // ٢. کەمکردنەوەی خول بۆ ئەو گەمانەی بەپێی Round کار دەکەن
     if (CurrentActiveGum && CurrentActiveGum->ActivationType == EGobbleGumActivationType::RoundBased)
@@ -86,7 +90,6 @@ void UGobbleGumComponent::TryActivateCurrentGum()
     UWorld* World = GetWorld();
     if (!World) return;
 
-    // ڕێگری لە ناردنی RPCـی زیادە لەسەر کڵاینت (Anti-RPC Spam)
     const float CurrentTime = World->GetTimeSeconds();
     if (LastClientRequestTime >= 0.0f && (CurrentTime - LastClientRequestTime < ActivationCooldown))
     {
@@ -167,7 +170,6 @@ void UGobbleGumComponent::Server_SetCurrentGum(UGobbleGumData* NewGum)
     MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, CurrentActiveGum, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, RemainingUses, this);
 
-    // دروستکردنی Instanceـی سەربەخۆ لە ActionLogic بۆ ئەم یاریزانە
     if (NewGum->ActionLogic)
     {
         ActiveActionInstance = DuplicateObject<UGobbleGumAction>(NewGum->ActionLogic, this);
@@ -238,7 +240,6 @@ UGobbleGumData* UGobbleGumComponent::RollNextGumFromPack()
 {
     if (EquippedGums.Num() == 0) return nullptr;
 
-    // پڕکردنەوەی دەستەکە بەبێ هیچ خانەیەکی بەتاڵ (nullptr)
     if (RemainingDeck.Num() == 0)
     {
         for (UGobbleGumData* Gum : EquippedGums)
@@ -255,7 +256,6 @@ UGobbleGumData* UGobbleGumComponent::RollNextGumFromPack()
     const int32 PickIndex = FMath::RandRange(0, RemainingDeck.Num() - 1);
     UGobbleGumData* SelectedGum = RemainingDeck[PickIndex];
 
-    // بەکارهێنانی RemoveAtSwap لەبری RemoveAt چونکە ڕیزبەندی گرنگ نییە و Shiftـی میمۆری ناکات (O(1))
     RemainingDeck.RemoveAtSwap(PickIndex);
 
     return SelectedGum;

@@ -3,6 +3,7 @@
 #include "Net/Core/PushModel/PushModel.h"
 #include "LastStandLegacyGameState.h"
 #include "Kismet/GameplayStatics.h"
+#include "Hama.h"
 
 #define LOCTEXT_NAMESPACE "PowerSwitchSystem"
 
@@ -79,7 +80,6 @@ void ABasePowerSwitch::Interact(AHama* InteractingPlayer)
     bIsSwitchedOn = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABasePowerSwitch, bIsSwitchedOn, this);
 
-    // نوێکردنەوەی دۆخی کارەبا لەسەر ئاستی سێرڤەر لەناو GameState
     if (UWorld* World = GetWorld())
     {
         if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
@@ -88,14 +88,10 @@ void ABasePowerSwitch::Interact(AHama* InteractingPlayer)
         }
     }
 
-    // بەئاگاهێنانەوەی کاتی بۆ ناردنی پاکێتی تۆڕ بە کڕایەنتەکان
     FlushNetDormancy();
     ForceNetUpdate();
-
-    // خستنەوەی دەستبەجێی ئەکتەرەکە بۆ ناو DORM_DormantAll بۆ ڕێگریکردن لە بەفیڕۆچوونی توانای سێرڤەر
     SetNetDormancy(DORM_DormantAll);
 
-    // ئەگەر Listen-Server یان Standalone بوو، ئەرکی جوڵاندنی دەسکەکە ڕاستەوخۆ جێبەجێ دەکرێت
     if (!IsRunningDedicatedServer())
     {
         OnRep_IsSwitchedOn();
@@ -126,7 +122,6 @@ void ABasePowerSwitch::OnRep_IsSwitchedOn()
             UGameplayStatics::PlaySoundAtLocation(this, PowerOnSound, GetActorLocation());
         }
 
-        // ناچالاککردنی کۆلیژنی پشکنین بۆ ئەوەی هیچ Traceێکی تر بەر ئەم سویچە نەکەوێت
         if (SwitchFrameMesh)
         {
             SwitchFrameMesh->SetCollisionResponseToAllChannels(ECR_Ignore);

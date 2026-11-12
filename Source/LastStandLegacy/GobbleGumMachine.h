@@ -67,6 +67,14 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Economy")
     int32 BaseCost = 500;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Economy", meta = (ClampMin = "1", UIMin = "1"))
+    uint8 MaxPurchasesPerRound = 3;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Economy", meta = (ClampMin = "1.0", UIMin = "1.0"))
+    float CostMultiplier = 2.0f;
+
+    bool HasPlayerReachedRoundLimit(const AHama* Player) const;
+
     UPROPERTY(EditDefaultsOnly, Category = "GobbleGum|Config")
     float InteractionDistance = 250.0f;
 

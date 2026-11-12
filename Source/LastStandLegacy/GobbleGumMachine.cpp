@@ -46,27 +46,62 @@ void AGobbleGumMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
     DOREPLIFETIME_WITH_PARAMS_FAST(AGobbleGumMachine, CurrentBuyer, Param);
 }
 
+bool AGobbleGumMachine::HasPlayerReachedRoundLimit(const AHama* Player) const
+{
+    if (!IsValid(Player)) return true;
+
+    if (const UGobbleGumComponent* GumComp = Player->GetGobbleGumComponent())
+    {
+        return GumComp->GetPurchasesThisRound() >= MaxPurchasesPerRound;
+    }
+
+    return true;
+}
+
 int32 AGobbleGumMachine::GetCurrentCost(const AHama* Player) const
 {
     if (Player && Player->IsShoppingFreeActive())
     {
         return 0;
     }
-    return BaseCost;
+
+    if (!IsValid(Player))
+    {
+        return BaseCost;
+    }
+
+    const UGobbleGumComponent* GumComp = Player->GetGobbleGumComponent();
+    if (!GumComp)
+    {
+        return BaseCost;
+    }
+
+    const uint8 Purchases = GumComp->GetPurchasesThisRound();
+    if (Purchases == 0)
+    {
+        return BaseCost;
+    }
+
+    // لێکدانی نرخ بە شێوەی BaseCost * (CostMultiplier ^ Purchases)
+    const double MultiplierFactor = FMath::Pow(static_cast<double>(CostMultiplier), static_cast<double>(Purchases));
+    const int64 ScaledCost = FMath::RoundToInt64(static_cast<double>(BaseCost) * MultiplierFactor);
+
+    // سنووردارکردن بۆ ڕێگری لە تێپەڕبوونی سنووری int32
+    return static_cast<int32>(FMath::Clamp<int64>(ScaledCost, 0, 100000000));
 }
 
 bool AGobbleGumMachine::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
-    if (!InteractingPlayer->SetCanInteract()) return false;
+
+    if (!InteractingPlayer->SetCanInteract())
+    {
+        return false;
+    }
 
     if (MachineState == EGobbleGumMachineState::Idle)
     {
-        if (UGobbleGumComponent* GumComp = InteractingPlayer->GetGobbleGumComponent())
-        {
-            return GumComp->CanBuyFromMachineThisRound();
-        }
-        return false;
+        return true;
     }
 
     if (MachineState == EGobbleGumMachineState::Dispensed)
@@ -84,9 +119,17 @@ bool AGobbleGumMachine::Client_PreInteract(AHama* InteractingPlayer)
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if (DistSq > FMath::Square(InteractionDistance)) return false;
 
-    // پشکنینی پارە تەنها کاتێک دەکرێت کە مەکینەکە لە دۆخی کڕین (Idle) بێت
     if (MachineState == EGobbleGumMachineState::Idle)
     {
+        if (HasPlayerReachedRoundLimit(InteractingPlayer))
+        {
+            if (RejectSound && InteractingPlayer->IsLocallyControlled())
+            {
+                UGameplayStatics::PlaySound2D(this, RejectSound);
+            }
+            return false;
+        }
+
         const int32 Cost = GetCurrentCost(InteractingPlayer);
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
         if (!PS || PS->GetPoints() < Cost)
@@ -109,9 +152,13 @@ void AGobbleGumMachine::Interact(AHama* InteractingPlayer)
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if (DistSq > FMath::Square(InteractionDistance)) return;
 
-    // کردار ١: کڕین لە مەکینەکە
     if (MachineState == EGobbleGumMachineState::Idle)
     {
+        if (HasPlayerReachedRoundLimit(InteractingPlayer))
+        {
+            return;
+        }
+
         const int32 Cost = GetCurrentCost(InteractingPlayer);
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
         if (PS && PS->GetPoints() >= Cost)
@@ -126,10 +173,9 @@ void AGobbleGumMachine::Interact(AHama* InteractingPlayer)
         return;
     }
 
-    // کردار ٢: وەرگرتنی تۆپەکە پاش دەرچوون
     if (MachineState == EGobbleGumMachineState::Dispensed)
     {
-        if (InteractingPlayer != CurrentBuyer.Get()) return;
+        if (InteractingPlayer != CurrentBuyer) return;
 
         UGobbleGumComponent* GumComp = InteractingPlayer->GetGobbleGumComponent();
         if (GumComp && DispensedGum)
@@ -151,18 +197,15 @@ FText AGobbleGumMachine::GetInteractMessage(AHama* InteractingPlayer)
         return FText::GetEmpty();
     }
 
-    // دۆخی ١: کڕینی گۆبڵگەم (Idle)
     if (MachineState == EGobbleGumMachineState::Idle)
     {
-
-        if (UGobbleGumComponent* GumComp = InteractingPlayer->GetGobbleGumComponent())
+        // ١. ئەگەر هەموو هەلەکانی ئەم خولەی بەکارهێنابوو، نامەی چاوەڕوانی پیشان بدە
+        if (HasPlayerReachedRoundLimit(InteractingPlayer))
         {
-            if (!GumComp->CanBuyFromMachineThisRound())
-            {
-                return LOCTEXT("GobbleGumLimitReached", "Come back next round for another GobbleGum");
-            }
+            return LOCTEXT("GobbleGumWaitNextRound", "Come back next round for another GobbleGum");
         }
 
+        // ٢. پیشاندانی نرخە نوێیەکە (کە لەگەڵ هەر کڕینێکدا بەرز بووەتەوە)
         const int32 Cost = GetCurrentCost(InteractingPlayer);
 
         if (Cost <= 0)
@@ -171,23 +214,18 @@ FText AGobbleGumMachine::GetInteractMessage(AHama* InteractingPlayer)
         }
 
         FFormatNamedArguments Args;
-        // هێشتنەوەی ژمارەکە بە ئینگلیزی (Latin Digits) لە هەموو زمانەکاندا
         Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
 
         return FText::Format(LOCTEXT("GobbleGumBuyWithCost", "Press [F] for GobbleGum [Cost: {Cost}]"), Args);
     }
 
-    // دۆخی ٢: دەرچوونی تۆپەکە و هەڵگرتنەوەی لەلایەن کڕیارەوە (Dispensed)
     if (MachineState == EGobbleGumMachineState::Dispensed)
     {
-        if (InteractingPlayer == CurrentBuyer.Get())
+        if (InteractingPlayer == CurrentBuyer)
         {
             FFormatNamedArguments Args;
-
-            // ئەگەر لەناو DataAssetـدا GumName لە جۆری FName بوو FText::FromName بەکاربهێنە، 
-            // ئەگەریش لە بنەڕەتەوە FText بوو، دەتوانیت ڕاستەوخۆ DispensedGum->GumName بنووسیت
             const FText GumText = DispensedGum
-                ? FText::FromString(DispensedGum->GumName.ToString())
+                ? DispensedGum->GumName
                 : LOCTEXT("DefaultGumName", "GobbleGum");
 
             Args.Add(TEXT("GumName"), GumText);
@@ -195,7 +233,6 @@ FText AGobbleGumMachine::GetInteractMessage(AHama* InteractingPlayer)
             return FText::Format(LOCTEXT("GobbleGumTake", "Press [F] to Take {GumName}"), Args);
         }
 
-        // بۆ یاریزانانی تر هیچ پیشان نادرێت چونکە مەکینەکە بۆ کڕیارەکە قفڵ کراوە
         return FText::GetEmpty();
     }
 
@@ -212,7 +249,7 @@ void AGobbleGumMachine::StartRolling(AHama* Buyer)
     UGobbleGumComponent* GumComp = Buyer->GetGobbleGumComponent();
     if (GumComp)
     {
-        GumComp->SetHasBoughtThisRound(true);
+        GumComp->IncrementPurchasesThisRound();
         DispensedGum = GumComp->RollNextGumFromPack();
     }
 

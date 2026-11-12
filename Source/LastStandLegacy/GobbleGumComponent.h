@@ -44,10 +44,8 @@ public:
 
     UGobbleGumData* RollNextGumFromPack();
 
-    void SetHasBoughtThisRound(bool bNewValue);
-
-    UFUNCTION(BlueprintPure, Category = "GobbleGum")
-    bool CanBuyFromMachineThisRound() const { return !bHasBoughtThisRound; }
+    void IncrementPurchasesThisRound();
+    uint8 GetPurchasesThisRound() const { return PurchasesThisRound; }
 
 protected:
     UFUNCTION(Server, Reliable)
@@ -65,6 +63,9 @@ protected:
 
     UPROPERTY(ReplicatedUsing = OnRep_RemainingUses, BlueprintReadOnly, Category = "GobbleGum|State")
     uint8 RemainingUses = 0;
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "GobbleGum|State")
+    uint8 PurchasesThisRound = 0;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Loadout")
     TArray<TObjectPtr<UGobbleGumData>> EquippedGums;
