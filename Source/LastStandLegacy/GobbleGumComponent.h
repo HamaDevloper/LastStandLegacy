@@ -8,6 +8,7 @@
 
 class UGobbleGumData;
 class ACharacter;
+class UGobbleGumAction;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCurrentGumChanged, const UGobbleGumData*, NewGum);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnUsesRemainingChanged, uint8, UsesLeft);
@@ -21,6 +22,10 @@ public:
     UGobbleGumComponent();
 
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+    void Server_OnNewRoundStarted();
+    void Server_OnActionEffectEnded(UGobbleGumAction* FinishedAction);
 
     UFUNCTION(BlueprintCallable, Category = "GobbleGum")
     void TryActivateCurrentGum();
@@ -38,6 +43,11 @@ public:
     uint8 GetRemainingUses() const { return RemainingUses; }
 
     UGobbleGumData* RollNextGumFromPack();
+
+    void SetHasBoughtThisRound(bool bNewValue);
+
+    UFUNCTION(BlueprintPure, Category = "GobbleGum")
+    bool CanBuyFromMachineThisRound() const { return !bHasBoughtThisRound; }
 
 protected:
     UFUNCTION(Server, Reliable)
@@ -59,11 +69,18 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Loadout")
     TArray<TObjectPtr<UGobbleGumData>> EquippedGums;
 
-    UPROPERTY()
+    UPROPERTY(Transient)
     TArray<TObjectPtr<UGobbleGumData>> RemainingDeck;
 
-    float LastActivationTime = 0.0f;
+    float LastClientRequestTime = -1.0f;
+    float LastServerActivationTime = -1.0f;
     const float ActivationCooldown = 0.4f;
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "GobbleGum|State")
+    bool bHasBoughtThisRound = false;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UGobbleGumAction> ActiveActionInstance = nullptr;
 
 public:
     UPROPERTY(BlueprintAssignable, Category = "GobbleGum|Events")

@@ -61,7 +61,7 @@ bool ABaseDoor::CanInteract(AHama* InteractingPlayer)
 
 bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!CanInteract(InteractingPlayer)) return false;
+    if (!InteractingPlayer || !CanInteract(InteractingPlayer) || bIsDoorOpen) return false;
 
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if (DistSq > FMath::Square(250.0f)) return false;
@@ -95,17 +95,30 @@ void ABaseDoor::Interact(AHama* InteractingPlayer)
     }
 }
 
-FString ABaseDoor::GetInteractMessage(AHama* InteractingPlayer)
+#define LOCTEXT_NAMESPACE "DoorSystem"
+
+FText ABaseDoor::GetInteractMessage(AHama* InteractingPlayer) 
 {
-    if (!IsValid(InteractingPlayer)) return FString();
+    if (!IsValid(InteractingPlayer))
+    {
+        return FText::GetEmpty();
+    }
 
     const int32 Cost = GetCurrentCost(InteractingPlayer);
-    if (Cost == 0)
+
+    if (Cost <= 0)
     {
-        return TEXT("Press F to Open Door [FREE]");
+        return LOCTEXT("DoorOpenFree", "Press [F] to Open Door [FREE]");
     }
-    return FString::Printf(TEXT("Press F to Open Door [Cost %d]"), Cost);
+
+    FFormatNamedArguments Args;
+
+    Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
+
+    return FText::Format(LOCTEXT("DoorOpenWithCost", "Press [F] to Open Door [Cost: {Cost}]"), Args);
 }
+
+#undef LOCTEXT_NAMESPACE
 
 void ABaseDoor::OpenDoor(AHama* InteractingPlayer, AHamaPlayerState* PS, int32 Cost) 
 {

@@ -57,5 +57,5 @@ void UGobbleGumAction_ShoppingFree::DeactivateAction_Implementation(ACharacter* 
 
 void UGobbleGumAction_ShoppingFree::OnDurationExpired()
 {
-    DeactivateAction(CachedCharacterOwner.Get());
+    NotifyActionFinished(CachedCharacterOwner.Get());
 }

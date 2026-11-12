@@ -47,9 +47,11 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Door|Audio")
     TObjectPtr<USoundBase> RejectSound;
 
+    int32 GetCurrentPrice(const AHama* Player = nullptr) const;
+
 public:
     virtual void Interact(AHama* HamaChar) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
     virtual bool ShouldCancelReloadOnInteract() const override { return true; }

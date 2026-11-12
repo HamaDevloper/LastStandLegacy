@@ -1,10 +1,12 @@
-#include "GrenadeAmmo.h"
+﻿#include "GrenadeAmmo.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Hama.h"
 #include "HamaPlayerState.h"
 #include "ThrowableComponent.h"
 #include "Kismet/GameplayStatics.h"
+
+#define LOCTEXT_NAMESPACE "GrenadeAmmo"
 
 AGrenadeAmmo::AGrenadeAmmo()
 {
@@ -19,7 +21,8 @@ AGrenadeAmmo::AGrenadeAmmo()
     RootComponent = CollisionComp;
     CollisionComp->SetMobility(EComponentMobility::Static);
     CollisionComp->SetCollisionProfileName(TEXT("Trigger"));
-    CollisionComp->SetGenerateOverlapEvents(true);
+    CollisionComp->SetCollisionResponseToChannel(ECC_Intract, ECR_Block);
+    CollisionComp->SetGenerateOverlapEvents(false); // پێویستمان بە Overlap نییە چونکە Trace بەکاردێت
     CollisionComp->PrimaryComponentTick.bCanEverTick = false;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
@@ -27,6 +30,16 @@ AGrenadeAmmo::AGrenadeAmmo()
     MeshComp->SetMobility(EComponentMobility::Static);
     MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     MeshComp->PrimaryComponentTick.bCanEverTick = false;
+}
+
+int32 AGrenadeAmmo::GetCurrentCost(const AHama* Player) const
+{
+    if (Player && Player->IsShoppingFreeActive())
+    {
+        return 0;
+    }
+
+    return GrenadeCost;
 }
 
 bool AGrenadeAmmo::CanInteract(AHama* InteractingPlayer)
@@ -47,18 +60,18 @@ bool AGrenadeAmmo::CanInteract(AHama* InteractingPlayer)
 
 bool AGrenadeAmmo::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!CanInteract(InteractingPlayer)) return false;
+    if (!InteractingPlayer || !CanInteract(InteractingPlayer)) return false;
 
-    UThrowableComponent* ThrowableComp = InteractingPlayer->FindComponentByClass<UThrowableComponent>();
-    if (!ThrowableComp || ThrowableComp->GetCurrentGrenadeCount() >= ThrowableComp->GetMaxGrenadeCount())
-    {
-        return false;
-    }
+    constexpr float MaxDistSq = 250.f * 250.f;
+    const float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
+    if (DistanceSq > MaxDistSq) return false;
 
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS) return false;
 
-    if (PS->GetPoints() < GrenadeCost)
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
+
+    if (PS->GetPoints() < Cost)
     {
         if (RejectSound && InteractingPlayer->IsLocallyControlled())
         {
@@ -67,40 +80,62 @@ bool AGrenadeAmmo::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
-    float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
-    if (DistanceSq > FMath::Square(250.f)) return false;
+    if (PurchaseSound && InteractingPlayer->IsLocallyControlled())
+    {
+        UGameplayStatics::PlaySound2D(this, PurchaseSound);
+    }
 
     return true;
 }
 
 void AGrenadeAmmo::Interact(AHama* InteractingPlayer)
 {
-    if (!HasAuthority() || !IsValid(InteractingPlayer)) return;
-    if (!CanInteract(InteractingPlayer)) return;
+    if (!HasAuthority() || !CanInteract(InteractingPlayer)) return;
 
-    float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
-    if (DistanceSq > FMath::Square(250.f)) return;
+    constexpr float MaxDistSq = 250.f * 250.f;
+    const float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
+    if (DistanceSq > MaxDistSq) return;
 
-    UThrowableComponent* ThrowableComp = InteractingPlayer->FindComponentByClass<UThrowableComponent>();
+    UThrowableComponent* ThrowableComp = InteractingPlayer->GetThrowableComponent();
     if (!ThrowableComp) return;
-
-    if (ThrowableComp->GetCurrentGrenadeCount() >= ThrowableComp->GetMaxGrenadeCount()) return;
 
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS) return;
 
-    if (PS->GetPoints() < GrenadeCost) return;
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
+    if (PS->GetPoints() < Cost) return;
 
-    PS->RemovePoints(GrenadeCost);
-    ThrowableComp->RefillGrenadesToMax();
-
-    if (PurchaseSound)
+    if (Cost > 0)
     {
-        UGameplayStatics::PlaySound2D(this, PurchaseSound);
+        PS->RemovePoints(Cost);
     }
+
+    ThrowableComp->RefillGrenadesToMax();
 }
 
-FString AGrenadeAmmo::GetInteractMessage(AHama* InteractingPlayer)
+FText AGrenadeAmmo::GetInteractMessage(AHama* InteractingPlayer)
 {
-    return FString::Printf(TEXT("Press F to purchase a grenade for %d points"), GrenadeCost);
+    if (!IsValid(InteractingPlayer)) return FText::GetEmpty();
+
+    if (UThrowableComponent* ThrowableComp = InteractingPlayer->GetThrowableComponent())
+    {
+        if (ThrowableComp->GetCurrentGrenadeCount() >= ThrowableComp->GetMaxGrenadeCount())
+        {
+            return FText::GetEmpty();
+        }
+    }
+
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
+
+    if (Cost <= 0)
+    {
+        return LOCTEXT("PurchaseGrenadeFree", "Press [F] to Buy Grenades [FREE]");
+    }
+
+    FFormatNamedArguments Args;
+    Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
+
+    return FText::Format(LOCTEXT("PurchaseGrenadeWithCost", "Press [F] to Buy Grenades [Cost: {Cost}]"), Args);
 }
+
+#undef LOCTEXT_NAMESPACE

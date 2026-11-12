@@ -31,6 +31,23 @@ AWallWeaponBuy::AWallWeaponBuy()
     WeaponMesh->PrimaryComponentTick.bCanEverTick = false;
 }
 
+#define LOCTEXT_NAMESPACE "WallWeaponBuy"
+
+int32 AWallWeaponBuy::GetCurrentPrice(const AHama* Player) const
+{
+    if (Player && Player->IsShoppingFreeActive())
+    {
+        return 0;
+    }
+    ABaseWeapon* OwnedWeapon = Player ? Player->GetWeaponByClass(WeaponClass) : nullptr;
+    if (OwnedWeapon)
+    {
+        const bool bIsWeaponUpgraded = (OwnedWeapon->GetClass() != WeaponClass);
+        return bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
+    }
+    return WeaponCost;
+}
+
 bool AWallWeaponBuy::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer) || !WeaponClass) return false;
@@ -52,11 +69,14 @@ bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
+    float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
+    if (DistanceSq > FMath::Square(250.f))   return false;
+
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS) return false;
 
+    int32 Cost = GetCurrentPrice(InteractingPlayer);
     ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponOrUpgradedInstance(WeaponClass);
-    int32 RequiredCost = WeaponCost;
 
     if (OwnedWeapon)
     {
@@ -64,12 +84,9 @@ bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
         {
             return false;
         }
-
-        const bool bIsWeaponUpgraded = (OwnedWeapon->GetClass() != WeaponClass);
-        RequiredCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
     }
 
-    if (PS->GetPoints() < RequiredCost)
+    if (PS->GetPoints() < Cost)
     {
         if (RejectSound && InteractingPlayer->IsLocallyControlled())
         {
@@ -78,9 +95,6 @@ bool AWallWeaponBuy::Client_PreInteract(AHama* InteractingPlayer)
 
         return false;
     }
-
-    float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
-    if(DistanceSq > FMath::Square(250.f))   return false;
 
     if (InteractingPlayer->bIsFireButtonHold && InteractingPlayer->CurrentWeapon)
     {
@@ -96,72 +110,83 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
     if (!CanInteract(InteractingPlayer)) return;
     if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass)) return;
 
-    float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
-    if (DistanceSq > FMath::Square(250.f))   return;
+    constexpr float MaxDistSq = 250.0f * 250.0f;
+    const float DistanceSq = FVector::DistSquared(InteractingPlayer->GetActorLocation(), GetActorLocation());
+    if (DistanceSq > MaxDistSq) return;
 
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS) return;
 
+    const int32 Cost = GetCurrentPrice(InteractingPlayer);
     ABaseWeapon* TargetWeaponToRefill = InteractingPlayer->GetWeaponOrUpgradedInstance(WeaponClass);
 
     if (TargetWeaponToRefill)
     {
         if (TargetWeaponToRefill->NeedsAmmo())
         {
-            const bool bIsWeaponUpgraded = (TargetWeaponToRefill->GetClass() != WeaponClass);
-            const int32 FinalAmmoCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
-
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Refilling Ammo for Weapon: %s, Cost: %d"), *TargetWeaponToRefill->GetName(), FinalAmmoCost));
-            if (PS->GetPoints() >= FinalAmmoCost)
+            if (PS->GetPoints() >= Cost)
             {
-                GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Player has enough points to refill ammo. Deducting %d points."), FinalAmmoCost));
-                PS->RemovePoints(FinalAmmoCost);
+                if (Cost > 0)
+                {
+                    PS->RemovePoints(Cost);
+                }
                 TargetWeaponToRefill->RefillAmmo();
             }
-        }
-        else
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Weapon: %s does not need ammo refill."), *TargetWeaponToRefill->GetName()));
         }
     }
     else
     {
-        if (PS->GetPoints() >= WeaponCost)
+        if (PS->GetPoints() >= Cost)
         {
-            PS->RemovePoints(WeaponCost);
-
+            if (Cost > 0)
+            {
+                PS->RemovePoints(Cost);
+            }
             InteractingPlayer->GiveWeapon(WeaponClass);
         }
     }
-
-    GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FString::Printf(TEXT("Interaction with Wall Weapon Buy completed.")));
 }
 
-FString AWallWeaponBuy::GetInteractMessage(AHama* InteractingPlayer)
+FText AWallWeaponBuy::GetInteractMessage(AHama* InteractingPlayer)
 {
-    if (!WeaponClass) return FString();
-
-    if (InteractingPlayer)
+    if (!WeaponClass || !IsValid(InteractingPlayer))
     {
-
-        if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass))
-        {
-            return TEXT("Weapon Upgrading in Pack-a-Punch...");
-        }
-
-        ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponByClass(WeaponClass);
-        if (OwnedWeapon)
-        {
-            if (!OwnedWeapon->NeedsAmmo())
-            {
-                return FString::Printf(TEXT(""));
-            }
-            const bool bIsWeaponUpgraded = (OwnedWeapon->GetClass() != WeaponClass);
-            const int32 DisplayCost = bIsWeaponUpgraded ? UpgradedAmmoCost : AmmoCost;
-
-            return FString::Printf(TEXT("Hold [F] Buy Ammo [%d Points]"), DisplayCost);
-        }
+        return FText::GetEmpty();
     }
 
-    return FString::Printf(TEXT("Hold [F] Buy Weapon [%d Points]"), WeaponCost);
+    if (InteractingPlayer->IsWeaponCurrentlyUpgrading(WeaponClass))
+    {
+        return LOCTEXT("WeaponUpgrading", "Weapon Upgrading in Pack-a-Punch...");
+    }
+
+    ABaseWeapon* OwnedWeapon = InteractingPlayer->GetWeaponOrUpgradedInstance(WeaponClass);
+    if (OwnedWeapon && !OwnedWeapon->NeedsAmmo())
+    {
+        return FText::GetEmpty();
+    }
+
+    const int32 Cost = GetCurrentPrice(InteractingPlayer);
+
+    if (OwnedWeapon)
+    {
+        if (Cost <= 0)
+        {
+            return LOCTEXT("BuyAmmoFree", "Hold [F] to Buy Ammo [FREE]");
+        }
+
+        FFormatNamedArguments Args;
+        Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
+        return FText::Format(LOCTEXT("BuyAmmoWithCost", "Hold [F] to Buy Ammo [Cost: {Cost}]"), Args);
+    }
+
+    if (Cost <= 0)
+    {
+        return LOCTEXT("BuyWeaponFree", "Hold [F] to Buy Weapon [FREE]");
+    }
+
+    FFormatNamedArguments Args;
+    Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
+    return FText::Format(LOCTEXT("BuyWeaponWithCost", "Hold [F] to Buy Weapon [Cost: {Cost}]"), Args);
 }
+
+#undef LOCTEXT_NAMESPACE

@@ -89,6 +89,9 @@ AHama::AHama(const FObjectInitializer& ObjectInitializer)
     GobbleGumComponent = CreateDefaultSubobject<UGobbleGumComponent>(TEXT("GobbleGumComponent"));
 }
 
+#define LOCTEXT_NAMESPACE "HamaInteract"
+
+
 const float AHama::CrossHairTimer = 0.05f;
 
 // -----------------------------------------------------------------------------
@@ -420,7 +423,7 @@ void AHama::OnInteractTraceCompleted(const FTraceHandle& Handle, FTraceDatum& Da
     }
     else
     {
-        OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
+        OnInteractUpdateEvent.ExecuteIfBound(FText::GetEmpty());
     }
 }
 
@@ -429,7 +432,7 @@ void AHama::ClearInteractFocus()
     if (FocusedInteractable)
     {
         FocusedInteractable = nullptr;
-        OnInteractUpdateEvent.ExecuteIfBound(TEXT(""));
+        OnInteractUpdateEvent.ExecuteIfBound(FText::GetEmpty());
     }
 }
 
@@ -2974,9 +2977,9 @@ bool AHama::CanInteract(AHama* InteractingPlayer)
     return true;
 }
 
-FString AHama::GetInteractMessage(AHama* InteractingPlayer)
+FText AHama::GetInteractMessage(AHama* InteractingPlayer)
 {
-    return FString(TEXT("Hold [F/X] To Revive"));
+    return LOCTEXT("ReviveTeammate", "Hold [F/X] To Revive");
 }
 
 void AHama::Interact(AHama* InteractingPlayer)
@@ -3282,11 +3285,6 @@ bool AHama::SetCanInteract() const
    {
        return false;
    }
-
-  /* if (IsBrawlerModeActive())
-   {
-       return false;
-   }*/
    
    return true;
 }
@@ -3362,3 +3360,5 @@ void AHama::OnRep_ShoppingFree()
 {
     // لە UI نرخی کڕینی سەر دەرگا و پێرکەکان دەگۆڕێت بۆ FREE یان $0
 }
+
+#undef LOCTEXT_NAMESPACE

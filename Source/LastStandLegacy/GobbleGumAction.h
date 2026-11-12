@@ -5,10 +5,8 @@
 #include "GobbleGumAction.generated.h"
 
 class ACharacter;
+class UGobbleGumComponent;
 
-/**
- * کلاسی بنەڕەتی بۆ تەواوی لۆژیکی کاریگەرییەکانی گۆبڵگەم
- */
 UCLASS(Abstract, Blueprintable, BlueprintType, EditInlineNew, DefaultToInstanced)
 class LASTSTANDLEGACY_API UGobbleGumAction : public UObject
 {
@@ -17,21 +15,21 @@ class LASTSTANDLEGACY_API UGobbleGumAction : public UObject
 public:
     UGobbleGumAction();
 
-    // جێبەجێکردنی لۆژیکی گەمەکە - تەنها لەسەر سێرڤەر کاردەکات
     UFUNCTION(BlueprintNativeEvent, BlueprintAuthorityOnly, Category = "GobbleGum|Logic")
     void ActivateAction(ACharacter* CharacterOwner);
     virtual void ActivateAction_Implementation(ACharacter* CharacterOwner);
 
-    // کۆتاییهێنان بە کاریگەرییەکە (بۆ ئەو گەمانەی کاتین یان خولاوخولن)
     UFUNCTION(BlueprintNativeEvent, BlueprintAuthorityOnly, Category = "GobbleGum|Logic")
     void DeactivateAction(ACharacter* CharacterOwner);
     virtual void DeactivateAction_Implementation(ACharacter* CharacterOwner);
 
-    // پشکنینی ئەوەی کە ئایا گەمەکە لە کاتی کارکردندایە یان نا
     UFUNCTION(BlueprintPure, Category = "GobbleGum|Logic")
     bool IsActionActive() const { return bIsActive; }
 
 protected:
+    // بانگ دەکرێت کاتێک کاریگەریی گەمێکی کاتی یان دەستبەجێ بەتەواوی کۆتایی دێت
+    void NotifyActionFinished(ACharacter* CharacterOwner);
+
     UPROPERTY(BlueprintReadOnly, Category = "GobbleGum|State")
     bool bIsActive = false;
 };

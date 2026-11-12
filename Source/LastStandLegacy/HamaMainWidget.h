@@ -115,7 +115,7 @@ public:
     void HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo);
 
     UFUNCTION()
-    void HandleInteractUpdate(const FString& Message);
+    void HandleInteractUpdate(const FText& Message);
 
     UFUNCTION()
     void HandleCrosshairUpdate(bool bIsAimingAtEnemy);

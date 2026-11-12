@@ -158,8 +158,15 @@ void AMysteryBox::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
     DOREPLIFETIME_WITH_PARAMS_FAST(AMysteryBox, bIsFireSaleActive, Param);
 }
 
-int32 AMysteryBox::GetCurrentPrice() const
+#define LOCTEXT_NAMESPACE "MysteryBox"
+
+int32 AMysteryBox::GetCurrentPrice(const AHama* Player) const
 {
+    if (Player && Player->IsShoppingFreeActive())
+    {
+        return 0;
+    }
+
     return bIsFireSaleActive ? FireSalePrice : MysteryBoxPrice;
 }
 
@@ -186,13 +193,18 @@ bool AMysteryBox::CanInteract(AHama* InteractingPlayer)
 
 bool AMysteryBox::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!IsValid(InteractingPlayer)) return false;
-    if (!CanInteract(InteractingPlayer)) return false;
+    if (!IsValid(InteractingPlayer) || !CanInteract(InteractingPlayer)) return false;
+
+    constexpr float MaxInteractDistSq = 250.0f * 250.0f;
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > MaxInteractDistSq) return false;
 
     if (BoxState == EMysteryBoxState::Idle)
     {
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-        if (!PS || PS->GetPoints() < GetCurrentPrice())
+        const int32 Cost = GetCurrentPrice(InteractingPlayer);
+
+        if (!PS || PS->GetPoints() < Cost)
         {
             if (RejectSound && InteractingPlayer->IsLocallyControlled())
             {
@@ -210,18 +222,31 @@ void AMysteryBox::Interact(AHama* InteractingPlayer)
 {
     if (!HasAuthority() || !IsValid(InteractingPlayer) || !CanInteract(InteractingPlayer)) return;
 
+    constexpr float MaxInteractDistSq = 250.0f * 250.0f;
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > MaxInteractDistSq) return;
+
     if (BoxState == EMysteryBoxState::Idle)
     {
-        const int32 Cost = GetCurrentPrice();
+        const int32 Cost = GetCurrentPrice(InteractingPlayer);
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
+
         if (PS && PS->GetPoints() >= Cost)
         {
-            PS->RemovePoints(Cost);
+            LastPaidPrice = Cost;
+
+            if (Cost > 0)
+            {
+                PS->RemovePoints(Cost);
+            }
+
             OpenMysteryBox(InteractingPlayer);
         }
     }
     else if (BoxState == EMysteryBoxState::WeaponOffered)
     {
+        if (InteractingPlayer != CurrentBuyer) return;
+
         if (OfferedThrowableClass)
         {
             if (UThrowableComponent* ThrowableComp = InteractingPlayer->FindComponentByClass<UThrowableComponent>())
@@ -239,19 +264,46 @@ void AMysteryBox::Interact(AHama* InteractingPlayer)
     }
 }
 
-FString AMysteryBox::GetInteractMessage(AHama* InteractingPlayer)
+FText AMysteryBox::GetInteractMessage(AHama* InteractingPlayer)
 {
-    if (BoxState == EMysteryBoxState::Idle)
+    if (!IsValid(InteractingPlayer))
     {
-        return FString::Printf(TEXT("Press F to Open MysteryBox [Cost %d]"), GetCurrentPrice());
-    }
-    else if (BoxState == EMysteryBoxState::WeaponOffered)
-    {
-        return TEXT("Press F to Take Weapon");
+        return FText::GetEmpty();
     }
 
-    return TEXT("");
+    // دۆخی ١: سندوقەکە داخراوە و دەکرێت بکرێتەوە
+    if (BoxState == EMysteryBoxState::Idle)
+    {
+        const int32 Cost = GetCurrentPrice(InteractingPlayer);
+
+        if (Cost <= 0)
+        {
+            return LOCTEXT("MysteryBoxOpenFree", "Press [F] to Open Mystery Box [FREE]");
+        }
+
+        FFormatNamedArguments Args;
+        // هێشتنەوەی ژمارەکە بە ئینگلیزی (Latin) لە هەموو زمانەکاندا
+        Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
+
+        return FText::Format(LOCTEXT("MysteryBoxOpenWithCost", "Press [F] to Open Mystery Box [Cost: {Cost}]"), Args);
+    }
+    // دۆخی ٢: چەک دەرچووە و ئامادەیە بۆ وەرگرتن
+    else if (BoxState == EMysteryBoxState::WeaponOffered)
+    {
+        // تەنها بۆ خودی کڕیارەکە دەقەکە پیشان بدە
+        if (InteractingPlayer == CurrentBuyer)
+        {
+            return LOCTEXT("MysteryBoxTakeWeapon", "Press [F] to Take Weapon");
+        }
+
+        return FText::GetEmpty();
+    }
+
+    // لە دۆخەکانی تردا (وەک سووڕانی چەکەکان یان جوڵانی سندوقەکە بۆ شوێنێکی تر)
+    return FText::GetEmpty();
 }
+
+#undef LOCTEXT_NAMESPACE
 
 void AMysteryBox::OpenMysteryBox(AHama* Player)
 {
@@ -365,14 +417,15 @@ void AMysteryBox::FinishSpin()
 
 void AMysteryBox::HandleTeddyBear()
 {
-    if (IsValid(CurrentBuyer))
+    if (IsValid(CurrentBuyer) && LastPaidPrice > 0)
     {
         if (AHamaPlayerState* PS = CurrentBuyer->GetPlayerState<AHamaPlayerState>())
         {
-            PS->AddPoints(GetCurrentPrice());
+            PS->AddPoints(LastPaidPrice);
         }
     }
 
+    LastPaidPrice = 0;
     CurrentSpinCount = 0;
     OfferedWeaponClass = nullptr;
 
@@ -458,7 +511,6 @@ void AMysteryBox::ResetToIdle()
         {
             CurrentSpawnPoint->SetOccupied(false);
         }
-
         Destroy();
         return;
     }
@@ -466,6 +518,10 @@ void AMysteryBox::ResetToIdle()
     BoxState = EMysteryBoxState::Idle;
     MARK_PROPERTY_DIRTY_FROM_NAME(AMysteryBox, BoxState, this);
     HandleBoxStateChanged();
+
+    FlushNetDormancy();
+    ForceNetUpdate();
+    SetNetDormancy(DORM_DormantAll); 
 }
 
 void AMysteryBox::SetFireSaleActive(bool bActive)

@@ -29,7 +29,6 @@ public:
     ABaseTrapMachine();
 
 protected:
-    virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -77,10 +76,11 @@ protected:
     virtual void HandleStateVisuals_Client(ETrapMachineState NewState);
 
     void SetTrapState_Server(ETrapMachineState NewState);
+    int32 GetCurrentCost(const AHama* Player) const;
 
 public:
     virtual void Interact(AHama* HamaChar) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
 };

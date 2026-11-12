@@ -30,7 +30,7 @@ public:
     // --- IInteractInterface ---
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual void Interact(AHama* Player) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
     virtual bool ShouldCancelReloadOnInteract() const override { return true; }
 
@@ -39,6 +39,7 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    int32 GetCurrentPrice(const AHama* Player = nullptr) const;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UStaticMeshComponent> MachineMesh;
@@ -59,7 +60,7 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_UpgradedWeaponClass)
     TSubclassOf<ABaseWeapon> UpgradedWeaponClass;
     
-    UPROPERTY(Replicated)
+    UPROPERTY(ReplicatedUsing = OnRep_RawWeaponClass)
     TSubclassOf<ABaseWeapon> RawWeaponClass;
 
     UPROPERTY(Replicated)
@@ -91,6 +92,9 @@ protected:
 
     UFUNCTION()
     void OnRep_UpgradedWeaponClass();
+
+    UFUNCTION()
+    void OnRep_RawWeaponClass();
 
     void UpdateVisuals();
 

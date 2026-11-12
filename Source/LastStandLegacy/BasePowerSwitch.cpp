@@ -1,9 +1,10 @@
-﻿
-#include "BasePowerSwitch.h"
+﻿#include "BasePowerSwitch.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "LastStandLegacyGameState.h"
 #include "Kismet/GameplayStatics.h"
+
+#define LOCTEXT_NAMESPACE "PowerSwitchSystem"
 
 ABasePowerSwitch::ABasePowerSwitch()
 {
@@ -30,11 +31,6 @@ ABasePowerSwitch::ABasePowerSwitch()
     SwitchLeverMesh->PrimaryComponentTick.bCanEverTick = false;
 }
 
-void ABasePowerSwitch::BeginPlay()
-{
-    Super::BeginPlay();
-}
-
 void ABasePowerSwitch::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -42,6 +38,8 @@ void ABasePowerSwitch::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     FDoRepLifetimeParams Param;
     Param.bIsPushBased = true;
     Param.Condition = COND_None;
+    Param.RepNotifyCondition = REPNOTIFY_OnChanged;
+
     DOREPLIFETIME_WITH_PARAMS_FAST(ABasePowerSwitch, bIsSwitchedOn, Param);
 }
 
@@ -55,31 +53,33 @@ bool ABasePowerSwitch::CanInteract(AHama* InteractingPlayer)
 
 bool ABasePowerSwitch::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!CanInteract(InteractingPlayer))
+    if (!InteractingPlayer || !CanInteract(InteractingPlayer))
     {
-        GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Cannot interact with the power switch at this time."));
         return false;
     }
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > FMath::Square(250.0f)) return false;
+    constexpr float MaxDistSq = 250.0f * 250.0f;
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > MaxDistSq)
+    {
+        return false;
+    }
 
     return true;
 }
 
 void ABasePowerSwitch::Interact(AHama* InteractingPlayer)
 {
-    if (!HasAuthority() || !CanInteract(InteractingPlayer)) return;
+    if (!InteractingPlayer || !HasAuthority() || !CanInteract(InteractingPlayer)) return;
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > FMath::Square(250.0f)) return;
+    constexpr float MaxDistSq = 250.0f * 250.0f;
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > MaxDistSq) return;
 
     bIsSwitchedOn = true;
     MARK_PROPERTY_DIRTY_FROM_NAME(ABasePowerSwitch, bIsSwitchedOn, this);
 
-    FlushNetDormancy();
-    ForceNetUpdate();
-
+    // نوێکردنەوەی دۆخی کارەبا لەسەر ئاستی سێرڤەر لەناو GameState
     if (UWorld* World = GetWorld())
     {
         if (ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
@@ -87,23 +87,29 @@ void ABasePowerSwitch::Interact(AHama* InteractingPlayer)
             GS->SetPowerState(true);
         }
     }
+
+    // بەئاگاهێنانەوەی کاتی بۆ ناردنی پاکێتی تۆڕ بە کڕایەنتەکان
+    FlushNetDormancy();
+    ForceNetUpdate();
+
+    // خستنەوەی دەستبەجێی ئەکتەرەکە بۆ ناو DORM_DormantAll بۆ ڕێگریکردن لە بەفیڕۆچوونی توانای سێرڤەر
+    SetNetDormancy(DORM_DormantAll);
+
+    // ئەگەر Listen-Server یان Standalone بوو، ئەرکی جوڵاندنی دەسکەکە ڕاستەوخۆ جێبەجێ دەکرێت
     if (!IsRunningDedicatedServer())
     {
         OnRep_IsSwitchedOn();
     }
-    if (GEngine)
-    {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("SERVER: Power Switch Activated Successfully!"));
-    }
 }
 
-FString ABasePowerSwitch::GetInteractMessage(AHama* InteractingPlayer)
+FText ABasePowerSwitch::GetInteractMessage(AHama* InteractingPlayer)
 {
     if (bIsSwitchedOn)
     {
-        return FString(TEXT(""));
+        return FText::GetEmpty();
     }
-    return FString(TEXT("Press [F] to Turn On Power"));
+
+    return LOCTEXT("PowerSwitchTurnOn", "Press [F] to Turn On Power");
 }
 
 void ABasePowerSwitch::OnRep_IsSwitchedOn()
@@ -120,9 +126,12 @@ void ABasePowerSwitch::OnRep_IsSwitchedOn()
             UGameplayStatics::PlaySoundAtLocation(this, PowerOnSound, GetActorLocation());
         }
 
-        if (GEngine)
+        // ناچالاککردنی کۆلیژنی پشکنین بۆ ئەوەی هیچ Traceێکی تر بەر ئەم سویچە نەکەوێت
+        if (SwitchFrameMesh)
         {
-            GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("CLIENT: Power Switch Lever Pulled! Visuals Updated."));
+            SwitchFrameMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
         }
     }
 }
+
+#undef LOCTEXT_NAMESPACE

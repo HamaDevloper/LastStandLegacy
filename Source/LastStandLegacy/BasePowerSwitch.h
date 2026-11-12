@@ -18,7 +18,6 @@ public:
 
 
 protected:
-    virtual void BeginPlay() override;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UStaticMeshComponent> SwitchFrameMesh;
@@ -34,7 +33,7 @@ protected:
 
 public:
     virtual void Interact(AHama* InteractingPlayer) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* InteractingPlayer) override;
 

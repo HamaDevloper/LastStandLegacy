@@ -58,16 +58,19 @@ protected:
     TObjectPtr<USoundBase> PowerDownSound;
 
     int32 SoloUsesLeftForQuickRevive = 3;
+    int32 GetCurrentCost(const AHama* Player) const;
+
 
 public:
     virtual void Interact(AHama* HamaChar) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
-    virtual bool Client_PreInteract(AHama* Player) override;
+    virtual bool Client_PreInteract(AHama* InteractingPlayer) override;
     virtual bool ShouldCancelReloadOnInteract() const override { return true; }
 
     FName GetPerkID() const { return PerkID; }
     int32 GetPerkCost() const { return PerkCost; }
+    bool IsPerkDepleted() const { return bIsDepleted; }
     UStaticMesh* GetBottleMesh() const { return BottleMesh; }
 
 private:

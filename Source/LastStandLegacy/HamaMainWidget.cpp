@@ -279,18 +279,25 @@ void UHamaMainWidget::HandleAmmoUpdate(int32 CurrentAmmo, int32 ReserveAmmo)
     }
 }
 
-void UHamaMainWidget::HandleInteractUpdate(const FString& Message)
+void UHamaMainWidget::HandleInteractUpdate(const FText& Message)
 {
     if (!InteractText) return;
 
     if (Message.IsEmpty())
     {
-        InteractText->SetVisibility(ESlateVisibility::Collapsed);
+        if (InteractText->GetVisibility() != ESlateVisibility::Collapsed)
+        {
+            InteractText->SetVisibility(ESlateVisibility::Collapsed);
+        }
     }
     else
     {
-        InteractText->SetText(FText::FromString(Message));
-        InteractText->SetVisibility(ESlateVisibility::HitTestInvisible);
+        InteractText->SetText(Message);
+
+        if (InteractText->GetVisibility() != ESlateVisibility::HitTestInvisible)
+        {
+            InteractText->SetVisibility(ESlateVisibility::HitTestInvisible);
+        }
     }
 }
 

@@ -17,6 +17,7 @@
 #include "Components/CapsuleComponent.h"
 #include "ZombieDirectorSubsystem.h"
 #include "ThrowablePoolSubsystem.h"
+#include "GobbleGumComponent.h"
 
 ALastStandLegacyGameMode::ALastStandLegacyGameMode()
 {
@@ -62,7 +63,7 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
             }
         }
 
-        ALastStandLegacyGameState* GS = ChekGameState();
+        ALastStandLegacyGameState* GS = CheckGameState();
 
         if (GS)
         {
@@ -78,7 +79,7 @@ void ALastStandLegacyGameMode::PostLogin(APlayerController* NewPlayer)
     }
 }
 
-ALastStandLegacyGameState* ALastStandLegacyGameMode::ChekGameState()
+ALastStandLegacyGameState* ALastStandLegacyGameMode::CheckGameState()
 {
     if (!CachedGameState && GameState)
     {
@@ -129,7 +130,7 @@ void ALastStandLegacyGameMode::StartFirstRound()
 
     ZombiesToKill = CalculateZombiesForRound(CurrentRound);
 
-    if (ALastStandLegacyGameState* GS = ChekGameState())
+    if (ALastStandLegacyGameState* GS = CheckGameState())
     {
         GS->SetCurrentRound(CurrentRound);
     }
@@ -279,7 +280,7 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
 
         CurrentRound++;
 
-        if (ALastStandLegacyGameState* GS = ChekGameState())
+        if (ALastStandLegacyGameState* GS = CheckGameState())
         {
             GS->SetCurrentRound(CurrentRound);
         }
@@ -315,6 +316,24 @@ void ALastStandLegacyGameMode::StartNextRound()
     CurrentPowerSpawn = 0;
 
     ZombiesToKill = CalculateZombiesForRound(CurrentRound);
+
+
+    if (ALastStandLegacyGameState* GS = CheckGameState())
+    {
+        for (APlayerState* PS : GS->PlayerArray)
+        {
+            if (PS)
+            {
+                if (AHama* HamaChar = Cast<AHama>(PS->GetPawn()))
+                {
+                    if (UGobbleGumComponent* GumComp = HamaChar->GetGobbleGumComponent())
+                    {
+                        GumComp->Server_OnNewRoundStarted();
+                    }
+                }
+            }
+        }
+    }
 
     if (GEngine)
     {
@@ -546,7 +565,7 @@ void ALastStandLegacyGameMode::ActivateNuke()
     }
 
     bool bDoublePoints = false;
-    if (const ALastStandLegacyGameState* GS = ChekGameState())
+    if (const ALastStandLegacyGameState* GS = CheckGameState())
     {
         bDoublePoints = GS->bIsDoublePointsActive;
     }
@@ -601,7 +620,7 @@ void ALastStandLegacyGameMode::FinishNuke()
 
 void ALastStandLegacyGameMode::CheckGameOverCondition()
 {
-    ALastStandLegacyGameState* GS = ChekGameState();
+    ALastStandLegacyGameState* GS = CheckGameState();
     if (!GS) return;
 
     bool bIsAnyPlayerAliveAndUp = false;

@@ -35,7 +35,6 @@ protected:
     void SpawnPowers(FVector SpawnLocation);
     void StartNextRound();
     void ProcessSpawning();
-    AActor* PickWeightedSpawnPoint(const UZombieDirectorSubsystem* Director);
     void MyShufflePerks(TArray<TSubclassOf<ABasePerk>>& ArrayToShuffle);
     void SpawnRandomPerks();
 
@@ -110,7 +109,7 @@ private:
     UPROPERTY()
     TObjectPtr<ALastStandLegacyGameState> CachedGameState;
 
-    ALastStandLegacyGameState* ChekGameState();
+    ALastStandLegacyGameState* CheckGameState();
     int32 CalculateZombiesForRound(int32 InRound);
     void StartFirstRound();
 

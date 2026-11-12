@@ -19,7 +19,7 @@
 
 //DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
 DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
-DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FString&);
+DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FText&);
 DECLARE_DELEGATE_OneParam(FOnCrosshairUpdateDelegate, bool);
 DECLARE_DELEGATE_OneParam(FOnPerksChangedSignature, const TArray<FName>& /*CurrentPerks*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnPersonalPowerUpAcquired, EPowerUpType);
@@ -650,7 +650,7 @@ public:
         bool bIsCurrentlyReviving = false;
 
         virtual bool CanInteract(AHama * InteractingPlayer) override;
-        virtual FString GetInteractMessage(AHama * InteractingPlayer) override;
+        virtual FText GetInteractMessage(AHama * InteractingPlayer) override;
         virtual void Interact(AHama * InteractingPlayer) override;
         virtual bool Client_PreInteract(AHama * Player) override;
 
@@ -730,7 +730,6 @@ protected:
 
 public:
     void SetShoppingFreeActive(bool bActive);
-
     bool IsShoppingFreeActive() const { return bIsShoppingFree; }
 
 protected:

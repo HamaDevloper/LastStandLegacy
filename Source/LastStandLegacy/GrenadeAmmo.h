@@ -35,9 +35,11 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GrenadeAmmo|Settings")
     int32 GrenadeCost = 500;
 
+    int32 GetCurrentCost(const AHama* Player) const;
+
 public:
     virtual void Interact(AHama* InteractingPlayer) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* InteractingPlayer) override;
 };

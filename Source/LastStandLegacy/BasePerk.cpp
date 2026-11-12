@@ -57,6 +57,15 @@ void ABasePerk::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
     DOREPLIFETIME_WITH_PARAMS_FAST(ABasePerk, bIsDepleted, PushParams);
 }
 
+int32 ABasePerk::GetCurrentCost(const AHama* Player) const
+{
+    if (Player && Player->IsShoppingFreeActive())
+    {
+        return 0;
+    }
+    return PerkCost;
+}
+
 bool ABasePerk::CanInteract(AHama* InteractingPlayer)
 {
     if (bIsDepleted) return false;
@@ -78,7 +87,10 @@ bool ABasePerk::CanInteract(AHama* InteractingPlayer)
 
 bool ABasePerk::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!CanInteract(InteractingPlayer)) return false;
+    if (!InteractingPlayer || !CanInteract(InteractingPlayer)) return false;
+
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > MaxInteractDistanceSq) return false;
 
     ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
     if (!GS) return false;
@@ -93,8 +105,9 @@ bool ABasePerk::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
+    int32 Cost = GetCurrentCost(InteractingPlayer);
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-    if (!PS || PS->GetPoints() < PerkCost)
+    if (!PS || PS->GetPoints() < Cost)
     {
         if (RejectSound && InteractingPlayer->IsLocallyControlled())
         {
@@ -102,9 +115,6 @@ bool ABasePerk::Client_PreInteract(AHama* InteractingPlayer)
         }
         return false;
     }
-
-    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > MaxInteractDistanceSq) return false;
 
     return true;
 }
@@ -123,9 +133,10 @@ void ABasePerk::Interact(AHama* InteractingPlayer)
     if (!bIsSoloQuickRevive && !GS->bIsPowerOn) return;
 
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-    if (!PS || PS->GetPoints() < PerkCost) return;
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
+    if (!PS || PS->GetPoints() < Cost) return;
 
-    PS->RemovePoints(PerkCost);
+    PS->RemovePoints(Cost);
     InteractingPlayer->Server_StartPerkDrink(this);
 
     if (bIsSoloQuickRevive)
@@ -169,25 +180,51 @@ void ABasePerk::OnRep_IsDepleted()
     }
 }
 
-FString ABasePerk::GetInteractMessage(AHama* InteractingPlayer)
+#define LOCTEXT_NAMESPACE "PerkSystem"
+
+FText ABasePerk::GetInteractMessage(AHama* InteractingPlayer)
 {
-    if (bIsDepleted) return FString("");
-
-    ALastStandLegacyGameState* GS = GetWorld()->GetGameState<ALastStandLegacyGameState>();
-    if (GS)
+    // ١. ئەگەر ئامێرەکە سووتا بێت یان یاریزان نەبێت
+    if (bIsDepleted || !IsValid(InteractingPlayer))
     {
-        const bool bIsSoloQuickRevive = (PerkID == FName("QuickRevive") && GS->bIsSoloMatch);
-        if (bIsSoloQuickRevive)
-        {
-            if (SoloUsesLeftForQuickRevive <= 0) return FString("");
-            return FString::Printf(TEXT("Press F to buy %s [Cost: %d]"), *PerkID.ToString(), PerkCost);
-        }
-
-        if (!GS->bIsPowerOn)
-        {
-            return FString(TEXT("You must turn on the power first!"));
-        }
+        return FText::GetEmpty();
     }
 
-    return FString::Printf(TEXT("Press F to buy %s [Cost: %d]"), *PerkID.ToString(), PerkCost);
+    UWorld* World = GetWorld();
+    ALastStandLegacyGameState* GS = World ? World->GetGameState<ALastStandLegacyGameState>() : nullptr;
+    if (!GS)
+    {
+        return FText::GetEmpty();
+    }
+
+    const bool bIsSoloQuickRevive = (PerkID == FName("QuickRevive") && GS->bIsSoloMatch);
+
+    // ٣. پشکنینی سۆلۆ کویک ڕیڤایڤ ئەگەر هەلی نەمابێت (زیاتر لە ٣ جار)
+    if (bIsSoloQuickRevive && SoloUsesLeftForQuickRevive <= 0)
+    {
+        return FText::GetEmpty();
+    }
+
+    // ٤. ئەگەر کارەبا نەبوو (جگە لە سۆلۆ کویک ڕیڤایڤ کە بێ کارەباش کار دەکات)
+    if (!bIsSoloQuickRevive && !GS->bIsPowerOn)
+    {
+        return LOCTEXT("PerkNeedPower", "You must turn on the power first!");
+    }
+
+    // ٥. وەرگرتنی نرخ بە لەبەرچاوگرتنی Shopping Free
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
+
+    FFormatNamedArguments Args;
+    Args.Add(TEXT("PerkName"), FText::FromName(PerkID));
+
+    if (Cost <= 0)
+    {
+        return FText::Format(LOCTEXT("PerkBuyFree", "Press [F] to buy {PerkName} [FREE]"), Args);
+    }
+
+    Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
+
+    return FText::Format(LOCTEXT("PerkBuyWithCost", "Press [F] to buy {PerkName} [Cost: {Cost}]"), Args);
 }
+
+#undef LOCTEXT_NAMESPACE

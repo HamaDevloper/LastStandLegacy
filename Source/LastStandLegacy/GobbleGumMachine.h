@@ -34,7 +34,7 @@ public:
 
     // جێبەجێکردنی ٤ فەنکشنەکەی IInteractInterface
     virtual void Interact(AHama* HamaChar) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
 
@@ -91,8 +91,8 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_DispensedGum, BlueprintReadOnly, Category = "GobbleGum|State")
     TObjectPtr<UGobbleGumData> DispensedGum = nullptr;
 
-    UPROPERTY()
-    TWeakObjectPtr<AHama> CurrentBuyer = nullptr;
+    UPROPERTY(Replicated)
+    TObjectPtr<AHama> CurrentBuyer = nullptr;
 
     FTimerHandle TimerHandle_Roll;
     FTimerHandle TimerHandle_Timeout;

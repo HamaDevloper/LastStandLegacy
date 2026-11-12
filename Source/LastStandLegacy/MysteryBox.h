@@ -45,7 +45,7 @@ public:
 
     // IInteractInterface Implementation
     virtual void Interact(AHama* Player) override;
-    virtual FString GetInteractMessage(AHama* InteractingPlayer) override;
+    virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
 
@@ -53,6 +53,7 @@ protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    int32 GetCurrentPrice(const AHama* Player = nullptr) const;
 
     UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|Settings")
     int32 MysteryBoxPrice = 950;
@@ -70,6 +71,8 @@ protected:
     bool bIsFireSaleActive = false;
 
     bool bIsTemporaryFireSaleBox = false;
+
+    int32 LastPaidPrice = 0;
 
     UPROPERTY(EditDefaultsOnly, Category = "MysteryBox|TeddyBear")
     TObjectPtr<UStaticMesh> TeddyBearMesh;

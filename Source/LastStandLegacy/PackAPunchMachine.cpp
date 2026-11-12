@@ -73,6 +73,18 @@ void APackAPunchMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 // Interaction Interface & Network RPC
 // -----------------------------------------------------------------------------
 
+#define LOCTEXT_NAMESPACE "MysteryBox"
+
+int32 APackAPunchMachine::GetCurrentPrice(const AHama* Player) const
+{
+    if (Player && Player->IsShoppingFreeActive())
+    {
+        return 0;
+    }
+
+    return UpgradeCost;
+}
+
 bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
 {
     if (!IsValid(InteractingPlayer)) return false;
@@ -98,13 +110,18 @@ bool APackAPunchMachine::CanInteract(AHama* InteractingPlayer)
 
 bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if (!IsValid(InteractingPlayer)) return false;
-    if (!CanInteract(InteractingPlayer))  return false;
+    if (!IsValid(InteractingPlayer) || !CanInteract(InteractingPlayer)) return false;
+
+    constexpr float MaxInteractDistSq = 250.0f * 250.0f;
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > MaxInteractDistSq) return false; 
 
     if (MachineState == EPaPState::Idle)
     {
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-        if (!PS || PS->GetPoints() < UpgradeCost)
+        const int32 Cost = GetCurrentPrice(InteractingPlayer); 
+
+        if (!PS || PS->GetPoints() < Cost)
         {
             if (RejectSound && InteractingPlayer->IsLocallyControlled())
             {
@@ -125,9 +142,6 @@ bool APackAPunchMachine::Client_PreInteract(AHama* InteractingPlayer)
         }
     }
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > FMath::Square(250.0f)) return false;
-
     return true;
 }
 
@@ -136,18 +150,19 @@ void APackAPunchMachine::Interact(AHama* InteractingPlayer)
     if (!HasAuthority() || !IsValid(InteractingPlayer)) return;
     if (!CanInteract(InteractingPlayer)) return;
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > FMath::Square(250.0f)) return;
+    constexpr float MaxInteractDistSq = 250.0f * 250.0f;
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > MaxInteractDistSq) return;
 
     if (MachineState == EPaPState::Idle)
     {
+        int32 Cost = GetCurrentPrice(InteractingPlayer);
         AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-        if (!PS || PS->GetPoints() < UpgradeCost)
+        if (!PS || PS->GetPoints() < Cost)
         {
             return;
         }
     }
-
 
     if (HasAuthority())
     {
@@ -156,20 +171,47 @@ void APackAPunchMachine::Interact(AHama* InteractingPlayer)
 }
 
 
-FString APackAPunchMachine::GetInteractMessage(AHama* InteractingPlayer)
+FText APackAPunchMachine::GetInteractMessage(AHama* InteractingPlayer)
 {
+    if (!IsValid(InteractingPlayer)) return FText::GetEmpty();
+
     switch (MachineState)
     {
     case EPaPState::Idle:
-        return FString::Printf(TEXT("Hold [F] Pack-A-Punch Weapon [%d Points]"), UpgradeCost);
+    {
+        ABaseWeapon* Weapon = InteractingPlayer->GetCurrentWeapon();
+        if (!Weapon || !Weapon->GetUpgradedWeaponClass())
+        {
+            return LOCTEXT("Interact_CannotUpgrade", "Weapon Cannot Be Pack-A-Punched");
+        }
+
+        const int32 Cost = GetCurrentPrice(InteractingPlayer);
+        if (Cost <= 0)
+        {
+            return LOCTEXT("Interact_PaPFree", "Hold [F] to Pack-A-Punch Weapon [FREE]");
+        }
+
+        FFormatNamedArguments Args;
+        Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
+        return FText::Format(LOCTEXT("InteractMessage_Idle", "Hold [F] to Pack-A-Punch Weapon [Cost: {Cost}]"), Args);
+    }
+
     case EPaPState::Upgrading:
-        return TEXT("");
+        return LOCTEXT("InteractMessage_Upgrading", "Upgrading Weapon...");
+
     case EPaPState::ReadyForPickup:
-        return TEXT("Hold [F] Take Upgraded Weapon");
+        if (InteractingPlayer == CurrentOwnerPlayer)
+        {
+            return LOCTEXT("InteractMessage_ReadyForPickup", "Hold [F] to Take Upgraded Weapon");
+        }
+        return FText::GetEmpty(); // بۆ کەسانی تر هیچ دەرنەکەوێت
+
     default:
-        return TEXT("");
+        return FText::GetEmpty(); 
     }
 }
+
+#undef LOCTEXT_NAMESPACE
 
 // -----------------------------------------------------------------------------
 // Server Logic
@@ -192,15 +234,19 @@ void APackAPunchMachine::ExecuteServerInteraction(AHama* InteractingPlayer)
 
 void APackAPunchMachine::StartUpgradeProcess(AHama* InteractingPlayer)
 {
+    const int32 Cost = GetCurrentPrice(InteractingPlayer);
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     ABaseWeapon* CurrentWeapon = InteractingPlayer->GetCurrentWeapon();
 
-    if (!PS || PS->GetPoints() < UpgradeCost || !CurrentWeapon) return;
+    if (!PS || PS->GetPoints() < Cost || !CurrentWeapon) return;
 
     TSubclassOf<ABaseWeapon> NextClass = CurrentWeapon->GetUpgradedWeaponClass();
     if (!NextClass) return;
 
-    PS->RemovePoints(UpgradeCost);
+    if (Cost > 0)
+    {
+        PS->RemovePoints(Cost);
+    }
 
     CurrentOwnerPlayer = InteractingPlayer;
     RawWeaponClass = CurrentWeapon->GetClass();
@@ -210,13 +256,13 @@ void APackAPunchMachine::StartUpgradeProcess(AHama* InteractingPlayer)
     InteractingPlayer->SetCurrentlyUpgradingWeaponClass(CurrentWeapon->GetClass());
     InteractingPlayer->RemoveCurrentWeapon();
 
-    FlushNetDormancy();
-    ForceNetUpdate();
-
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, CurrentOwnerPlayer, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, RawWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, UpgradedWeaponClass, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
+
+    FlushNetDormancy();
+    ForceNetUpdate();
 
     OnRep_PapMachineState();
 
@@ -293,6 +339,7 @@ void APackAPunchMachine::ResetMachineState()
 
     FlushNetDormancy();
     ForceNetUpdate();
+    SetNetDormancy(DORM_DormantAll);
 
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, MachineState, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(APackAPunchMachine, CurrentOwnerPlayer, this);
@@ -313,6 +360,11 @@ void APackAPunchMachine::OnRep_PapMachineState()
 }
 
 void APackAPunchMachine::OnRep_UpgradedWeaponClass()
+{
+    UpdateVisuals();
+}
+
+void APackAPunchMachine::OnRep_RawWeaponClass()
 {
     UpdateVisuals();
 }
@@ -349,3 +401,5 @@ void APackAPunchMachine::UpdateVisuals()
         break;
     }
 }
+
+#undef LOCTEXT_NAMESPACE

@@ -37,11 +37,6 @@ ABaseTrapMachine::ABaseTrapMachine()
     CooldownDuration = 30.0f;
 }
 
-void ABaseTrapMachine::BeginPlay()
-{
-    Super::BeginPlay();
-}
-
 void ABaseTrapMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -50,6 +45,16 @@ void ABaseTrapMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     SharedParams.bIsPushBased = true;
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseTrapMachine, TrapState, SharedParams);
 }
+
+int32 ABaseTrapMachine::GetCurrentCost(const AHama* Player) const
+{
+    if (Player && Player->IsShoppingFreeActive())
+    {
+        return 0;
+    }
+    return ActivationCost;
+}
+
 
 bool ABaseTrapMachine::CanInteract(AHama* InteractingPlayer)
 {
@@ -65,9 +70,13 @@ bool ABaseTrapMachine::Client_PreInteract(AHama* InteractingPlayer)
         return false;
     }
 
+    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f))  return false;
+
+    int32 Cost = GetCurrentCost(InteractingPlayer);
     if (AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>())
     {
-        if (PS->GetPoints() < ActivationCost)
+        if (PS->GetPoints() < Cost)
         {
             if (RejectSound && InteractingPlayer->IsLocallyControlled())
             {
@@ -76,16 +85,13 @@ bool ABaseTrapMachine::Client_PreInteract(AHama* InteractingPlayer)
             return false;
         }
     }
-
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > FMath::Square(250.0f))  return false;
  
     return true;
 }
 
 void ABaseTrapMachine::Interact(AHama* InteractingPlayer)
 {
-    if (!HasAuthority() || !CanInteract(InteractingPlayer))
+    if (!InteractingPlayer || !HasAuthority() || !CanInteract(InteractingPlayer))
     {
         return;
     }
@@ -93,8 +99,9 @@ void ABaseTrapMachine::Interact(AHama* InteractingPlayer)
     float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if(DistSq > FMath::Square(250.0f))  return;
 
+    int32 Cost = GetCurrentCost(InteractingPlayer);
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-    if (PS && PS->GetPoints() < ActivationCost) return;
+    if (PS && PS->GetPoints() < Cost) return;
 
     ActivateTrap_Server();
 }
@@ -120,20 +127,40 @@ void ABaseTrapMachine::SetTrapState_Server(ETrapMachineState NewState)
     OnRep_TrapState();
 }
 
-FString ABaseTrapMachine::GetInteractMessage(AHama* InteractingPlayer)
+#define LOCTEXT_NAMESPACE "TrapMachine"
+
+FText ABaseTrapMachine::GetInteractMessage(AHama* InteractingPlayer)
 {
     switch (TrapState)
     {
     case ETrapMachineState::Ready:
-        return FString::Printf(TEXT("Hold [F] to activate trap [Cost: %d]"), ActivationCost);
+    {
+        const bool bIsFree = (InteractingPlayer && InteractingPlayer->IsShoppingFreeActive());
+        const int32 Cost = bIsFree ? 0 : ActivationCost;
+
+        if (Cost <= 0)
+        {
+            return LOCTEXT("ActivateTrapFree", "Hold [F] to activate trap [FREE]");
+        }
+
+        FFormatNamedArguments Args;
+        Args.Add(TEXT("Cost"), FText::FromString(FString::FromInt(Cost)));
+
+        return FText::Format(LOCTEXT("ActivateTrap", "Hold [F] to activate trap [Cost: {Cost}]"), Args);
+    }
+
     case ETrapMachineState::Active:
-        return TEXT("Trap is currently active...");
+        return LOCTEXT("ActiveTrap", "Trap is currently active...");
+
     case ETrapMachineState::CoolDown:
-        return TEXT("Trap is cooling down...");
+        return LOCTEXT("CoolDownTrap", "Trap is cooling down...");
+
     default:
-        return TEXT("");
+        return LOCTEXT("DefaultTrap", "Unknown trap state...");
     }
 }
+
+#undef LOCTEXT_NAMESPACE
 
 void ABaseTrapMachine::ActivateTrap_Server()
 {
