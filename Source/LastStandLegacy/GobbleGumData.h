@@ -41,6 +41,12 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mechanics", meta = (ClampMin = "1", UIMin = "1"))
     uint8 MaxUses = 1;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mechanics", meta = (ClampMin = "1", UIMin = "1", EditCondition = "bOverrideUsesInSolo", EditConditionHides))
+    uint8 SoloMaxUses = 2;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mechanics")
+    bool bOverrideUsesInSolo = false;
+
     // ئەگەر جۆرەکەی RoundBased بێت، چەند خول کار دەکات
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mechanics", meta = (EditCondition = "ActivationType == EGobbleGumActivationType::RoundBased", EditConditionHides))
     uint8 DurationRounds = 3;

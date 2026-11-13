@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "GobbleGumData.h"
 #include "GobbleGumAction.h"
+#include "LastStandLegacyGameState.h"
 
 UGobbleGumComponent::UGobbleGumComponent()
 {
@@ -164,7 +165,23 @@ void UGobbleGumComponent::Server_SetCurrentGum(UGobbleGumData* NewGum)
     }
     else
     {
-        RemainingUses = NewGum->MaxUses;
+        uint8 FinalUses = NewGum->MaxUses;
+
+        if (NewGum->bOverrideUsesInSolo)
+        {
+            if (const UWorld* World = GetWorld())
+            {
+                if (const ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+                {
+                    if (GS->bIsSoloMatch)
+                    {
+                        FinalUses = NewGum->SoloMaxUses;
+                    }
+                }
+            }
+        }
+
+        RemainingUses = FMath::Max<uint8>(1, FinalUses);
     }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, CurrentActiveGum, this);
