@@ -324,6 +324,7 @@ void UZombieDirectorSubsystem::ExecuteElectricCherryBlast(AActor* InstigatorPawn
 
 void UZombieDirectorSubsystem::Tick(float DeltaTime)
 {
+    return;
     Super::Tick(DeltaTime);
 
     UWorld* World = GetWorld();

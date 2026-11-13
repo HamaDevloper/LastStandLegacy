@@ -1,19 +1,19 @@
-#include "GobbleGumAction_BonusPoints.h"
+#include "GobbleGumAction_SpawnPowerUp.h"
 #include "GameFramework/Character.h"
 #include "BasePowerUp.h"
 
-UGobbleGumAction_BonusPoints::UGobbleGumAction_BonusPoints()
+UGobbleGumAction_SpawnPowerUp::UGobbleGumAction_SpawnPowerUp()
 {
 }
 
-void UGobbleGumAction_BonusPoints::ActivateAction_Implementation(ACharacter* CharacterOwner)
+void UGobbleGumAction_SpawnPowerUp::ActivateAction_Implementation(ACharacter* CharacterOwner)
 {
     if (!CharacterOwner || !CharacterOwner->HasAuthority()) return;
 
     Super::ActivateAction_Implementation(CharacterOwner);
 
     UWorld* World = CharacterOwner->GetWorld();
-    if (!World || !PointsClass)
+    if (!World || !PowerUpClass)
     {
         NotifyActionFinished(CharacterOwner);
         return;
@@ -37,7 +37,7 @@ void UGobbleGumAction_BonusPoints::ActivateAction_Implementation(ACharacter* Cha
     FActorSpawnParameters SpawnParams;
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-    World->SpawnActor<ABasePowerUp>(PointsClass, SpawnLocation, FRotator::ZeroRotator, SpawnParams);
+    World->SpawnActor<ABasePowerUp>(PowerUpClass, SpawnLocation, FRotator::ZeroRotator, SpawnParams);
 
     NotifyActionFinished(CharacterOwner);
 }

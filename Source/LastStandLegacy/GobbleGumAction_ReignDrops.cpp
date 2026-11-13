@@ -52,9 +52,8 @@ void UGobbleGumAction_ReignDrops::ActivateAction_Implementation(ACharacter* Char
     {
         const float CurrentAngle = StartAngle + (static_cast<float>(i) * AngleStep);
         const FVector SpawnDir = ForwardDir.RotateAngleAxis(CurrentAngle, FVector::UpVector);
-        FVector TargetLocation = StartLocation + (SpawnDir * SpawnRadius);
+        FVector TargetLocation = StartLocation + (SpawnDir * SpawnDistance);
 
-        // پشکنینی دیوار بۆ هەر دانەیەک بە جیا تا هیچیان نەکەوێتە دیوی ئەودیوی دیوارەکە
         FHitResult HitResult;
         if (World->LineTraceSingleByChannel(HitResult, StartLocation, TargetLocation, ECC_Visibility, QueryParams))
         {

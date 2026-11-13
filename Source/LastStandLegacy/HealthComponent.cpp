@@ -269,6 +269,24 @@ void UHealthComponent::RegenerateHealth()
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 }
 
+void UHealthComponent::SetMaxHealth(float NewMaxHealth, bool bUpdateCurrentHealth)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    const float ClampedMax = FMath::Max(1.0f, NewMaxHealth);
+    if (!FMath::IsNearlyEqual(MaxHealth, ClampedMax))
+    {
+        MaxHealth = ClampedMax;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
+    }
+
+    if (bUpdateCurrentHealth && !bIsDowned)
+    {
+        CurrentHealth = MaxHealth;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
+    }
+}
+
 void UHealthComponent::DownPlayer()
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || bIsDowned || (OwnerCharacter && OwnerCharacter->bIsDead)) return;
@@ -288,9 +306,8 @@ void UHealthComponent::DownPlayer()
 
     SetBeingRevived(false, nullptr, 0.0f, true);
 
-    MaxHealth = 100.0f;
+    // تەنها CurrentHealth دەبێتە 0، دەستکاریی MaxHealth ناکەین
     CurrentHealth = 0.0f;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, MaxHealth, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 
     // =========================================================================
@@ -312,7 +329,7 @@ void UHealthComponent::DownPlayer()
     }
 
     // =========================================================================
-    // هەنگاوی دووەم: کاتێک دەست دەکەوێتە سەر زەوی، هەموو پێرکەکان یەکسەر دەسڕێنەوە
+    // هەنگاوی دووەم: کاتێک یاریزان دەکەوێتە سەر زەوی
     // =========================================================================
     if (OwnerCharacter)
     {
@@ -352,7 +369,7 @@ void UHealthComponent::DownPlayer()
             }
         }
 
-        // دۆخی Multiplayer: یاریزانەکە ڕادەکشێت تا هاوڕێکەی دێت یان دەمرێت
+        // دۆخی Multiplayer
         BleedOutEndTime = GetServerTime() + DeathTime;
         PausedBleedOutRemaining = 0.0f;
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
@@ -399,13 +416,13 @@ void UHealthComponent::Revive()
         OwnerComponent->SetDowned(false);
     }
 
-    CurrentHealth = MaxHealth;
-    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
-
     if (OwnerCharacter)
     {
         OwnerCharacter->OnPlayerRevived();
     }
+
+    CurrentHealth = MaxHealth;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 
     if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
     {

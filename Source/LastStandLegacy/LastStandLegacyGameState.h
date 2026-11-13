@@ -55,6 +55,8 @@ public:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "GameState|Match")
     bool bIsSoloMatch = false;
 
+    int32 ActivePowerVacuumCount = 0;
+
     void SetPowerState(bool bState);
     bool IsPowerOn() const { return bIsPowerOn; }
 

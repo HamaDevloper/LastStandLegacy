@@ -180,7 +180,7 @@ void AGobbleGumMachine::Interact(AHama* InteractingPlayer)
         UGobbleGumComponent* GumComp = InteractingPlayer->GetGobbleGumComponent();
         if (GumComp && DispensedGum)
         {
-            GumComp->Server_SetCurrentGum(DispensedGum);
+            GumComp->Server_StartEatingGum(DispensedGum);
         }
 
         GetWorldTimerManager().ClearTimer(TimerHandle_Timeout);

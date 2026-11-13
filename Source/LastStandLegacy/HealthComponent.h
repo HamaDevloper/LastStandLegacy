@@ -32,6 +32,7 @@ public:
     void DownPlayer();
     void Revive();
     void HandlePlayerDeath();
+    void SetMaxHealth(float NewMaxHealth, bool bUpdateCurrentHealth = false);
 
     void SetBeingRevived(bool bState, AHama* InReviver = nullptr, float InFullReviveDuration = 0.0f, bool bForceResetProgress = false);
 

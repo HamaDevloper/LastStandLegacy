@@ -2240,7 +2240,12 @@ void AHama::OnPlayerDowned()
         }
     }
 
-    if(CurrentWeapon)
+    if (GobbleGumComponent)
+    {
+        GobbleGumComponent->Server_CancelEatingGum();
+    }
+
+    if (CurrentWeapon)
     {
         CurrentWeapon->StopFire();
         if (CurrentWeapon->IsReloading())
@@ -2258,37 +2263,45 @@ void AHama::OnPlayerDowned()
         PerkBottleMesh->SetStaticMesh(nullptr);
     }
 
-    if (HamaComponent)
+    // =========================================================================
+    // پشکنینی گۆبڵگەمی PerkSaver
+    // =========================================================================
+    const bool bPreservePerks = (GobbleGumComponent && GobbleGumComponent->ShouldPreservePerksOnDown());
+
+    if (bPreservePerks)
     {
-        HamaComponent->ResetStamina();
+        if (UWorld* World = GetWorld())
+        {
+            if (const ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+            {
+                if (GS->bIsSoloMatch)
+                {
+                    OwnedPerks.Remove(FName("QuickRevive"));
+                }
+            }
+        }
+    }
+    else
+    {
+        if (HamaComponent)
+        {
+            HamaComponent->ResetStamina();
+        }
+
+        if (HealthComponent)
+        {
+            HealthComponent->SetMaxHealth(100.0f, false);
+        }
+
+        OwnedPerks.Empty();
     }
 
-    OwnedPerks.Empty();
     MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
 
     if (IsLocallyControlled())
     {
         OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
     }
-
-    // Bo Srenawai Chaki seyam Agar Pewest Bu
-    /*if (IsValid(ThirdWeapon))
-    {
-        if (CurrentWeapon == ThirdWeapon)
-        {
-            CurrentWeapon = PrimaryWeapon ? PrimaryWeapon : SecondaryWeapon;
-        }
-        if (PreDeathMachineWeapon == ThirdWeapon)
-        {
-            PreDeathMachineWeapon = PrimaryWeapon ? PrimaryWeapon : SecondaryWeapon;
-            MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PreDeathMachineWeapon, this);
-        }
-
-        ThirdWeapon->StopFire();
-        ThirdWeapon->Destroy();
-        ThirdWeapon = nullptr;
-        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, ThirdWeapon, this);
-    }*/
 
     ForceNetUpdate();
 }
@@ -2330,14 +2343,6 @@ void AHama::OnPlayerRevived()
         }
     }
 
-    OwnedPerks.Empty();
-    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
-
-    if (IsLocallyControlled())
-    {
-        OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
-    }
-
     ForceNetUpdate();
 }
 
@@ -2347,6 +2352,9 @@ void AHama::HandleDeath()
 
     GetWorldTimerManager().ClearTimer(PerkDrinkTimerHandle);
     PendingPerkID = NAME_None;
+
+    OwnedPerks.Empty();
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
 
     if (PerkBottleMesh)
     {
@@ -3285,6 +3293,11 @@ bool AHama::SetCanInteract() const
    {
        return false;
    }
+
+   if (GobbleGumComponent && GobbleGumComponent->IsEatingGum())
+   {
+       return false;
+   }
    
    return true;
 }
@@ -3305,7 +3318,6 @@ void AHama::TriggerElectricCherry()
     if (CurrentTime - LastElectricCherryTime < ElectricCherryCooldown) return;
     LastElectricCherryTime = CurrentTime;
 
-    // دەمەیجی بەرز و جێگیر + بازنەی جێگیر (دەتوانیت لە Hama.h بیانکەیتە UPROPERTY ئەگەر بتەوێت لە BP دەستکارییان بکەیت)
     const float FixedHighDamage = 1500.0f;
     const float FixedRadius = 150.f;
 

@@ -95,6 +95,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|PowerUp")
     float PowerUpCooldownTime = 10.0f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PowerUps|SupplyRush", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+    float SupplyRushDropChance = 25.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PowerUps|SupplyRush", meta = (ClampMin = "0.0"))
+    float SupplyRushCooldownTime = 5.f;
+
     float CurrentPowerSpawnTime = -9999.0f;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LastStandLegacyGameMode|Abilities")

@@ -5,6 +5,10 @@
 #include "GobbleGumData.h"
 #include "GobbleGumAction.h"
 #include "LastStandLegacyGameState.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Kismet/GameplayStatics.h"
+#include "TimerManager.h"
 
 UGobbleGumComponent::UGobbleGumComponent()
 {
@@ -22,6 +26,7 @@ void UGobbleGumComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, CurrentActiveGum, PushParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, RemainingUses, PushParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, PurchasesThisRound, PushParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, bIsEatingGum, PushParams);
 }
 
 void UGobbleGumComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -34,6 +39,11 @@ void UGobbleGumComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
             ActiveActionInstance->DeactivateAction(Cast<ACharacter>(GetOwner()));
         }
         ActiveActionInstance = nullptr;
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TimerHandle_EatGum);
     }
 
     Super::EndPlay(EndPlayReason);
@@ -276,6 +286,119 @@ UGobbleGumData* UGobbleGumComponent::RollNextGumFromPack()
     RemainingDeck.RemoveAtSwap(PickIndex);
 
     return SelectedGum;
+}
+
+void UGobbleGumComponent::Server_StartEatingGum(UGobbleGumData* GumToEat)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !GumToEat) return;
+
+    // ڕێگری لەوەی یاریزان لە هەمان کاتدا دوو گەم بخوات
+    if (bIsEatingGum) return;
+
+    PendingGumToEat = GumToEat;
+    bIsEatingGum = true;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, bIsEatingGum, this);
+
+    if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+    {
+        if (OwnerChar->IsLocallyControlled())
+        {
+            OnRep_IsEatingGum();
+        }
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TimerHandle_EatGum);
+        World->GetTimerManager().SetTimer(
+            TimerHandle_EatGum,
+            this,
+            &UGobbleGumComponent::Server_FinishEatingGum,
+            EatDuration,
+            false
+        );
+    }
+}
+
+void UGobbleGumComponent::Server_FinishEatingGum()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    bIsEatingGum = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, bIsEatingGum, this);
+
+    if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+    {
+        if (OwnerChar->IsLocallyControlled())
+        {
+            OnRep_IsEatingGum();
+        }
+    }
+
+    UGobbleGumData* EatenGum = PendingGumToEat;
+    PendingGumToEat = nullptr;
+
+    if (EatenGum)
+    {
+        Server_SetCurrentGum(EatenGum);
+    }
+}
+
+void UGobbleGumComponent::Server_CancelEatingGum()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !bIsEatingGum) return;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TimerHandle_EatGum);
+    }
+
+    PendingGumToEat = nullptr;
+    bIsEatingGum = false;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, bIsEatingGum, this);
+
+    if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+    {
+        if (OwnerChar->IsLocallyControlled())
+        {
+            OnRep_IsEatingGum();
+        }
+    }
+}
+
+void UGobbleGumComponent::OnRep_IsEatingGum()
+{
+    ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
+    if (!OwnerChar) return;
+
+    USkeletalMeshComponent* CharMesh = OwnerChar->GetMesh();
+    UAnimInstance* AnimInst = CharMesh ? CharMesh->GetAnimInstance() : nullptr;
+
+    if (bIsEatingGum)
+    {
+        if (AnimInst && EatGumMontage)
+        {
+            AnimInst->Montage_Play(EatGumMontage);
+        }
+
+        if (EatGumSound)
+        {
+            UGameplayStatics::PlaySoundAtLocation(this, EatGumSound, OwnerChar->GetActorLocation());
+        }
+    }
+    else
+    {
+        if (AnimInst && EatGumMontage && AnimInst->Montage_IsPlaying(EatGumMontage))
+        {
+            AnimInst->Montage_Stop(0.15f, EatGumMontage);
+        }
+    }
+}
+
+void UGobbleGumComponent::ModifyPreservePerksCount(int32 Delta)
+{
+    const int32 NewValue = FMath::Max(0, static_cast<int32>(PreservePerksCount) + Delta);
+    PreservePerksCount = static_cast<uint8>(NewValue);
 }
 
 void UGobbleGumComponent::OnRep_CurrentActiveGum()

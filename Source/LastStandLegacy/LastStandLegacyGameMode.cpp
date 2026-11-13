@@ -257,19 +257,30 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
             FString::Printf(TEXT("Zombies Remaining: %d"), ZombiesRemaining));
     }
 
-    if (KillerController != nullptr && CurrentPowerSpawn < MaxPowerSpawn && IsValid(DeadZombie))
+    ALastStandLegacyGameState* GS = CheckGameState();
+
+    if (KillerController != nullptr && IsValid(DeadZombie))
     {
-        float CurrentTime = GetWorld()->GetTimeSeconds();
-        float CalculateTime = CurrentTime - CurrentPowerSpawnTime;
+        UWorld* World = GetWorld();
+        const bool bIsSupplyRushActive = (GS && GS->ActivePowerVacuumCount > 0);
 
-        if (CalculateTime >= PowerUpCooldownTime)
+        if (bIsSupplyRushActive || CurrentPowerSpawn < MaxPowerSpawn)
         {
-            float RandomChance = FMath::RandRange(0.0f, 100.0f);
+            const float EffectiveCooldown = bIsSupplyRushActive ? SupplyRushCooldownTime : PowerUpCooldownTime;
+            const float EffectiveDropChance = bIsSupplyRushActive ? SupplyRushDropChance : PowerUpDropChance;
 
-            if (RandomChance <= PowerUpDropChance)
+            const float CurrentTime = World->GetTimeSeconds();
+            const float CalculateTime = CurrentTime - CurrentPowerSpawnTime;
+
+            if (CalculateTime >= EffectiveCooldown)
             {
-                SpawnPowers(DeadZombie->GetActorLocation());
-                CurrentPowerSpawnTime = CurrentTime;
+                const float RandomChance = FMath::RandRange(0.0f, 100.0f);
+
+                if (RandomChance <= EffectiveDropChance)
+                {
+                    SpawnPowers(DeadZombie->GetActorLocation());
+                    CurrentPowerSpawnTime = CurrentTime;
+                }
             }
         }
     }
@@ -280,7 +291,7 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
 
         CurrentRound++;
 
-        if (ALastStandLegacyGameState* GS = CheckGameState())
+        if (GS)
         {
             GS->SetCurrentRound(CurrentRound);
         }

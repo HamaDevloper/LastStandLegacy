@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -9,6 +9,8 @@
 class UGobbleGumData;
 class ACharacter;
 class UGobbleGumAction;
+class UAnimMontage;
+class USoundBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCurrentGumChanged, const UGobbleGumData*, NewGum);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnUsesRemainingChanged, uint8, UsesLeft);
@@ -89,4 +91,46 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "GobbleGum|Events")
     FOnUsesRemainingChanged OnUsesRemainingChanged;
+
+    bool ShouldPreservePerksOnDown() const { return PreservePerksCount > 0; }
+
+    void ModifyPreservePerksCount(int32 Delta);
+
+    // لە بەشی public:
+    UFUNCTION(BlueprintAuthorityOnly, Category = "GobbleGum")
+    void Server_StartEatingGum(UGobbleGumData* GumToEat);
+
+    UFUNCTION(BlueprintAuthorityOnly, Category = "GobbleGum")
+    void Server_CancelEatingGum();
+
+    UFUNCTION(BlueprintPure, Category = "GobbleGum")
+    bool IsEatingGum() const { return bIsEatingGum; }
+
+    // لە بەشی protected:
+    void Server_FinishEatingGum();
+
+    UFUNCTION()
+    void OnRep_IsEatingGum();
+
+    UPROPERTY(ReplicatedUsing = OnRep_IsEatingGum, BlueprintReadOnly, Category = "GobbleGum|State")
+    bool bIsEatingGum = false;
+
+    // ئەنیمەیشنی خواردنی گۆبڵگەم (ئەگەر بەتاڵیش بێت، سیستەمەکە بەپێی EatDuration هەر کار دەکات)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Animation")
+    TObjectPtr<UAnimMontage> EatGumMontage = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Animation")
+    TObjectPtr<USoundBase> EatGumSound = nullptr;
+
+    // ماوەی خواردنی گەمەکە بە چرکە (دەبێت لەگەڵ درێژیی ئەنیمەیشنەکەدا بگونجێت)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Animation", meta = (ClampMin = "0.1"))
+    float EatDuration = 1.2f;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UGobbleGumData> PendingGumToEat = nullptr;
+
+    FTimerHandle TimerHandle_EatGum;
+
+private:
+    uint8 PreservePerksCount = 0;
 };
