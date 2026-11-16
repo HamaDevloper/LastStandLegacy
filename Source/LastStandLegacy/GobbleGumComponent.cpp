@@ -31,14 +31,14 @@ void UGobbleGumComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 void UGobbleGumComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    // پاککردنەوەی هەر تایمەرێک یان کاریگەرییەکی چالاک ئەگەر کارەکتەرەکە لەناوچوو
     if (GetOwner() && GetOwner()->HasAuthority())
     {
-        if (ActiveActionInstance && ActiveActionInstance->IsActionActive())
+        if (ActiveActionInstance)
         {
             ActiveActionInstance->DeactivateAction(Cast<ACharacter>(GetOwner()));
         }
         ActiveActionInstance = nullptr;
+        PendingGumToEat = nullptr;
     }
 
     if (UWorld* World = GetWorld())
@@ -157,7 +157,7 @@ void UGobbleGumComponent::Server_SetCurrentGum(UGobbleGumData* NewGum)
     ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
 
     // کوژاندنەوەی کاریگەریی گەمی پێشوو ئەگەر هێشتا چالاک بوو
-    if (ActiveActionInstance && ActiveActionInstance->IsActionActive())
+    if (ActiveActionInstance)
     {
         ActiveActionInstance->DeactivateAction(OwnerChar);
     }
@@ -202,9 +202,9 @@ void UGobbleGumComponent::Server_SetCurrentGum(UGobbleGumData* NewGum)
         ActiveActionInstance = DuplicateObject<UGobbleGumAction>(NewGum->ActionLogic, this);
     }
 
-    // چالاککردنی دەستبەجێ بۆ جۆرەکانی Immediate و RoundBased
     if (NewGum->ActivationType == EGobbleGumActivationType::Immediate ||
-        NewGum->ActivationType == EGobbleGumActivationType::RoundBased)
+        NewGum->ActivationType == EGobbleGumActivationType::RoundBased ||
+        NewGum->ActivationType == EGobbleGumActivationType::EventTriggered)
     {
         if (ActiveActionInstance && OwnerChar)
         {
@@ -244,7 +244,7 @@ void UGobbleGumComponent::Server_ClearCurrentGum()
 
     ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
 
-    if (ActiveActionInstance && ActiveActionInstance->IsActionActive())
+    if (ActiveActionInstance)
     {
         ActiveActionInstance->DeactivateAction(OwnerChar);
     }
@@ -294,6 +294,8 @@ void UGobbleGumComponent::Server_StartEatingGum(UGobbleGumData* GumToEat)
 
     // ڕێگری لەوەی یاریزان لە هەمان کاتدا دوو گەم بخوات
     if (bIsEatingGum) return;
+
+    Server_ClearCurrentGum();
 
     PendingGumToEat = GumToEat;
     bIsEatingGum = true;
@@ -399,6 +401,43 @@ void UGobbleGumComponent::ModifyPreservePerksCount(int32 Delta)
 {
     const int32 NewValue = FMath::Max(0, static_cast<int32>(PreservePerksCount) + Delta);
     PreservePerksCount = static_cast<uint8>(NewValue);
+}
+
+void UGobbleGumComponent::ModifyAutoUpgradeWallBuyCount(int32 Delta)
+{
+    const int32 NewValue = FMath::Max(0, static_cast<int32>(AutoUpgradeWallBuyCount) + Delta);
+    AutoUpgradeWallBuyCount = static_cast<uint8>(NewValue);
+}
+
+void UGobbleGumComponent::ModifyAutoUpgradeBoxWeaponCount(int32 Delta)
+{
+    const int32 NewValue = FMath::Max(0, static_cast<int32>(AutoUpgradeBoxWeaponCount) + Delta);
+    AutoUpgradeBoxWeaponCount = static_cast<uint8>(NewValue);
+}
+
+void UGobbleGumComponent::ConsumeEventTriggeredGum()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+    if (!CurrentActiveGum || CurrentActiveGum->ActivationType != EGobbleGumActivationType::EventTriggered) return;
+
+    if (RemainingUses > 0)
+    {
+        RemainingUses--;
+        MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, RemainingUses, this);
+
+        if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+        {
+            if (OwnerChar->IsLocallyControlled())
+            {
+                OnRep_RemainingUses();
+            }
+        }
+    }
+
+    if (RemainingUses == 0)
+    {
+        Server_ClearCurrentGum();
+    }
 }
 
 void UGobbleGumComponent::OnRep_CurrentActiveGum()

@@ -12,6 +12,7 @@
 #include "MysteryBoxSpawnPoint.h"
 #include "ZombieDirectorSubsystem.h"
 #include "ThrowableComponent.h"
+#include "GobbleGumComponent.h"
 
 AMysteryBox::AMysteryBox()
 {
@@ -256,7 +257,39 @@ void AMysteryBox::Interact(AHama* InteractingPlayer)
         }
         else if (OfferedWeaponClass)
         {
-            InteractingPlayer->GiveWeapon(OfferedWeaponClass);
+            TSubclassOf<ABaseWeapon> ClassToGive = OfferedWeaponClass;
+            bool bConsumedCratePower = false;
+
+            if (UGobbleGumComponent* GumComp = InteractingPlayer->GetGobbleGumComponent())
+            {
+                if (GumComp->ShouldAutoUpgradeBoxWeapon())
+                {
+                    if (const ABaseWeapon* CDO = OfferedWeaponClass.GetDefaultObject())
+                    {
+                        if (CDO->WeaponDataTable && !CDO->WeaponRowName.IsNone())
+                        {
+                            if (const FWeaponData* RowData = CDO->WeaponDataTable->FindRow<FWeaponData>(CDO->WeaponRowName, TEXT("CratePowerLookup")))
+                            {
+                                if (RowData->UpgradedWeaponClass)
+                                {
+                                    ClassToGive = RowData->UpgradedWeaponClass;
+                                    bConsumedCratePower = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            InteractingPlayer->GiveWeapon(ClassToGive);
+
+            if (bConsumedCratePower)
+            {
+                if (UGobbleGumComponent* GumComp = InteractingPlayer->GetGobbleGumComponent())
+                {
+                    GumComp->ConsumeEventTriggeredGum();
+                }
+            }
         }
 
         GetWorldTimerManager().ClearTimer(TimerHandle_OfferTimeout);
@@ -328,11 +361,32 @@ TArray<TSubclassOf<ABaseWeapon>> AMysteryBox::GetFilteredWeaponsForPlayer(AHama*
 
     if (!IsValid(Player)) return ValidWeapons;
 
-    TArray<TSubclassOf<ABaseWeapon>> PlayerCurrentWeapons = Player->GetOwnedWeaponClasses();
+    const TArray<TSubclassOf<ABaseWeapon>> PlayerCurrentWeapons = Player->GetOwnedWeaponClasses();
 
-    for (const TSubclassOf<ABaseWeapon>& WeaponClass : PlayerCurrentWeapons)
+    for (int32 i = ValidWeapons.Num() - 1; i >= 0; --i)
     {
-        ValidWeapons.Remove(WeaponClass);
+        const TSubclassOf<ABaseWeapon>& CandidateClass = ValidWeapons[i];
+        if (!CandidateClass) continue;
+
+        if (PlayerCurrentWeapons.Contains(CandidateClass))
+        {
+            ValidWeapons.RemoveAtSwap(i);
+            continue;
+        }
+
+        if (const ABaseWeapon* CDO = CandidateClass.GetDefaultObject())
+        {
+            if (CDO->WeaponDataTable && !CDO->WeaponRowName.IsNone())
+            {
+                if (const FWeaponData* RowData = CDO->WeaponDataTable->FindRow<FWeaponData>(CDO->WeaponRowName, TEXT("BoxFilterLookup")))
+                {
+                    if (RowData->UpgradedWeaponClass && PlayerCurrentWeapons.Contains(RowData->UpgradedWeaponClass))
+                    {
+                        ValidWeapons.RemoveAtSwap(i);
+                    }
+                }
+            }
+        }
     }
 
     return ValidWeapons;
@@ -348,7 +402,6 @@ void AMysteryBox::FinishSpin()
         return;
     }
 
-    // 🟢 پشکنینی چانسی دەرچوونی مەیموون (تەنها کاتێک دەردەچێت کە یاریزانەکە لەو کاتەدا مەیموونی پێ نەبێت)
     bool bShouldOfferMonkey = false;
     if (MonkeyBombClass && IsValid(CurrentBuyer))
     {

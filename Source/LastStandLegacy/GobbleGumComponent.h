@@ -131,6 +131,16 @@ public:
 
     FTimerHandle TimerHandle_EatGum;
 
+
+public:
+    bool ShouldAutoUpgradeWallBuy() const { return AutoUpgradeWallBuyCount > 0; }
+    void ModifyAutoUpgradeWallBuyCount(int32 Delta);
+    bool ShouldAutoUpgradeBoxWeapon() const { return AutoUpgradeBoxWeaponCount > 0; }
+    void ModifyAutoUpgradeBoxWeaponCount(int32 Delta);
+    void ConsumeEventTriggeredGum();
+
 private:
     uint8 PreservePerksCount = 0;
+    uint8 AutoUpgradeWallBuyCount = 0;
+    uint8 AutoUpgradeBoxWeaponCount = 0;
 };

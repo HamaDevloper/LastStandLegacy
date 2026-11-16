@@ -5,6 +5,7 @@
 #include "HamaPlayerState.h"
 #include "BaseWeapon.h"
 #include "Kismet/GameplayStatics.h"
+#include "GobbleGumComponent.h"
 
 AWallWeaponBuy::AWallWeaponBuy()
 {
@@ -142,9 +143,49 @@ void AWallWeaponBuy::Interact(AHama* InteractingPlayer)
             {
                 PS->RemovePoints(Cost);
             }
-            InteractingPlayer->GiveWeapon(WeaponClass);
+
+            TSubclassOf<ABaseWeapon> ClassToGive = WeaponClass;
+            bool bConsumedWallPower = false;
+
+            if (UGobbleGumComponent* GumComp = InteractingPlayer->GetGobbleGumComponent())
+            {
+                if (GumComp->ShouldAutoUpgradeWallBuy())
+                {
+                    if (TSubclassOf<ABaseWeapon> UpgradedClass = GetUpgradedWeaponClass())
+                    {
+                        ClassToGive = UpgradedClass;
+                        bConsumedWallPower = true;
+                    }
+                }
+            }
+
+            InteractingPlayer->GiveWeapon(ClassToGive);
+
+            if (bConsumedWallPower)
+            {
+                if (UGobbleGumComponent* GumComp = InteractingPlayer->GetGobbleGumComponent())
+                {
+                    GumComp->ConsumeEventTriggeredGum();
+                }
+            }
         }
     }
+}
+
+TSubclassOf<ABaseWeapon> AWallWeaponBuy::GetUpgradedWeaponClass() const
+{
+    if (!WeaponClass) return nullptr;
+
+    const ABaseWeapon* CDO = WeaponClass.GetDefaultObject();
+    if (CDO && CDO->WeaponDataTable && !CDO->WeaponRowName.IsNone())
+    {
+        if (const FWeaponData* RowData = CDO->WeaponDataTable->FindRow<FWeaponData>(CDO->WeaponRowName, TEXT("WallPowerLookup")))
+        {
+            return RowData->UpgradedWeaponClass;
+        }
+    }
+
+    return nullptr;
 }
 
 FText AWallWeaponBuy::GetInteractMessage(AHama* InteractingPlayer)

@@ -55,5 +55,5 @@ public:
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
     virtual bool ShouldCancelReloadOnInteract() const override { return true; }
-
+    TSubclassOf<ABaseWeapon> GetUpgradedWeaponClass() const;
 };
