@@ -530,6 +530,9 @@ public:
         void Server_StartPerkDrink(ABasePerk * TargetPerk);
 
         bool HasPerkID(FName PerkIDToCheck) const { return OwnedPerks.Contains(PerkIDToCheck); }
+        bool GrantPerkDirect(FName PerkID);
+        FName GetPendingPerkID() const { return PendingPerkID; }
+
         void HandleDeath();
         void OnPlayerDowned();
         void OnPlayerRevived();

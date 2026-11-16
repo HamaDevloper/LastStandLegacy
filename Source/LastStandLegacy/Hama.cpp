@@ -2469,6 +2469,45 @@ void AHama::OnRep_OwnedPerks()
     }
 }
 
+bool AHama::GrantPerkDirect(FName PerkID)
+{
+    if (!HasAuthority() || PerkID.IsNone() || OwnedPerks.Contains(PerkID))
+    {
+        return false;
+    }
+
+    OwnedPerks.Add(PerkID);
+    MARK_PROPERTY_DIRTY_FROM_NAME(AHama, OwnedPerks, this);
+
+    if (PerkID == FName(TEXT("Juggernaut")))
+    {
+        if (HealthComponent)
+        {
+            HealthComponent->UpgradeHealth(150.f);
+        }
+    }
+    else if (PerkID == FName(TEXT("StaminaUp")))
+    {
+        if (HamaComponent)
+        {
+            HamaComponent->UpgradeMaxStamina(250.f);
+        }
+
+        if (!IsLocallyControlled())
+        {
+            Client_OnStaminUpAcquired(250.f);
+        }
+    }
+
+    if (IsLocallyControlled())
+    {
+        OnPerksChangedEvent.ExecuteIfBound(OwnedPerks);
+    }
+
+    ForceNetUpdate();
+    return true;
+}
+
 float AHama::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
     if (!HasAuthority() || bIsDead) return 0.f;

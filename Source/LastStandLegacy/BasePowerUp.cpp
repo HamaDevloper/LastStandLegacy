@@ -55,6 +55,8 @@ void ABasePowerUp::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* O
     float DistSq = FVector::DistSquared(GetActorLocation(), Player->GetActorLocation());
     if (DistSq > FMath::Square(250.0f)) return;
 
+    if (!CanBeCollectedBy(Player)) return;
+
     bIsConsumed = true;
     CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
