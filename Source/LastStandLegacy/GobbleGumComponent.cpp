@@ -9,6 +9,8 @@
 #include "Animation/AnimMontage.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+#include "GobbleGumAction_HappyHour.h"
+#include "GobbleGumAction_BloodTax.h"
 
 UGobbleGumComponent::UGobbleGumComponent()
 {
@@ -117,7 +119,6 @@ void UGobbleGumComponent::Server_ActivateCurrentGum_Implementation()
     if (!OwnerChar || !CurrentActiveGum || RemainingUses == 0) return;
     if (CurrentActiveGum->ActivationType != EGobbleGumActivationType::Activated) return;
 
-    // ئەگەر گەمەکە هێشتا لە دۆخی کارکردندا بێت، ڕێگە مەدە دووبارە چالاک بکرێتەوە
     if (ActiveActionInstance && ActiveActionInstance->IsActionActive()) return;
 
     UWorld* World = GetWorld();
@@ -291,8 +292,6 @@ UGobbleGumData* UGobbleGumComponent::RollNextGumFromPack()
 void UGobbleGumComponent::Server_StartEatingGum(UGobbleGumData* GumToEat)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority() || !GumToEat) return;
-
-    // ڕێگری لەوەی یاریزان لە هەمان کاتدا دوو گەم بخوات
     if (bIsEatingGum) return;
 
     Server_ClearCurrentGum();
@@ -415,6 +414,12 @@ void UGobbleGumComponent::ModifyAutoUpgradeBoxWeaponCount(int32 Delta)
     AutoUpgradeBoxWeaponCount = static_cast<uint8>(NewValue);
 }
 
+void UGobbleGumComponent::ModifyMeleeInstaKillCount(int32 Delta)
+{
+    const int32 NewValue = FMath::Max(0, static_cast<int32>(MeleeInstaKillCount) + Delta);
+    MeleeInstaKillCount = static_cast<uint8>(NewValue);
+}
+
 void UGobbleGumComponent::ConsumeEventTriggeredGum()
 {
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
@@ -437,6 +442,74 @@ void UGobbleGumComponent::ConsumeEventTriggeredGum()
     if (RemainingUses == 0)
     {
         Server_ClearCurrentGum();
+    }
+}
+
+void UGobbleGumComponent::SetActiveHappyHourAction(UGobbleGumAction_HappyHour* NewAction)
+{
+    if (GetOwner() && GetOwner()->HasAuthority())
+    {
+        ActiveHappyHourAction = NewAction;
+    }
+}
+
+void UGobbleGumComponent::ClearActiveHappyHourAction(UGobbleGumAction_HappyHour* ActionToClear)
+{
+    if (GetOwner() && GetOwner()->HasAuthority() && ActiveHappyHourAction.Get() == ActionToClear)
+    {
+        ActiveHappyHourAction.Reset();
+    }
+}
+
+bool UGobbleGumComponent::TryTriggerHappyHourBonusPerk(FName PurchasedPerkID)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return false;
+
+    UGobbleGumAction_HappyHour* HappyHour = ActiveHappyHourAction.Get();
+    if (!HappyHour) return false;
+
+    AHama* OwnerPlayer = Cast<AHama>(GetOwner());
+    if (!OwnerPlayer) return false;
+
+    if (HappyHour->TryGrantRandomBonusPerk(OwnerPlayer, PurchasedPerkID))
+    {
+        ConsumeEventTriggeredGum();
+        return true;
+    }
+
+    return false;
+}
+
+void UGobbleGumComponent::ModifyPointsMultiplier(float Factor)
+{
+    if (Factor <= 0.0f) return;
+    PointsMultiplier = FMath::Max(1.0f, PointsMultiplier * Factor);
+}
+
+void UGobbleGumComponent::SetBloodTaxState(UGobbleGumAction_BloodTax* Action, int32 PenaltyPerHit)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    ActiveBloodTaxAction = Action;
+    BloodTaxHitPenalty = FMath::Max(0, PenaltyPerHit);
+}
+
+void UGobbleGumComponent::ClearBloodTaxState(UGobbleGumAction_BloodTax* Action)
+{
+    if (ActiveBloodTaxAction.Get() == Action)
+    {
+        ActiveBloodTaxAction.Reset();
+        BloodTaxHitPenalty = 0;
+    }
+}
+
+void UGobbleGumComponent::NotifyBloodTaxBankrupt()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    if (UGobbleGumAction_BloodTax* TaxAction = ActiveBloodTaxAction.Get())
+    {
+        TaxAction->ForceExpireFromBankruptcy();
     }
 }
 

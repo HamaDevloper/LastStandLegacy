@@ -3,6 +3,7 @@
 #include "Net/Core/PushModel/PushModel.h"
 #include "Hama.h"
 #include "HamaAbilityComponent.h"
+#include "GobbleGumComponent.h"
 
 AHamaPlayerState::AHamaPlayerState()
 {
@@ -67,11 +68,24 @@ void AHamaPlayerState::SetPoints(int32 NewPoints)
     }
 }
 
-void AHamaPlayerState::AddPoints(int32 Amount)
+void AHamaPlayerState::AddPoints(int32 Amount, bool bAffectedByMultiplier)
 {
     if (HasAuthority() && Amount > 0)
     {
-        Points = FMath::Clamp(Points + Amount, 0, MaxPointToEarn);
+        int32 FinalAmount = Amount;
+
+        if (bAffectedByMultiplier)
+        {
+            if (const AHama* PlayerChar = GetPawn<AHama>())
+            {
+                if (const UGobbleGumComponent* GumComp = PlayerChar->GetGobbleGumComponent())
+                {
+                    FinalAmount = FMath::RoundToInt(static_cast<float>(Amount) * GumComp->GetPointsMultiplier());
+                }
+            }
+        }
+
+        Points = FMath::Clamp(Points + FinalAmount, 0, MaxPointToEarn);
         MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Points, this);
 
         OnRep_Points();

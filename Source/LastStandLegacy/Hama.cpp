@@ -2182,8 +2182,15 @@ void AHama::GivePendingPerk()
 
     if (!PendingPerkID.IsNone())
     {
-        AddPerkByID(PendingPerkID);
+        const FName CompletedPerkID = PendingPerkID;
         PendingPerkID = NAME_None;
+
+        AddPerkByID(CompletedPerkID);
+
+        if (UGobbleGumComponent* GumComp = GetGobbleGumComponent())
+        {
+            GumComp->TryTriggerHappyHourBonusPerk(CompletedPerkID);
+        }
     }
 }
 
@@ -2517,6 +2524,26 @@ float AHama::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, ACo
     if (HealthComponent && AppliedDamage > 0.f)
     {
         HealthComponent->ApplyDamage(AppliedDamage, DamageCauser);
+
+        if (!bIsDead && !IsDowned())
+        {
+            if (UGobbleGumComponent* GumComp = GetGobbleGumComponent())
+            {
+                const int32 HitPenalty = GumComp->GetBloodTaxHitPenalty();
+                if (HitPenalty > 0)
+                {
+                    if (AHamaPlayerState* PS = GetPlayerState<AHamaPlayerState>())
+                    {
+                        PS->RemovePoints(HitPenalty);
+
+                        if (PS->GetPoints() <= 0)
+                        {
+                            GumComp->NotifyBloodTaxBankrupt();
+                        }
+                    }
+                }
+            }
+        }
     }
 
     return AppliedDamage;
@@ -2984,7 +3011,20 @@ void AHama::Server_ValidateMeleeHit_Implementation(AActor* HitActor, FVector_Net
 
 void AHama::ApplyMeleeDamageInternal(AActor* HitActor, const FVector& HitLocation)
 {
-    const float FinalDamage = IsBrawlerModeActive() ? HamaAbilityComponent->GetBrawlerDamage() : MeleeDamage;
+    if (!HasAuthority() || !IsValid(HitActor)) return;
+
+    const bool bIsBrawler = IsBrawlerModeActive();
+    float FinalDamage = (bIsBrawler && HamaAbilityComponent)
+        ? HamaAbilityComponent->GetBrawlerDamage()
+        : MeleeDamage;
+
+    UGobbleGumComponent* GumComp = GetGobbleGumComponent();
+    const bool bUseMeleeInstaKill = (!bIsBrawler && GumComp && GumComp->IsMeleeInstaKillActive() && HitActor->IsA<APawn>());
+
+    if (bUseMeleeInstaKill)
+    {
+        FinalDamage = 1000000.0f;
+    }
 
     FPointDamageEvent PointDamageEvent;
     PointDamageEvent.Damage = FinalDamage;
@@ -2995,6 +3035,11 @@ void AHama::ApplyMeleeDamageInternal(AActor* HitActor, const FVector& HitLocatio
     PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
 
     HitActor->TakeDamage(FinalDamage, PointDamageEvent, GetController(), this);
+
+    if (bUseMeleeInstaKill)
+    {
+        GumComp->ConsumeEventTriggeredGum();
+    }
 }
 
 bool AHama::CanInteract(AHama* InteractingPlayer)

@@ -48,7 +48,7 @@ public:
     void SetPoints(int32 NewPoints);
 
     UFUNCTION(BlueprintCallable, Category = "Player State")
-    void AddPoints(int32 Amount);
+    void AddPoints(int32 Amount, bool bAffectedByMultiplier = true);
 
     UFUNCTION(BlueprintCallable, Category = "Player State")
     void RemovePoints(int32 Amount);

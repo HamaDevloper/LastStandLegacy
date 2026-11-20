@@ -42,8 +42,6 @@ protected:
     void OnRep_IsDepleted();
 
     // --- ڕێکخستنەکانی پێرک (Perk Configuration) ---
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk|Settings")
-    FName PerkID;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk|Settings")
     int32 PerkCost;
@@ -62,6 +60,10 @@ protected:
 
 
 public:
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Perk|Settings")
+    FName PerkID;
+
     virtual void Interact(AHama* HamaChar) override;
     virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;

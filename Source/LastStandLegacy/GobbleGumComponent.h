@@ -11,6 +11,8 @@ class ACharacter;
 class UGobbleGumAction;
 class UAnimMontage;
 class USoundBase;
+class UGobbleGumAction_HappyHour;
+class UGobbleGumAction_BloodTax;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCurrentGumChanged, const UGobbleGumData*, NewGum);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnUsesRemainingChanged, uint8, UsesLeft);
@@ -139,8 +141,28 @@ public:
     void ModifyAutoUpgradeBoxWeaponCount(int32 Delta);
     void ConsumeEventTriggeredGum();
 
+    bool IsMeleeInstaKillActive() const { return MeleeInstaKillCount > 0; }
+    void ModifyMeleeInstaKillCount(int32 Delta);
+
+    void SetActiveHappyHourAction(UGobbleGumAction_HappyHour* NewAction);
+    void ClearActiveHappyHourAction(UGobbleGumAction_HappyHour* ActionToClear);
+    bool TryTriggerHappyHourBonusPerk(FName PurchasedPerkID);
+
+    float GetPointsMultiplier() const { return PointsMultiplier; }
+    int32 GetBloodTaxHitPenalty() const { return BloodTaxHitPenalty; }
+
+    void ModifyPointsMultiplier(float Factor);
+    void SetBloodTaxState(UGobbleGumAction_BloodTax* Action, int32 PenaltyPerHit);
+    void ClearBloodTaxState(UGobbleGumAction_BloodTax* Action);
+    void NotifyBloodTaxBankrupt();
+
 private:
+    TWeakObjectPtr<UGobbleGumAction_HappyHour> ActiveHappyHourAction;
+    TWeakObjectPtr<UGobbleGumAction_BloodTax> ActiveBloodTaxAction;
     uint8 PreservePerksCount = 0;
     uint8 AutoUpgradeWallBuyCount = 0;
     uint8 AutoUpgradeBoxWeaponCount = 0;
+    uint8 MeleeInstaKillCount = 0;
+    float PointsMultiplier = 1.0f;
+    int32 BloodTaxHitPenalty = 0;
 };
