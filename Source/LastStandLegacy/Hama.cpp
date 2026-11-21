@@ -1959,7 +1959,6 @@ void AHama::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
     if (Montage == SlideMontage && HamaComponent)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Slide Montage Ended"));
         HamaComponent->StopSlide();
         ResetValuesAfterSprint();
     }
@@ -1969,7 +1968,6 @@ void AHama::OnDiveMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
     if (Montage == DiveMontage && HamaComponent)
     {
-        GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Dive Montage Ended"));
         HamaComponent->StopDive();
         ResetValuesAfterSprint();
     }

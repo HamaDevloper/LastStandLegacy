@@ -284,6 +284,7 @@ public:
     bool ShouldReload() const { return CurrentAmmo < MaxAmmoInClip; }
     bool IsReloading() const { return bIsReloading; }
     bool HasAmmo() const;
+    void RestoreAmmoFromRewind(int32 TargetClipAmmo, int32 TargetReserveAmmo);
     int32 GetCurrentAmmo() const { return CurrentAmmo; }
     int32 GetReserveAmmo() const { return ReserveAmmo; }
     int32 GetMaxClipAmmo() const { return MaxAmmoInClip; }

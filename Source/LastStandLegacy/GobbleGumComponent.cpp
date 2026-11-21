@@ -100,7 +100,10 @@ void UGobbleGumComponent::Server_OnNewRoundStarted()
 void UGobbleGumComponent::TryActivateCurrentGum()
 {
     if (!CurrentActiveGum || RemainingUses == 0) return;
-    if (CurrentActiveGum->ActivationType != EGobbleGumActivationType::Activated) return;
+
+    const bool bCanManualTrigger = (CurrentActiveGum->ActivationType == EGobbleGumActivationType::Activated ||
+        CurrentActiveGum->ActivationType == EGobbleGumActivationType::EventTriggered);
+    if (!bCanManualTrigger) return;
 
     UWorld* World = GetWorld();
     if (!World) return;
@@ -119,9 +122,6 @@ void UGobbleGumComponent::Server_ActivateCurrentGum_Implementation()
 {
     ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
     if (!OwnerChar || !CurrentActiveGum || RemainingUses == 0) return;
-    if (CurrentActiveGum->ActivationType != EGobbleGumActivationType::Activated) return;
-
-    if (ActiveActionInstance && ActiveActionInstance->IsActionActive()) return;
 
     UWorld* World = GetWorld();
     if (!World) return;
@@ -131,6 +131,21 @@ void UGobbleGumComponent::Server_ActivateCurrentGum_Implementation()
     {
         return;
     }
+
+    if (CurrentActiveGum->ActivationType == EGobbleGumActivationType::EventTriggered)
+    {
+        LastServerActivationTime = CurrentTime;
+        if (ActiveActionInstance)
+        {
+            ActiveActionInstance->TriggerManualAction();
+        }
+        return;
+    }
+
+    // حاڵەتی دووەم: گەمە Activatedـە ئاسایییەکان
+    if (CurrentActiveGum->ActivationType != EGobbleGumActivationType::Activated) return;
+    if (ActiveActionInstance && ActiveActionInstance->IsActionActive()) return;
+
     LastServerActivationTime = CurrentTime;
 
     RemainingUses--;
@@ -146,7 +161,6 @@ void UGobbleGumComponent::Server_ActivateCurrentGum_Implementation()
         ActiveActionInstance->ActivateAction(OwnerChar);
     }
 
-    // تەنها ئەگەر کاریگەرییەکە تایمەری لەسەر نەبوو (یەکسەر تەواو بوو) و هیچ بەکارهێنانێکی نەما، پاکی دەکەینەوە
     if (RemainingUses == 0 && (!ActiveActionInstance || !ActiveActionInstance->IsActionActive()))
     {
         Server_ClearCurrentGum();
@@ -487,7 +501,6 @@ bool UGobbleGumComponent::TryTriggerHappyHourBonusPerk(FName PurchasedPerkID)
 
     return false;
 }
-
 
 void UGobbleGumComponent::SetOverclockedCircuit(bool IsActive)
 {

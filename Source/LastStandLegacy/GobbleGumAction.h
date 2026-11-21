@@ -23,6 +23,8 @@ public:
     void DeactivateAction(ACharacter* CharacterOwner);
     virtual void DeactivateAction_Implementation(ACharacter* CharacterOwner);
 
+    virtual void TriggerManualAction() {}
+
     UFUNCTION(BlueprintPure, Category = "GobbleGum|Logic")
     bool IsActionActive() const { return bIsActive; }
 

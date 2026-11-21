@@ -927,6 +927,36 @@ void ABaseWeapon::Server_CancelReload_Implementation()
     }
 }
 
+void ABaseWeapon::RestoreAmmoFromRewind(int32 TargetClipAmmo, int32 TargetReserveAmmo)
+{
+    if (!HasAuthority()) return;
+
+    const int32 NewClipAmmo = FMath::Clamp(FMath::Max(CurrentAmmo, TargetClipAmmo), 0, MaxAmmoInClip);
+    const int32 NewReserveAmmo = FMath::Clamp(FMath::Max(ReserveAmmo, TargetReserveAmmo), 0, CurrentWeaponData.MaxReserveAmmo);
+
+    if (bIsReloading && NewClipAmmo >= MaxAmmoInClip)
+    {
+        CancelReload();
+    }
+
+    if (CurrentAmmo != NewClipAmmo)
+    {
+        CurrentAmmo = NewClipAmmo;
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, CurrentAmmo, this);
+    }
+
+    if (ReserveAmmo != NewReserveAmmo)
+    {
+        ReserveAmmo = NewReserveAmmo;
+        MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
+    }
+
+    if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+    }
+}
+
 void ABaseWeapon::OnRep_Reload()
 {
     if (!OwnerCharacter || OwnerCharacter->IsLocallyControlled()) return;
