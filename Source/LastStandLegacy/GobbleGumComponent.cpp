@@ -10,7 +10,6 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "GobbleGumAction_HappyHour.h"
-#include "GobbleGumAction_BloodTax.h"
 
 UGobbleGumComponent::UGobbleGumComponent()
 {
@@ -29,6 +28,9 @@ void UGobbleGumComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, RemainingUses, PushParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, PurchasesThisRound, PushParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, bIsEatingGum, PushParams);
+
+    PushParams.Condition = COND_OwnerOnly;
+    DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, bIsOverclockedCircuitActive, PushParams);
 }
 
 void UGobbleGumComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -396,6 +398,12 @@ void UGobbleGumComponent::OnRep_IsEatingGum()
     }
 }
 
+void UGobbleGumComponent::ModifyPointsMultiplier(float Factor)
+{
+    if (Factor <= 0.0f) return;
+    PointsMultiplier = FMath::Max(1.0f, PointsMultiplier * Factor);
+}
+
 void UGobbleGumComponent::ModifyPreservePerksCount(int32 Delta)
 {
     const int32 NewValue = FMath::Max(0, static_cast<int32>(PreservePerksCount) + Delta);
@@ -480,37 +488,14 @@ bool UGobbleGumComponent::TryTriggerHappyHourBonusPerk(FName PurchasedPerkID)
     return false;
 }
 
-void UGobbleGumComponent::ModifyPointsMultiplier(float Factor)
-{
-    if (Factor <= 0.0f) return;
-    PointsMultiplier = FMath::Max(1.0f, PointsMultiplier * Factor);
-}
 
-void UGobbleGumComponent::SetBloodTaxState(UGobbleGumAction_BloodTax* Action, int32 PenaltyPerHit)
+void UGobbleGumComponent::SetOverclockedCircuit(bool IsActive)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+    if (IsActive == bIsOverclockedCircuitActive) return;
 
-    ActiveBloodTaxAction = Action;
-    BloodTaxHitPenalty = FMath::Max(0, PenaltyPerHit);
-}
-
-void UGobbleGumComponent::ClearBloodTaxState(UGobbleGumAction_BloodTax* Action)
-{
-    if (ActiveBloodTaxAction.Get() == Action)
-    {
-        ActiveBloodTaxAction.Reset();
-        BloodTaxHitPenalty = 0;
-    }
-}
-
-void UGobbleGumComponent::NotifyBloodTaxBankrupt()
-{
-    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
-
-    if (UGobbleGumAction_BloodTax* TaxAction = ActiveBloodTaxAction.Get())
-    {
-        TaxAction->ForceExpireFromBankruptcy();
-    }
+    bIsOverclockedCircuitActive = IsActive;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, bIsOverclockedCircuitActive, this);
 }
 
 void UGobbleGumComponent::OnRep_CurrentActiveGum()

@@ -111,4 +111,9 @@ public:
     void PrepareForPool();
 
     virtual bool CanReceiveWeaponDamage() const override { return !bHasExploded; }
+
+    void SetVolatileCore(bool bEnable) { bIsVolatileCore = bEnable; }
+
+private:
+    bool bIsVolatileCore = false;
 };

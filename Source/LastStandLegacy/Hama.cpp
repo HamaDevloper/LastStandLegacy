@@ -2527,22 +2527,7 @@ float AHama::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, ACo
 
         if (!bIsDead && !IsDowned())
         {
-            if (UGobbleGumComponent* GumComp = GetGobbleGumComponent())
-            {
-                const int32 HitPenalty = GumComp->GetBloodTaxHitPenalty();
-                if (HitPenalty > 0)
-                {
-                    if (AHamaPlayerState* PS = GetPlayerState<AHamaPlayerState>())
-                    {
-                        PS->RemovePoints(HitPenalty);
-
-                        if (PS->GetPoints() <= 0)
-                        {
-                            GumComp->NotifyBloodTaxBankrupt();
-                        }
-                    }
-                }
-            }
+            OnServerDamageTaken.Broadcast(AppliedDamage, DamageCauser);
         }
     }
 
@@ -2554,8 +2539,6 @@ void AHama::Client_ShowDamageIndicator_Implementation(FVector DamageOrigin)
     if (!IsLocallyControlled()) return;
 
     FVector PlayerLocation = GetActorLocation();
-
-
     DamageOrigin.Z = PlayerLocation.Z;
 
     FVector DamageDirection = (DamageOrigin - PlayerLocation).GetSafeNormal();
@@ -3019,9 +3002,7 @@ void AHama::ApplyMeleeDamageInternal(AActor* HitActor, const FVector& HitLocatio
         : MeleeDamage;
 
     UGobbleGumComponent* GumComp = GetGobbleGumComponent();
-    const bool bUseMeleeInstaKill = (!bIsBrawler && GumComp && GumComp->IsMeleeInstaKillActive() && HitActor->IsA<APawn>());
-
-    if (bUseMeleeInstaKill)
+    if (!bIsBrawler && GumComp && GumComp->IsMeleeInstaKillActive() && HitActor->IsA<APawn>())
     {
         FinalDamage = 1000000.0f;
     }
@@ -3035,11 +3016,6 @@ void AHama::ApplyMeleeDamageInternal(AActor* HitActor, const FVector& HitLocatio
     PointDamageEvent.DamageTypeClass = UMeleeDamageType::StaticClass();
 
     HitActor->TakeDamage(FinalDamage, PointDamageEvent, GetController(), this);
-
-    if (bUseMeleeInstaKill)
-    {
-        GumComp->ConsumeEventTriggeredGum();
-    }
 }
 
 bool AHama::CanInteract(AHama* InteractingPlayer)

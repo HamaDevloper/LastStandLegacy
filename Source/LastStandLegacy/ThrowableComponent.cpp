@@ -391,6 +391,8 @@ void UThrowableComponent::Server_ExecuteThrow_Implementation(FVector_NetQuantize
                 CharacterOwner->GetController()
             );
 
+            OnServerGrenadeThrown.Broadcast(GrenadeActor);
+
             TargetCount--;
             MARK_PROPERTY_DIRTY_FROM_NAME(UThrowableComponent, CurrentGrenadeCount, this);
             if (CharacterOwner->IsLocallyControlled())

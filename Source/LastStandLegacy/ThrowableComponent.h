@@ -11,6 +11,7 @@ class AGrenade;
 class AMonkeyBomb;
 
 DECLARE_DELEGATE_TwoParams(FOnThrowableCountChanged, int32 /*MonkeyCount*/, int32 /*GrenadeCount*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnServerGrenadeThrown, AGrenade*);
 
 UENUM(BlueprintType)
 enum class EThrowChargeState : uint8
@@ -34,6 +35,7 @@ protected:
 
 public:
     FOnThrowableCountChanged OnThrowableCountChanged;
+    FOnServerGrenadeThrown OnServerGrenadeThrown;
 
     UFUNCTION(BlueprintCallable, Category = "Throwable")
     void StartGrenadeCharge();

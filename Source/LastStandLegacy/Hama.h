@@ -17,24 +17,6 @@
 #define ECC_Intract ECC_GameTraceChannel3
 #define ECC_Melee ECC_GameTraceChannel4
 
-//DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
-DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
-DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FText&);
-DECLARE_DELEGATE_OneParam(FOnCrosshairUpdateDelegate, bool);
-DECLARE_DELEGATE_OneParam(FOnPerksChangedSignature, const TArray<FName>& /*CurrentPerks*/);
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnPersonalPowerUpAcquired, EPowerUpType);
-
-USTRUCT(BlueprintType)
-struct FRoleVisualData
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Role Visuals")
-    TSoftObjectPtr<USkeletalMesh> RoleMesh;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Role Visuals")
-    TSoftClassPtr<UAnimInstance> RoleAnimBP;
-};
 
 // -----------------------------------------------------------------------------
 // Forward Declarations
@@ -56,6 +38,27 @@ class UGobbleGumComponent;
 
 struct FInputActionValue;
 struct FInputActionInstance;
+
+//DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
+DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
+DECLARE_DELEGATE_OneParam(FOnInteractUpdateDelegate, const FText&);
+DECLARE_DELEGATE_OneParam(FOnCrosshairUpdateDelegate, bool);
+DECLARE_DELEGATE_OneParam(FOnPerksChangedSignature, const TArray<FName>& /*CurrentPerks*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnPersonalPowerUpAcquired, EPowerUpType);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnServerDamageTaken, float /*ActualDamage*/, AActor* /*DamageCauser*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnServerZombieKilled, AZombie* /*DeadZombie*/);
+
+USTRUCT(BlueprintType)
+struct FRoleVisualData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Role Visuals")
+    TSoftObjectPtr<USkeletalMesh> RoleMesh;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Role Visuals")
+    TSoftClassPtr<UAnimInstance> RoleAnimBP;
+};
 
 UCLASS()
 class LASTSTANDLEGACY_API AHama : public ACharacter, public IInteractInterface
@@ -161,6 +164,8 @@ public:
     FOnCrosshairUpdateDelegate OnCrosshairUpdateEvent;
     FOnPerksChangedSignature OnPerksChangedEvent;
     FOnPersonalPowerUpAcquired OnPersonalPowerUpAcquiredDelegate;
+    FOnServerDamageTaken OnServerDamageTaken;
+    FOnServerZombieKilled OnServerZombieKilled;
 
     UFUNCTION(Client, Reliable)
     void Client_AnnouncePersonalPowerUp(EPowerUpType PowerUpType);
@@ -477,8 +482,7 @@ public:
     bool IsSliding() const { return HamaComponent->IsSlide(); }
     bool IsDiving() const { return HamaComponent->IsDiving(); }
     bool IsSwappingWeapon() const;
-    UGobbleGumComponent* GetGobbleGumComponent() const { return GobbleGumComponent; }
-
+    FORCEINLINE UGobbleGumComponent* GetGobbleGumComponent() const { return GobbleGumComponent; }
     protected:
         UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hama|Sensitivity")
         float NormalSensitivity = 1.f;

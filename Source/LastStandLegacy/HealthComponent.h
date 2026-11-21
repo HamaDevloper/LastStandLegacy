@@ -10,6 +10,7 @@ class UHamaComponent;
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnDownStateChangedSignature, bool /*bIsDowned*/);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnReviveStateChangedSignature, bool /*bIsBeingRevived*/, bool /*bIsRevivingOthers*/);
 DECLARE_MULTICAST_DELEGATE(FOnDeathSignature);
+DECLARE_DELEGATE_RetVal(bool, FOnPrePlayerDowned);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class UHealthComponent : public UActorComponent
@@ -26,6 +27,7 @@ public:
     FOnDownStateChangedSignature OnDownStateChanged;
     FOnReviveStateChangedSignature OnReviveStateChanged;
     FOnDeathSignature OnDeath;
+    FOnPrePlayerDowned OnPrePlayerDowned;
 
     void ApplyDamage(float Amount, AActor* DamageCauser);
     void UpgradeHealth(float Amount);
@@ -35,6 +37,9 @@ public:
     void SetMaxHealth(float NewMaxHealth, bool bUpdateCurrentHealth = false);
 
     void SetBeingRevived(bool bState, AHama* InReviver = nullptr, float InFullReviveDuration = 0.0f, bool bForceResetProgress = false);
+
+    void GrantInvulnerability(float Duration);
+    void RestoreFullHealth();
 
     // --- Getters ---
     UFUNCTION(BlueprintPure, Category = "Health")
@@ -121,4 +126,6 @@ private:
 protected:
     UFUNCTION(BlueprintCallable)
     float GetCurrentHealth() const { return CurrentHealth; }
+
+    float InvulnerableEndTime = 0.0f;
 };

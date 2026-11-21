@@ -227,6 +227,11 @@ void UHealthComponent::ApplyDamage(float Amount, AActor* DamageCauser)
 
         if (CurrentHealth <= 0.0f)
         {
+            if (OnPrePlayerDowned.IsBound() && OnPrePlayerDowned.Execute())
+            {
+                return;
+            }
+
             DownPlayer();
         }
         else
@@ -285,6 +290,20 @@ void UHealthComponent::SetMaxHealth(float NewMaxHealth, bool bUpdateCurrentHealt
         CurrentHealth = MaxHealth;
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
     }
+}
+
+void UHealthComponent::GrantInvulnerability(float Duration)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || Duration <= 0.0f) return;
+    InvulnerableEndTime = FMath::Max(InvulnerableEndTime, GetServerTime() + Duration);
+}
+
+void UHealthComponent::RestoreFullHealth()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || bIsDowned || (OwnerCharacter && OwnerCharacter->bIsDead)) return;
+
+    CurrentHealth = MaxHealth;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, this);
 }
 
 void UHealthComponent::DownPlayer()

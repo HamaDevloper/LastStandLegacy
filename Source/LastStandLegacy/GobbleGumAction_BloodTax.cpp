@@ -1,6 +1,7 @@
 #include "GobbleGumAction_BloodTax.h"
-#include "GameFramework/Character.h"
 #include "Engine/World.h"
+#include "Hama.h"
+#include "HamaPlayerState.h"
 #include "GobbleGumComponent.h"
 
 UGobbleGumAction_BloodTax::UGobbleGumAction_BloodTax()
@@ -12,16 +13,18 @@ void UGobbleGumAction_BloodTax::ActivateAction_Implementation(ACharacter* Charac
     if (!CharacterOwner || !CharacterOwner->HasAuthority()) return;
     if (bIsActive) return;
 
+    AHama* HamaChar = Cast<AHama>(CharacterOwner);
     UGobbleGumComponent* GumComp = CharacterOwner->FindComponentByClass<UGobbleGumComponent>();
-    if (!GumComp) return;
+    if (!HamaChar || !GumComp) return;
 
     Super::ActivateAction_Implementation(CharacterOwner);
 
-    CachedOwner = CharacterOwner;
+    CachedHama = HamaChar;
+    CachedPlayerState = HamaChar->GetPlayerState<AHamaPlayerState>();
     CachedGumComponent = GumComp;
 
     GumComp->ModifyPointsMultiplier(ScoreMultiplier);
-    GumComp->SetBloodTaxState(this, PointsLostPerHit);
+    DamageTakenDelegateHandle = HamaChar->OnServerDamageTaken.AddUObject(this, &UGobbleGumAction_BloodTax::HandleOwnerDamaged);
     bEffectApplied = true;
 
     if (UWorld* World = CharacterOwner->GetWorld())
@@ -37,9 +40,31 @@ void UGobbleGumAction_BloodTax::ActivateAction_Implementation(ACharacter* Charac
     }
 }
 
+void UGobbleGumAction_BloodTax::HandleOwnerDamaged(float ActualDamage, AActor* DamageCauser)
+{
+    if (!bIsActive || PointsLostPerHit <= 0) return;
+
+    AHamaPlayerState* PS = CachedPlayerState.Get();
+    if (!PS && CachedHama.IsValid())
+    {
+        PS = CachedHama->GetPlayerState<AHamaPlayerState>();
+        CachedPlayerState = PS;
+    }
+
+    if (PS)
+    {
+        PS->RemovePoints(PointsLostPerHit);
+
+        if (PS->GetPoints() <= 0)
+        {
+            OnDurationExpired();
+        }
+    }
+}
+
 void UGobbleGumAction_BloodTax::OnDurationExpired()
 {
-    ACharacter* OwnerChar = CachedOwner.Get();
+    AHama* OwnerChar = CachedHama.Get();
     UGobbleGumComponent* GumComp = CachedGumComponent.Get();
 
     DeactivateAction(OwnerChar);
@@ -50,16 +75,11 @@ void UGobbleGumAction_BloodTax::OnDurationExpired()
     }
 }
 
-void UGobbleGumAction_BloodTax::ForceExpireFromBankruptcy()
-{
-    OnDurationExpired();
-}
-
 void UGobbleGumAction_BloodTax::DeactivateAction_Implementation(ACharacter* CharacterOwner)
 {
     UWorld* World = CharacterOwner
         ? CharacterOwner->GetWorld()
-        : (CachedOwner.IsValid() ? CachedOwner->GetWorld() : nullptr);
+        : (CachedHama.IsValid() ? CachedHama->GetWorld() : nullptr);
 
     if (World)
     {
@@ -68,6 +88,18 @@ void UGobbleGumAction_BloodTax::DeactivateAction_Implementation(ACharacter* Char
 
     if (bEffectApplied)
     {
+        AHama* HamaChar = CachedHama.Get();
+        if (!HamaChar && CharacterOwner)
+        {
+            HamaChar = Cast<AHama>(CharacterOwner);
+        }
+
+        if (HamaChar && DamageTakenDelegateHandle.IsValid())
+        {
+            HamaChar->OnServerDamageTaken.Remove(DamageTakenDelegateHandle);
+        }
+        DamageTakenDelegateHandle.Reset();
+
         UGobbleGumComponent* GumComp = CachedGumComponent.Get();
         if (!GumComp && CharacterOwner)
         {
@@ -77,13 +109,13 @@ void UGobbleGumAction_BloodTax::DeactivateAction_Implementation(ACharacter* Char
         if (GumComp)
         {
             GumComp->ModifyPointsMultiplier(1.0f / FMath::Max(0.01f, ScoreMultiplier));
-            GumComp->ClearBloodTaxState(this);
         }
 
         bEffectApplied = false;
     }
 
-    CachedOwner.Reset();
+    CachedHama.Reset();
+    CachedPlayerState.Reset();
     CachedGumComponent.Reset();
 
     Super::DeactivateAction_Implementation(CharacterOwner);

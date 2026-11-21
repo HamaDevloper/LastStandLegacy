@@ -5,8 +5,14 @@
 #include "TimerManager.h"
 #include "GobbleGumAction_BloodTax.generated.h"
 
+class AHama;
+class AHamaPlayerState;
 class UGobbleGumComponent;
 
+/**
+ * Blood Tax: هەموو خاڵە بەدەستهاتووەکان دوو هێندە دەبن، بەڵام هەر لێدانێک بخۆیت ١٠٠ خاڵت لێ دەبڕێت.
+ * ئەگەر خاڵەکانت بگاتە سفر، گەمەکە یەکسەر دەکوژێتەوە.
+ */
 UCLASS(Blueprintable, meta = (DisplayName = "GobbleGum Action: Blood Tax"))
 class LASTSTANDLEGACY_API UGobbleGumAction_BloodTax : public UGobbleGumAction
 {
@@ -17,8 +23,6 @@ public:
 
     virtual void ActivateAction_Implementation(ACharacter* CharacterOwner) override;
     virtual void DeactivateAction_Implementation(ACharacter* CharacterOwner) override;
-
-    void ForceExpireFromBankruptcy();
 
 protected:
     // ڕێژەی زیادبوونی خاڵ (2.0 واتە دوو هێندە)
@@ -35,9 +39,15 @@ protected:
 
 private:
     FTimerHandle TimerHandle_Duration;
-    TWeakObjectPtr<ACharacter> CachedOwner;
+    FDelegateHandle DamageTakenDelegateHandle;
+
+    TWeakObjectPtr<AHama> CachedHama;
+    TWeakObjectPtr<AHamaPlayerState> CachedPlayerState;
     TWeakObjectPtr<UGobbleGumComponent> CachedGumComponent;
+
     bool bEffectApplied = false;
+
+    void HandleOwnerDamaged(float ActualDamage, AActor* DamageCauser);
 
     UFUNCTION()
     void OnDurationExpired();

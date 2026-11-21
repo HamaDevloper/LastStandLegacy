@@ -173,7 +173,6 @@ void AGrenade::ApplyLaunchData()
     FVector InitialVel = BaseDirection * BaseSpeed;
     FVector InitialLoc = LaunchData.SpawnLocation;
 
-    // قەرەبووکردنەوەی پینگ (Fast-Forward) تەنیا لەسەر کڵایەنت
     if (!HasAuthority())
     {
         float PingSeconds = 0.03f;
@@ -303,13 +302,15 @@ void AGrenade::Explode()
         }
     }
 
+    float FinalDamage = bIsVolatileCore ? 100000 : BaseDamage;
+
     AController* DamageInstigator = CachedInstigatorController.IsValid()
         ? CachedInstigatorController.Get()
         : GetInstigatorController();
 
     UGameplayStatics::ApplyRadialDamage(
         this,
-        BaseDamage,
+        FinalDamage,
         ExplosionLocation,
         DamageRadius,
         UDamageType::StaticClass(),
@@ -397,6 +398,7 @@ void AGrenade::ActivateFromPool(const FTransform& SpawnTransform, const FVector&
         SetInstigator(InInstigatorController->GetPawn());
     }
 
+    bIsVolatileCore = false;
     bHasExploded = false;
     SettledLocation = FVector::ZeroVector;
     CachedInstigatorController = InInstigatorController;
@@ -430,6 +432,9 @@ void AGrenade::ActivateFromPool(const FTransform& SpawnTransform, const FVector&
 void AGrenade::PrepareForPool()
 {
     if (!HasAuthority()) return;
+
+
+    bIsVolatileCore = false;
 
     SetActorHiddenInGame(true);
     if (MeshComp)

@@ -56,6 +56,8 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Trap|Config")
     TObjectPtr<USoundBase> RejectSound;
 
+    bool bIsOverclockedActivation = false;
+
     FTimerHandle TimerHandle_ActiveDuration;
     FTimerHandle TimerHandle_CooldownDuration;
 
@@ -67,8 +69,10 @@ protected:
     void CooldownTrap_Server();
     void ResetTrap_Server();
 
-    // ئەم فەنکشنانە virtual دەبن و منداڵ دەتوانێت بە ئارەزووی خۆی ئۆڤەرڕایدیان بکات
-    // پێویستیش ناکات منداڵەکە بیری بێت Super بانگ بکات
+    // فەنکشنی یارمەتیدەر بۆ کلاسی منداڵەکان تا ٥٠٪ـی خاڵی کوشتنی زۆمبی بدەن بە داگیرسێنەری تەڵەکە
+    void AwardTrapKillPoints(int32 BaseKillPoints);
+
+    // فەنکشنە virtualـەکان بۆ کلاسی منداڵ
     virtual void OnTrapActivated_Server() {}
     virtual void OnTrapCooldown_Server() {}
     virtual void OnTrapReset_Server() {}
@@ -77,10 +81,14 @@ protected:
 
     void SetTrapState_Server(ETrapMachineState NewState);
     int32 GetCurrentCost(const AHama* Player) const;
+    bool HasOverclockedCircuit(const AHama* Player) const;
 
 public:
     virtual void Interact(AHama* HamaChar) override;
     virtual FText GetInteractMessage(AHama* InteractingPlayer) override;
     virtual bool CanInteract(AHama* InteractingPlayer) override;
     virtual bool Client_PreInteract(AHama* Player) override;
+
+private:
+    TWeakObjectPtr<AHama> ActivatingPlayer;
 };

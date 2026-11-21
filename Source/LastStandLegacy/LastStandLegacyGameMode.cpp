@@ -232,14 +232,16 @@ void ALastStandLegacyGameMode::HandleZombieDeath(AZombie* DeadZombie, AControlle
     {
         if (AHama* KillerHama = Cast<AHama>(KillerController->GetPawn()))
         {
+            KillerHama->OnServerZombieKilled.Broadcast(DeadZombie);
+
             if (UHamaAbilityComponent* AbilityComp = KillerHama->GetAbilityComponent())
             {
                 const float ClampedRound = FMath::Clamp(static_cast<float>(CurrentRound), 1.0f, 30.0f);
-               const float PowerReward = FMath::GetMappedRangeValueClamped(
-                FVector2D(1.0f, 25.0f),
-                FVector2D(4.0f, 2.0f),
-                ClampedRound
-            );
+                const float PowerReward = FMath::GetMappedRangeValueClamped(
+                    FVector2D(1.0f, 25.0f),
+                    FVector2D(4.0f, 2.0f),
+                    ClampedRound
+                );
 
                 AbilityComp->AddPower(PowerReward);
             }

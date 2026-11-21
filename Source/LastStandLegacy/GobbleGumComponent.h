@@ -71,6 +71,9 @@ protected:
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "GobbleGum|State")
     uint8 PurchasesThisRound = 0;
 
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "GobbleGum|State")
+    bool bIsOverclockedCircuitActive = false;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|Loadout")
     TArray<TObjectPtr<UGobbleGumData>> EquippedGums;
 
@@ -149,12 +152,10 @@ public:
     bool TryTriggerHappyHourBonusPerk(FName PurchasedPerkID);
 
     float GetPointsMultiplier() const { return PointsMultiplier; }
-    int32 GetBloodTaxHitPenalty() const { return BloodTaxHitPenalty; }
-
     void ModifyPointsMultiplier(float Factor);
-    void SetBloodTaxState(UGobbleGumAction_BloodTax* Action, int32 PenaltyPerHit);
-    void ClearBloodTaxState(UGobbleGumAction_BloodTax* Action);
-    void NotifyBloodTaxBankrupt();
+
+    bool IsOverclockedCircuitActive() const { return bIsOverclockedCircuitActive; }
+    void SetOverclockedCircuit(bool IsActive);
 
 private:
     TWeakObjectPtr<UGobbleGumAction_HappyHour> ActiveHappyHourAction;
@@ -164,5 +165,4 @@ private:
     uint8 AutoUpgradeBoxWeaponCount = 0;
     uint8 MeleeInstaKillCount = 0;
     float PointsMultiplier = 1.0f;
-    int32 BloodTaxHitPenalty = 0;
 };

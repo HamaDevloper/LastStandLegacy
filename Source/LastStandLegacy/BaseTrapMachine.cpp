@@ -6,6 +6,7 @@
 #include "Hama.h"
 #include "HamaPlayerState.h"
 #include "Kismet/GameplayStatics.h"
+#include "GobbleGumComponent.h"
 
 ABaseTrapMachine::ABaseTrapMachine()
 {
@@ -46,34 +47,45 @@ void ABaseTrapMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     DOREPLIFETIME_WITH_PARAMS_FAST(ABaseTrapMachine, TrapState, SharedParams);
 }
 
+bool ABaseTrapMachine::HasOverclockedCircuit(const AHama* Player) const
+{
+    if (!Player) return false;
+
+    if (const UGobbleGumComponent* GumComp = Player->GetGobbleGumComponent())
+    {
+        return GumComp->IsOverclockedCircuitActive();
+    }
+
+    return false;
+}
+
 int32 ABaseTrapMachine::GetCurrentCost(const AHama* Player) const
 {
-    if (Player && Player->IsShoppingFreeActive())
+    if (Player && (Player->IsShoppingFreeActive() || HasOverclockedCircuit(Player)))
     {
         return 0;
     }
     return ActivationCost;
 }
 
-
 bool ABaseTrapMachine::CanInteract(AHama* InteractingPlayer)
 {
-    if (!IsValid(InteractingPlayer))  return false;
+    if (!IsValid(InteractingPlayer)) return false;
     if (!InteractingPlayer->SetCanInteract()) return false;
     return (TrapState == ETrapMachineState::Ready);
 }
 
 bool ABaseTrapMachine::Client_PreInteract(AHama* InteractingPlayer)
 {
-    if(!IsValid(InteractingPlayer) || !InteractingPlayer->SetCanInteract())
+    if (!IsValid(InteractingPlayer) || !InteractingPlayer->SetCanInteract())
     {
         return false;
     }
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if (DistSq > FMath::Square(250.0f))  return false;
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return false;
 
-    int32 Cost = GetCurrentCost(InteractingPlayer);
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
     if (AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>())
     {
         if (PS->GetPoints() < Cost)
@@ -85,7 +97,7 @@ bool ABaseTrapMachine::Client_PreInteract(AHama* InteractingPlayer)
             return false;
         }
     }
- 
+
     return true;
 }
 
@@ -96,12 +108,27 @@ void ABaseTrapMachine::Interact(AHama* InteractingPlayer)
         return;
     }
 
-    float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
-    if(DistSq > FMath::Square(250.0f))  return;
+    const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
+    if (DistSq > FMath::Square(250.0f)) return;
 
-    int32 Cost = GetCurrentCost(InteractingPlayer);
+    const int32 Cost = GetCurrentCost(InteractingPlayer);
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
-    if (PS && PS->GetPoints() < Cost) return;
+    if (!PS || PS->GetPoints() < Cost) return;
+
+    if (Cost > 0)
+    {
+        PS->RemovePoints(Cost);
+    }
+
+    if (UGobbleGumComponent* GumComp = InteractingPlayer->FindComponentByClass<UGobbleGumComponent>())
+    {
+        if (GumComp->IsOverclockedCircuitActive())
+        {
+            bIsOverclockedActivation = true;
+            ActivatingPlayer = InteractingPlayer;
+            GumComp->ConsumeEventTriggeredGum();
+        }
+    }
 
     ActivateTrap_Server();
 }
@@ -135,8 +162,7 @@ FText ABaseTrapMachine::GetInteractMessage(AHama* InteractingPlayer)
     {
     case ETrapMachineState::Ready:
     {
-        const bool bIsFree = (InteractingPlayer && InteractingPlayer->IsShoppingFreeActive());
-        const int32 Cost = bIsFree ? 0 : ActivationCost;
+        const int32 Cost = GetCurrentCost(InteractingPlayer);
 
         if (Cost <= 0)
         {
@@ -183,6 +209,12 @@ void ABaseTrapMachine::CooldownTrap_Server()
 {
     if (!HasAuthority()) return;
 
+    if (bIsOverclockedActivation)
+    {
+        ResetTrap_Server();
+        return;
+    }
+
     SetTrapState_Server(ETrapMachineState::CoolDown);
 
     GetWorldTimerManager().SetTimer(
@@ -200,8 +232,25 @@ void ABaseTrapMachine::ResetTrap_Server()
 {
     if (!HasAuthority()) return;
 
+    bIsOverclockedActivation = false;
+    ActivatingPlayer.Reset();
+
     SetTrapState_Server(ETrapMachineState::Ready);
     OnTrapReset_Server();
+}
+
+void ABaseTrapMachine::AwardTrapKillPoints(int32 BaseKillPoints)
+{
+    if (!HasAuthority() || !bIsOverclockedActivation || BaseKillPoints <= 0) return;
+
+    if (AHama* Player = ActivatingPlayer.Get())
+    {
+        if (AHamaPlayerState* PS = Player->GetPlayerState<AHamaPlayerState>())
+        {
+            const int32 BonusPoints = FMath::Max(1, BaseKillPoints / 2);
+            PS->AddPoints(BonusPoints);
+        }
+    }
 }
 
 void ABaseTrapMachine::OnRep_TrapState()
