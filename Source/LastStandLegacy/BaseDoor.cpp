@@ -7,6 +7,7 @@
 #include "Hama.h"
 #include "ZombieDirectorSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+#include "LastStandLegacyGameState.h"
 
 ABaseDoor::ABaseDoor()
 {
@@ -59,13 +60,32 @@ bool ABaseDoor::CanInteract(AHama* InteractingPlayer)
     return true;
 }
 
+bool ABaseDoor::HasRequiredPower() const
+{
+    if (bCanOpenWithOutPower)
+    {
+        return true;
+    }
+
+    if (const UWorld* World = GetWorld())
+    {
+        if (const ALastStandLegacyGameState* GS = World->GetGameState<ALastStandLegacyGameState>())
+        {
+            return GS->bIsPowerOn;
+        }
+    }
+
+    return false;
+}
+
 bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
 {
     if (!InteractingPlayer || !CanInteract(InteractingPlayer) || bIsDoorOpen) return false;
 
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if (DistSq > FMath::Square(250.0f)) return false;
-
+    if (!HasRequiredPower())  return false;
+ 
     const int32 Cost = GetCurrentCost(InteractingPlayer);
     AHamaPlayerState* PS = InteractingPlayer->GetPlayerState<AHamaPlayerState>();
     if (!PS || PS->GetPoints() < Cost)
@@ -82,7 +102,7 @@ bool ABaseDoor::Client_PreInteract(AHama* InteractingPlayer)
 
 void ABaseDoor::Interact(AHama* InteractingPlayer)
 {
-    if (!HasAuthority() || !CanInteract(InteractingPlayer)) return;
+    if (!HasAuthority() || !CanInteract(InteractingPlayer) || !HasRequiredPower()) return;
 
     const float DistSq = FVector::DistSquared(GetActorLocation(), InteractingPlayer->GetActorLocation());
     if (DistSq > FMath::Square(250.0f)) return;

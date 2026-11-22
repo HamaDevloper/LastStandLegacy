@@ -8,6 +8,7 @@
 class UHealthComponent;
 class UGobbleGumComponent;
 class ABaseWeapon;
+class AHama;
 
 USTRUCT()
 struct FChronoSnapshot
@@ -46,11 +47,11 @@ public:
 protected:
     // هەر چەند چرکە جارێک دۆخی یاریزان تۆمار بکرێت
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|ChronoRewind", meta = (ClampMin = "0.25"))
-    float RecordInterval = 1.0f;
+    float RecordInterval = 0.5;
 
     // ٥ خانە بە ماوەی ١ چرکە = گەڕانەوە بۆ ٤ چرکە پێش ئێستا
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|ChronoRewind", meta = (ClampMin = "2", ClampMax = "10"))
-    int32 MaxSnapshots = 5;
+    int32 MaxSnapshots = 21;
 
     // بازنەی پاڵنانی زۆمبییەکان لەو شوێنەی جێی دەهێڵیت
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GobbleGum|ChronoRewind", meta = (ClampMin = "50.0"))
@@ -61,6 +62,7 @@ protected:
 
 private:
     TWeakObjectPtr<ACharacter> CachedOwner;
+    TWeakObjectPtr<AHama> CachedHama;
     TWeakObjectPtr<UHealthComponent> CachedHealthComponent;
     TWeakObjectPtr<UGobbleGumComponent> CachedGumComponent;
 

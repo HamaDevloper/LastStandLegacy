@@ -32,6 +32,9 @@ public:
     UPROPERTY(ReplicatedUsing = OnRep_OpenDoor, BlueprintReadOnly, Category = "Door|State")
     bool bIsDoorOpen = false;
 
+    UPROPERTY(EditAnywhere, Category = "Door|Config")
+    bool bCanOpenWithOutPower = true;
+
     // ژمارەی ئەو ژوورەی کە ئەم دەرگایە دەیکاتەوە (لەناو مەپەکە بۆ هەر دەرگایەک دیاری دەکەیت: 1، 2، 3...)
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Door|Zones")
     int32 UnlockZoneID = 1;
@@ -59,4 +62,5 @@ protected:
 private:
     void OpenDoor(AHama* Player, AHamaPlayerState* PS, int32 Cost);
     int32 GetCurrentCost(const AHama* Player) const;
+    bool HasRequiredPower() const;
 };

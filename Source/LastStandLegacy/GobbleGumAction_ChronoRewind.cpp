@@ -9,6 +9,7 @@
 #include "BaseWeapon.h"
 #include "Zombie.h"
 #include "Hama.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 UGobbleGumAction_ChronoRewind::UGobbleGumAction_ChronoRewind()
 {
@@ -16,23 +17,24 @@ UGobbleGumAction_ChronoRewind::UGobbleGumAction_ChronoRewind()
 
 void UGobbleGumAction_ChronoRewind::ActivateAction_Implementation(ACharacter* CharacterOwner)
 {
-    if (!CharacterOwner || !CharacterOwner->HasAuthority() || bIsActive) return;
+    AHama* HamaChar = Cast<AHama>(CharacterOwner);
+    if (!HamaChar || !HamaChar->HasAuthority() || bIsActive) return;
 
-    UHealthComponent* HealthComp = CharacterOwner->FindComponentByClass<UHealthComponent>();
-    UGobbleGumComponent* GumComp = CharacterOwner->FindComponentByClass<UGobbleGumComponent>();
+    UHealthComponent* HealthComp = HamaChar->FindComponentByClass<UHealthComponent>();
+    UGobbleGumComponent* GumComp = HamaChar->FindComponentByClass<UGobbleGumComponent>();
     if (!HealthComp || !GumComp) return;
 
     Super::ActivateAction_Implementation(CharacterOwner);
 
     CachedOwner = CharacterOwner;
+    CachedHama = HamaChar;
     CachedHealthComponent = HealthComp;
     CachedGumComponent = GumComp;
 
     Snapshots.Empty(MaxSnapshots);
-
     RecordSnapshot();
 
-    if (UWorld* World = CharacterOwner->GetWorld())
+    if (UWorld* World = HamaChar->GetWorld())
     {
         World->GetTimerManager().ClearTimer(TimerHandle_Record);
         World->GetTimerManager().SetTimer(
@@ -54,16 +56,15 @@ void UGobbleGumAction_ChronoRewind::RecordSnapshot()
 {
     if (!bIsActive) return;
 
-    ACharacter* OwnerChar = CachedOwner.Get();
+    AHama* HamaChar = CachedHama.Get();
     UHealthComponent* HealthComp = CachedHealthComponent.Get();
-    AHama* HamaChar = Cast<AHama>(OwnerChar);
-    if (!OwnerChar || !HealthComp || !HamaChar) return;
+    if (!HamaChar || !HealthComp) return;
 
     if (HealthComp->bIsDowned || HamaChar->bIsDead) return;
 
     FChronoSnapshot Snap;
-    Snap.Location = OwnerChar->GetActorLocation();
-    Snap.ControlRotation = OwnerChar->GetControlRotation();
+    Snap.Location = HamaChar->GetActorLocation();
+    Snap.ControlRotation = HamaChar->GetControlRotation();
     Snap.Health = HealthComp->CurrentHealth;
 
     if (HamaChar->CurrentWeapon)
@@ -84,44 +85,56 @@ void UGobbleGumAction_ChronoRewind::TriggerRewind()
 {
     if (!bIsActive || Snapshots.Num() == 0) return;
 
-    ACharacter* OwnerChar = CachedOwner.Get();
+    AHama* HamaChar = CachedHama.Get();
     UHealthComponent* HealthComp = CachedHealthComponent.Get();
     UGobbleGumComponent* GumComp = CachedGumComponent.Get();
-    AHama* HamaChar = Cast<AHama>(OwnerChar);
-    if (!OwnerChar || !OwnerChar->HasAuthority() || !HealthComp || !GumComp || !HamaChar) return;
+    if (!HamaChar || !HamaChar->HasAuthority() || !HealthComp || !GumComp) return;
 
     if (HealthComp->bIsDowned || HamaChar->bIsDead) return;
 
-    // کۆنترین سناپشۆت (٤ چرکە پێش ئێستا)
     const FChronoSnapshot TargetSnap = Snapshots[0];
-    const FVector CurrentLocation = OwnerChar->GetActorLocation();
+    const FVector CurrentLocation = HamaChar->GetActorLocation();
 
-    // ١. پاڵنانی زۆمبییەکان لە هەردوو شوێنەکە (شوێنی ئێستا و شوێنی گەڕانەوە تا زۆمبی ڕێگری لە Teleport نەکات)
-    KnockbackNearbyZombies(OwnerChar, CurrentLocation);
-    KnockbackNearbyZombies(OwnerChar, TargetSnap.Location);
+    // ١. پاڵنانی زۆمبییەکان لە هەردوو شوێنەکە (شوێنی دەرچوون و شوێنی گەڕانەوە تا زۆمبی ڕێگری لە Teleport نەکات)
+    KnockbackNearbyZombies(HamaChar, CurrentLocation);
+    KnockbackNearbyZombies(HamaChar, TargetSnap.Location);
 
-    // ٢. گەڕاندنەوەی یاریزان بۆ شوێن و ئاڕاستەی کامێرای ٤ چرکە پێش ئێستا
+    // ٢. سفرکردنەوەی ڕاکردن و خێرایی پێش Teleport تا کارەکتەر لە شوێنە نوێیەکەدا نەخلیسکێت
+    if (HamaChar->IsSprinting())
+    {
+        HamaChar->StopSprint();
+    }
+
+    if (UCharacterMovementComponent* MoveComp = HamaChar->GetCharacterMovement())
+    {
+        MoveComp->StopMovementImmediately();
+    }
+
+    // ٣. گەڕاندنەوەی یاریزان بۆ شوێن و ئاڕاستەی کامێرای پێشوو
     const FRotator YawOnlyRot(0.0f, TargetSnap.ControlRotation.Yaw, 0.0f);
-    OwnerChar->TeleportTo(TargetSnap.Location, YawOnlyRot, false, false);
+    HamaChar->TeleportTo(TargetSnap.Location, YawOnlyRot, false, false);
 
-    if (AController* PC = OwnerChar->GetController())
+    if (AController* PC = HamaChar->GetController())
     {
         PC->SetControlRotation(TargetSnap.ControlRotation);
         PC->ClientSetRotation(TargetSnap.ControlRotation);
     }
 
-    // ٣. گەڕاندنەوەی خوێن (هەرگیز خوێنی یاریزان کەم ناکەینەوە ئەگەر پڕ بووبێتەوە)
+    // ٤. گەڕاندنەوەی خوێن (هەرگیز خوێنی یاریزان کەم ناکەینەوە ئەگەر لەو ماوەیەدا پڕ بووبێتەوە)
     const float RestoredHealth = FMath::Max(HealthComp->CurrentHealth, TargetSnap.Health);
     HealthComp->CurrentHealth = FMath::Clamp(RestoredHealth, 1.0f, HealthComp->MaxHealth);
     MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, CurrentHealth, HealthComp);
 
-    // ٤. گەڕاندنەوەی فیشەک ئەگەر هێشتا هەمان چەکی بەدەستەوە بێت
+    // ئەگەر فەنکشنی نوێکردنەوەی UIـی خوێن لە UHealthComponent بە public دانراوە، لێرە بۆ هۆست (Listen Server) بانگی بکە:
+    // if (HamaChar->IsLocallyControlled()) { HealthComp->OnRep_CurrentHealth(); }
+
+    // ٥. گەڕاندنەوەی فیشەک ئەگەر هێشتا هەمان چەکی بەدەستەوە بێت
     if (HamaChar->CurrentWeapon && TargetSnap.WeaponActor.Get() == HamaChar->CurrentWeapon)
     {
         HamaChar->CurrentWeapon->RestoreAmmoFromRewind(TargetSnap.ClipAmmo, TargetSnap.ReserveAmmo);
     }
 
-    // ٥. خەرجکردنی شەحنی گەمەکە
+    // ٦. خەرجکردنی شەحنی گەمەکە
     GumComp->ConsumeEventTriggeredGum();
 }
 
@@ -182,6 +195,7 @@ void UGobbleGumAction_ChronoRewind::DeactivateAction_Implementation(ACharacter* 
     CachedOwner.Reset();
     CachedHealthComponent.Reset();
     CachedGumComponent.Reset();
+    CachedHama.Reset();
 
     Super::DeactivateAction_Implementation(CharacterOwner);
 }
