@@ -8,6 +8,20 @@
 DECLARE_DELEGATE_OneParam(FOnPointsChangedSignature, int32);
 DECLARE_DELEGATE_OneParam(FOnKillsChangedSignature, int32);
 
+class ABaseWeapon;
+
+USTRUCT(BlueprintType)
+struct FLegacySavedWeapon
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    TSubclassOf<ABaseWeapon> WeaponClass = nullptr;
+
+    UPROPERTY()
+    int32 PackAPunchTier = 0;
+};
+
 UCLASS()
 class LASTSTANDLEGACY_API AHamaPlayerState : public APlayerState
 {
@@ -69,4 +83,18 @@ public:
     EHamaAbilityType GetAssignedRole() const { return AssignedRole; }
 
     float GetExactPing() const { return GetPingInMilliseconds(); }
+
+
+public:
+    void SetLegacyKeeperArmed(bool bArmed);
+    bool IsLegacyKeeperArmed() const { return bIsLegacyKeeperArmed; }
+
+    void SaveLoadoutForLegacyKeeper(const TArray<FLegacySavedWeapon>& WeaponsToSave);
+    bool HasPendingLegacyLoadout() const { return bHasPendingLegacyLoadout && SavedLegacyLoadout.Num() > 0; }
+    TArray<FLegacySavedWeapon> ConsumePendingLegacyLoadout();
+
+private:
+    bool bIsLegacyKeeperArmed = false;
+    bool bHasPendingLegacyLoadout = false;
+    TArray<FLegacySavedWeapon> SavedLegacyLoadout;
 };

@@ -2,6 +2,7 @@
 #include "Hama.h"
 #include "HamaComponent.h"
 #include "HamaPlayerController.h"
+#include "HamaPlayerState.h"
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "GameFramework/GameStateBase.h"
@@ -53,6 +54,7 @@ void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, SavedReviveProgress, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, ReviveStateChangeTime, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, ActiveReviveRate, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UHealthComponent, BleedoutMultiplier, SharedParams);
 
     FDoRepLifetimeParams OwnerParams;
     OwnerParams.bIsPushBased = true;
@@ -77,15 +79,27 @@ float UHealthComponent::GetServerTime() const
 
 float UHealthComponent::GetBleedOutPercent() const
 {
-    if (!bIsDowned || DeathTime <= 0.0f) return 0.0f;
+    const float EffectiveDeathTime = GetEffectiveDeathTime();
+    if (!bIsDowned || EffectiveDeathTime <= 0.0f) return 0.0f;
 
     if (bIsBeingRevived && PausedBleedOutRemaining > 0.0f)
     {
-        return FMath::Clamp(PausedBleedOutRemaining / DeathTime, 0.0f, 1.0f);
+        return FMath::Clamp(PausedBleedOutRemaining / EffectiveDeathTime, 0.0f, 1.0f);
     }
 
     const float Remaining = FMath::Max(0.0f, BleedOutEndTime - GetServerTime());
-    return FMath::Clamp(Remaining / DeathTime, 0.0f, 1.0f);
+    return FMath::Clamp(Remaining / EffectiveDeathTime, 0.0f, 1.0f);
+}
+
+void UHealthComponent::SetBleedoutMultiplier(float NewMultiplier)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+    const float ClampedMultiplier = FMath::Max(0.1f, NewMultiplier);
+    if (FMath::IsNearlyEqual(BleedoutMultiplier, ClampedMultiplier)) return;
+
+    BleedoutMultiplier = ClampedMultiplier;
+    MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedoutMultiplier, this);
 }
 
 float UHealthComponent::GetActiveRevivePercent() const
@@ -389,12 +403,13 @@ void UHealthComponent::DownPlayer()
         }
 
         // دۆخی Multiplayer
-        BleedOutEndTime = GetServerTime() + DeathTime;
+        const float EffectiveDeathTime = GetEffectiveDeathTime();
+        BleedOutEndTime = GetServerTime() + EffectiveDeathTime;
         PausedBleedOutRemaining = 0.0f;
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, BleedOutEndTime, this);
         MARK_PROPERTY_DIRTY_FROM_NAME(UHealthComponent, PausedBleedOutRemaining, this);
 
-        TM.SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, DeathTime, false);
+        TM.SetTimer(DownTimerHandle, this, &UHealthComponent::HandlePlayerDeath, EffectiveDeathTime, false);
 
         if (ALastStandLegacyGameMode* GM = World->GetAuthGameMode<ALastStandLegacyGameMode>())
         {
@@ -473,6 +488,14 @@ void UHealthComponent::HandlePlayerDeath()
     if (OwnerComponent)
     {
         OwnerComponent->SetDowned(false);
+    }
+
+    if (AHamaPlayerState* PS = OwnerCharacter->GetPlayerState<AHamaPlayerState>())
+    {
+        if (PS->IsLegacyKeeperArmed())
+        {
+            PS->SaveLoadoutForLegacyKeeper(OwnerCharacter->GetWeaponsForLegacyKeeper());
+        }
     }
 
     OwnerCharacter->SetIsDead(true);

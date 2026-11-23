@@ -56,6 +56,10 @@ public:
 
     AHama* GetCurrentReviver() const { return CurrentReviver.Get(); }
 
+    void SetBleedoutMultiplier(float NewMultiplier);
+
+    float GetEffectiveDeathTime() const { return DeathTime * BleedoutMultiplier; }
+
     UPROPERTY(ReplicatedUsing = OnRep_CurrentHealth)
     float CurrentHealth = 100.0f;
 
@@ -124,6 +128,10 @@ private:
     FTimerHandle QuickReviveTimerHandle;
 
 protected:
+
+    UPROPERTY(Replicated, BlueprintReadOnly, Category = "Health|Downed")
+    float BleedoutMultiplier = 1.0f;
+
     UFUNCTION(BlueprintCallable)
     float GetCurrentHealth() const { return CurrentHealth; }
 

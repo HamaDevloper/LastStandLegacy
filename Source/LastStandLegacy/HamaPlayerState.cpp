@@ -123,3 +123,26 @@ void AHamaPlayerState::OnRep_Kills()
 {
     OnKillsChanged.ExecuteIfBound(Kills);
 }
+
+void AHamaPlayerState::SetLegacyKeeperArmed(bool bArmed)
+{
+    if (!HasAuthority()) return;
+    bIsLegacyKeeperArmed = bArmed;
+}
+
+void AHamaPlayerState::SaveLoadoutForLegacyKeeper(const TArray<FLegacySavedWeapon>& WeaponsToSave)
+{
+    if (!HasAuthority() || !bIsLegacyKeeperArmed || WeaponsToSave.Num() == 0) return;
+
+    SavedLegacyLoadout = WeaponsToSave;
+    bHasPendingLegacyLoadout = true;
+    bIsLegacyKeeperArmed = false;
+}
+
+TArray<FLegacySavedWeapon> AHamaPlayerState::ConsumePendingLegacyLoadout()
+{
+    TArray<FLegacySavedWeapon> Result = MoveTemp(SavedLegacyLoadout);
+    SavedLegacyLoadout.Empty();
+    bHasPendingLegacyLoadout = false;
+    return Result;
+}

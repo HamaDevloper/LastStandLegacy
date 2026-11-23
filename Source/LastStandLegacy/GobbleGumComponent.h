@@ -27,6 +27,8 @@ public:
 
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+public:
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
     void Server_OnNewRoundStarted();
     void Server_OnActionEffectEnded(UGobbleGumAction* FinishedAction);
@@ -152,6 +154,8 @@ public:
     bool TryTriggerHappyHourBonusPerk(FName PurchasedPerkID);
 
     float GetPointsMultiplier() const { return PointsMultiplier; }
+    void SetPointsMultiplier(float NewMultiplier) { PointsMultiplier = FMath::Max(0.1f, NewMultiplier); }
+
     void ModifyPointsMultiplier(float Factor);
 
     bool IsOverclockedCircuitActive() const { return bIsOverclockedCircuitActive; }

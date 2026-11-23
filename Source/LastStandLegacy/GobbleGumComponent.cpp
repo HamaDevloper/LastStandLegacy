@@ -13,8 +13,70 @@
 
 UGobbleGumComponent::UGobbleGumComponent()
 {
-    PrimaryComponentTick.bCanEverTick = false;
+#if !UE_BUILD_SHIPPING
+        PrimaryComponentTick.bCanEverTick = true;
+        PrimaryComponentTick.TickInterval = 0.1f; // هەر 0.1 چرکە جارێک نوێ ببێتەوە (پێویست ناکات هەموو فرەیمێک بێت)
+#else
+        PrimaryComponentTick.bCanEverTick = false;
+#endif
     SetIsReplicatedByDefault(true);
+}
+
+
+void UGobbleGumComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+#if !UE_BUILD_SHIPPING
+    if (!GEngine || !GetOwner()) return;
+
+    TStringBuilder<256> DebugText;
+    const bool bIsServer = GetOwner()->HasAuthority();
+    DebugText.Appendf(TEXT("[%s | %s] "),
+        bIsServer ? TEXT("SERVER") : TEXT("CLIENT"),
+        *GetOwner()->GetName());
+
+    int32 ActiveCount = 0;
+
+    // لێرەدا بە پێی ناوی گۆڕاوەکانی ناو GobbleGumComponent.hـی خۆت ئەڵقەکە دابنێ:
+    // نموونە ئەگەر لیستێکت هەیە لە ActiveActions یان ActiveGums:
+    for (const UGobbleGumAction* Action : ActiveActions)
+    {
+        if (IsValid(Action) && Action->IsActive()) // یان Action->bIsActive
+        {
+            if (ActiveCount > 0)
+            {
+                DebugText.Append(TEXT(", "));
+            }
+            DebugText.Append(Action->GetName());
+            ActiveCount++;
+        }
+    }
+
+    if (ActiveCount == 0)
+    {
+        DebugText.Append(TEXT("Active Gums: 0 (None)"));
+    }
+    else
+    {
+        // پیشاندانی کۆی ژمارە لە پێش ناوەکان
+        FString FinalMsg = FString::Printf(TEXT("Active Gums (%d): %s"), ActiveCount, DebugText.ToString());
+        GEngine->AddOnScreenDebugMessage(
+            static_cast<uint64>(GetUniqueID()), // کلیلێکی جیاواز بۆ هەر یاریزانێک تا نووسینەکان تێکەڵ نەبن
+            0.15f,
+            bIsServer ? FColor::Green : FColor::Cyan,
+            FinalMsg
+        );
+        return;
+    }
+
+    GEngine->AddOnScreenDebugMessage(
+        static_cast<uint64>(GetUniqueID()),
+        0.15f,
+        FColor::Silver,
+        DebugText.ToString()
+    );
+#endif
 }
 
 void UGobbleGumComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

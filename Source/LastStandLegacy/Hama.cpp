@@ -514,8 +514,85 @@ void AHama::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* Old
     }
 }
 
+TArray<FLegacySavedWeapon> AHama::GetWeaponsForLegacyKeeper() const
+{
+    TArray<FLegacySavedWeapon> Snapshot;
+    Snapshot.Reserve(2);
+
+    // بە پێی ڕیزبەندی چەکەکان دەپشکنین و ڕێک لە ٢ چەکدا دەوەستین تا چەکی سێیەم (Mule Kick) نەگەڕێتەوە
+    const TArray<ABaseWeapon*, TInlineAllocator<3>> Slots = { PrimaryWeapon, SecondaryWeapon, ThirdWeapon };
+
+    for (ABaseWeapon* Wep : Slots)
+    {
+        if (IsValid(Wep))
+        {
+            FLegacySavedWeapon SavedEntry;
+            SavedEntry.WeaponClass = Wep->GetClass();
+            Snapshot.Add(SavedEntry);
+
+            if (Snapshot.Num() >= 2)
+            {
+                break;
+            }
+        }
+    }
+
+    return Snapshot;
+}
+
+bool AHama::TryRestoreLegacyKeeperWeapons()
+{
+    if (!HasAuthority()) return false;
+
+    AHamaPlayerState* PS = GetPlayerState<AHamaPlayerState>();
+    if (!PS || !PS->HasPendingLegacyLoadout())
+    {
+        return false;
+    }
+
+    TArray<FLegacySavedWeapon> RestoredWeapons = PS->ConsumePendingLegacyLoadout();
+    if (RestoredWeapons.Num() == 0)
+    {
+        return false;
+    }
+
+    // ئەگەر CreateDefaultWeapon لە BeginPlay پێش PossessedBy چەکی سەرەتایی دروست کردبێت، پاقژی دەکەینەوە
+    if (IsValid(PrimaryWeapon))
+    {
+        if (CurrentWeapon == PrimaryWeapon)
+        {
+            CurrentWeapon = nullptr;
+        }
+        PrimaryWeapon->Destroy();
+        PrimaryWeapon = nullptr;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
+    }
+
+    const int32 MaxRestoreCount = FMath::Min(RestoredWeapons.Num(), 2);
+    for (int32 i = 0; i < MaxRestoreCount; ++i)
+    {
+        if (RestoredWeapons[i].WeaponClass)
+        {
+            GiveWeapon(RestoredWeapons[i].WeaponClass);
+            if (IsValid(CurrentWeapon))
+            {
+                CurrentWeapon->RefillAmmo();
+            }
+        }
+    }
+
+    return true;
+}
+
 void AHama::CreateDefaultWeapon()
 {
+    if (!HasAuthority()) return;
+
+    if (TryRestoreLegacyKeeperWeapons())
+    {
+        return;
+    }
+
     if (!DefaultWeapon) return;
 
     FActorSpawnParameters SpawnParams;

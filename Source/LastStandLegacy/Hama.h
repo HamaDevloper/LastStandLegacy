@@ -38,6 +38,7 @@ class UGobbleGumComponent;
 
 struct FInputActionValue;
 struct FInputActionInstance;
+struct FLegacySavedWeapon;
 
 //DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponChanged, ABaseWeapon*);
 DECLARE_DELEGATE_TwoParams(FOnAmmoUpdateDelegate, int32, int32);
@@ -745,4 +746,11 @@ protected:
 
     UFUNCTION()
     void OnRep_ShoppingFree();
+
+public:
+    // پاشەکەوتکردنی زۆرترین ٢ چەک (بێ چەکی سێیەمی Mule Kick) بۆ Legacy Keeper
+    TArray<FLegacySavedWeapon> GetWeaponsForLegacyKeeper() const;
+
+    // گەڕاندنەوەی چەکەکان لە کاتی Respawn ئەگەر Legacy Keeper چالاک بووبێت
+    bool TryRestoreLegacyKeeperWeapons();
 };
