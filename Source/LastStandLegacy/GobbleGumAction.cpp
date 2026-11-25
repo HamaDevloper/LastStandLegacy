@@ -19,6 +19,8 @@ void UGobbleGumAction::DeactivateAction_Implementation(ACharacter* CharacterOwne
 
 void UGobbleGumAction::NotifyActionFinished(ACharacter* CharacterOwner)
 {
+    if (!bIsActive) return;
+
     DeactivateAction(CharacterOwner);
 
     if (CharacterOwner)

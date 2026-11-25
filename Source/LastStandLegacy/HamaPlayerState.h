@@ -10,18 +10,6 @@ DECLARE_DELEGATE_OneParam(FOnKillsChangedSignature, int32);
 
 class ABaseWeapon;
 
-USTRUCT(BlueprintType)
-struct FLegacySavedWeapon
-{
-    GENERATED_BODY()
-
-    UPROPERTY()
-    TSubclassOf<ABaseWeapon> WeaponClass = nullptr;
-
-    UPROPERTY()
-    int32 PackAPunchTier = 0;
-};
-
 UCLASS()
 class LASTSTANDLEGACY_API AHamaPlayerState : public APlayerState
 {
@@ -89,12 +77,12 @@ public:
     void SetLegacyKeeperArmed(bool bArmed);
     bool IsLegacyKeeperArmed() const { return bIsLegacyKeeperArmed; }
 
-    void SaveLoadoutForLegacyKeeper(const TArray<FLegacySavedWeapon>& WeaponsToSave);
+    void SaveLoadoutForLegacyKeeper(const TArray<TSubclassOf<ABaseWeapon>>& WeaponsToSave);
     bool HasPendingLegacyLoadout() const { return bHasPendingLegacyLoadout && SavedLegacyLoadout.Num() > 0; }
-    TArray<FLegacySavedWeapon> ConsumePendingLegacyLoadout();
+    TArray<TSubclassOf<ABaseWeapon>> ConsumePendingLegacyLoadout();
 
 private:
     bool bIsLegacyKeeperArmed = false;
     bool bHasPendingLegacyLoadout = false;
-    TArray<FLegacySavedWeapon> SavedLegacyLoadout;
+    TArray<TSubclassOf<ABaseWeapon>> SavedLegacyLoadout;
 };

@@ -30,51 +30,45 @@ void UGobbleGumComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 #if !UE_BUILD_SHIPPING
     if (!GEngine || !GetOwner()) return;
 
-    TStringBuilder<256> DebugText;
     const bool bIsServer = GetOwner()->HasAuthority();
-    DebugText.Appendf(TEXT("[%s | %s] "),
+    TStringBuilder<256> DebugMsg;
+
+    DebugMsg.Appendf(TEXT("[%s | %s] "),
         bIsServer ? TEXT("SERVER") : TEXT("CLIENT"),
         *GetOwner()->GetName());
 
-    int32 ActiveCount = 0;
-
-    // لێرەدا بە پێی ناوی گۆڕاوەکانی ناو GobbleGumComponent.hـی خۆت ئەڵقەکە دابنێ:
-    // نموونە ئەگەر لیستێکت هەیە لە ActiveActions یان ActiveGums:
-    for (const UGobbleGumAction* Action : ActiveActions)
+    if (IsValid(CurrentActiveGum))
     {
-        if (IsValid(Action) && Action->IsActive()) // یان Action->bIsActive
+        const bool bActionRunning = IsValid(ActiveActionInstance) && ActiveActionInstance->IsActionActive();
+
+        if (bIsServer)
         {
-            if (ActiveCount > 0)
-            {
-                DebugText.Append(TEXT(", "));
-            }
-            DebugText.Append(Action->GetName());
-            ActiveCount++;
+            DebugMsg.Appendf(TEXT("Active Gum: 1 (%s) | Uses: %d | Running: %s"),
+                *CurrentActiveGum->GetName(),
+                RemainingUses,
+                bActionRunning ? TEXT("YES") : TEXT("NO"));
         }
-    }
-
-    if (ActiveCount == 0)
-    {
-        DebugText.Append(TEXT("Active Gums: 0 (None)"));
+        else
+        {
+            DebugMsg.Appendf(TEXT("Active Gum: 1 (%s) | Uses: %d"),
+                *CurrentActiveGum->GetName(),
+                RemainingUses);
+        }
     }
     else
     {
-        // پیشاندانی کۆی ژمارە لە پێش ناوەکان
-        FString FinalMsg = FString::Printf(TEXT("Active Gums (%d): %s"), ActiveCount, DebugText.ToString());
-        GEngine->AddOnScreenDebugMessage(
-            static_cast<uint64>(GetUniqueID()), // کلیلێکی جیاواز بۆ هەر یاریزانێک تا نووسینەکان تێکەڵ نەبن
-            0.15f,
-            bIsServer ? FColor::Green : FColor::Cyan,
-            FinalMsg
-        );
-        return;
+        DebugMsg.Append(TEXT("Active Gum: 0 (None)"));
     }
+
+    const FColor TextColor = IsValid(CurrentActiveGum)
+        ? (bIsServer ? FColor::Green : FColor::Cyan)
+        : FColor::Silver;
 
     GEngine->AddOnScreenDebugMessage(
         static_cast<uint64>(GetUniqueID()),
         0.15f,
-        FColor::Silver,
-        DebugText.ToString()
+        TextColor,
+        DebugMsg.ToString()
     );
 #endif
 }
@@ -93,6 +87,7 @@ void UGobbleGumComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
     PushParams.Condition = COND_OwnerOnly;
     DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, bIsOverclockedCircuitActive, PushParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(UGobbleGumComponent, DeadEyeCount, PushParams);
 }
 
 void UGobbleGumComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -323,14 +318,15 @@ void UGobbleGumComponent::Server_ClearCurrentGum()
 
     ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
 
-    if (ActiveActionInstance)
-    {
-        ActiveActionInstance->DeactivateAction(OwnerChar);
-    }
-
+    UGobbleGumAction* ActionToStop = ActiveActionInstance;
     ActiveActionInstance = nullptr;
     CurrentActiveGum = nullptr;
     RemainingUses = 0;
+
+    if (IsValid(ActionToStop) && ActionToStop->IsActionActive())
+    {
+        ActionToStop->DeactivateAction(OwnerChar);
+    }
 
     MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, CurrentActiveGum, this);
     MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, RemainingUses, this);
@@ -571,6 +567,12 @@ void UGobbleGumComponent::SetOverclockedCircuit(bool IsActive)
 
     bIsOverclockedCircuitActive = IsActive;
     MARK_PROPERTY_DIRTY_FROM_NAME(UGobbleGumComponent, bIsOverclockedCircuitActive, this);
+}
+
+void UGobbleGumComponent::ModifyDeadEyeCount(int32 Delta)
+{
+    const int32 NewValue = FMath::Max(0, static_cast<int32>(DeadEyeCount) + Delta);
+    DeadEyeCount = static_cast<uint8>(NewValue);
 }
 
 void UGobbleGumComponent::OnRep_CurrentActiveGum()

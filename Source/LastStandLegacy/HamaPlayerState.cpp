@@ -130,18 +130,22 @@ void AHamaPlayerState::SetLegacyKeeperArmed(bool bArmed)
     bIsLegacyKeeperArmed = bArmed;
 }
 
-void AHamaPlayerState::SaveLoadoutForLegacyKeeper(const TArray<FLegacySavedWeapon>& WeaponsToSave)
+void AHamaPlayerState::SaveLoadoutForLegacyKeeper(const TArray<TSubclassOf<ABaseWeapon>>& WeaponsToSave)
 {
     if (!HasAuthority() || !bIsLegacyKeeperArmed || WeaponsToSave.Num() == 0) return;
 
     SavedLegacyLoadout = WeaponsToSave;
     bHasPendingLegacyLoadout = true;
     bIsLegacyKeeperArmed = false;
+
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogTemp, Warning, TEXT("[LegacyKeeper] Saved %d weapons for %s"), SavedLegacyLoadout.Num(), *GetPlayerName());
+#endif
 }
 
-TArray<FLegacySavedWeapon> AHamaPlayerState::ConsumePendingLegacyLoadout()
+TArray<TSubclassOf<ABaseWeapon>> AHamaPlayerState::ConsumePendingLegacyLoadout()
 {
-    TArray<FLegacySavedWeapon> Result = MoveTemp(SavedLegacyLoadout);
+    TArray<TSubclassOf<ABaseWeapon>> Result = MoveTemp(SavedLegacyLoadout);
     SavedLegacyLoadout.Empty();
     bHasPendingLegacyLoadout = false;
     return Result;

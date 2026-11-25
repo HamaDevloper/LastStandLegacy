@@ -18,6 +18,7 @@
 #include "RecoilComponent.h"
 #include "DamageableInterface.h"
 #include "Animation/AimOffsetBlendSpace1D.h"
+#include "GobbleGumComponent.h"
 #include "DrawDebugHelpers.h"
 
 ABaseWeapon::ABaseWeapon()
@@ -212,6 +213,14 @@ float ABaseWeapon::CalculateBulletSpread()
 {
     if (HamaComponent && HamaComponent->IsAiming()) return 0.f;
 
+    if (UGobbleGumComponent* GumComp = GetCachedGobbleComponents())
+    {
+        if (GumComp->HasDeadEye())
+        {
+            return 0.f;
+        }
+    }
+
     float CurrentSpread = CurrentWeaponData.BulletSpread;
 
     if (OwnerCharacter && OwnerCharacter->GetCharacterMovement())
@@ -358,6 +367,14 @@ void ABaseWeapon::HandleFireLocal()
         }
 
         ShotDirections.Add(ShootDir);
+
+        // ==========================================
+        // دیبەگی کلایتنت بە ڕەنگی سەوز
+        // ==========================================
+#if !UE_BUILD_SHIPPING
+        FVector TraceEnd = CameraLoc + (ShootDir * CurrentWeaponData.MaxRange);
+        DrawDebugLine(GetWorld(), CameraLoc, TraceEnd, FColor::Green, false, 1.5f, 0, 1.0f);
+#endif
     }
 
     Server_ProcessShot(CameraLoc, ShotDirections);
@@ -368,7 +385,6 @@ void ABaseWeapon::HandleFireLocal()
         if (CurrentAmmo <= 0 && !IsInfiniteAmmoActive()) Reload();
     }
 }
-
 
 void ABaseWeapon::Server_ProcessShot_Implementation(FVector_NetQuantize CameraLocation, const TArray<FVector_NetQuantizeNormal>& ShotDirections)
 {
@@ -493,6 +509,14 @@ void ABaseWeapon::ApplyRecoilAndCameraShake()
 {
     if (!OwnerController || !OwnerCharacter || !OwnerCharacter->IsLocallyControlled()) return;
 
+    if (UGobbleGumComponent* GumComp = GetCachedGobbleComponents())
+    {
+        if (GumComp->HasDeadEye())
+        {
+            return;
+        }
+    }
+
     if (CurrentWeaponData.FireCameraShake)
     {
         OwnerController->ClientStartCameraShake(CurrentWeaponData.FireCameraShake);
@@ -543,6 +567,20 @@ ALastStandLegacyGameState* ABaseWeapon::GetGameStateCache() const
     return GSCache;
 }
 
+UGobbleGumComponent* ABaseWeapon::GetCachedGobbleComponents() const
+{
+    if (!CachedGobbleGumComp)
+    {
+        UWorld* World = GetWorld();
+        if (World && OwnerCharacter)
+        {
+            CachedGobbleGumComp = OwnerCharacter->FindComponentByClass<UGobbleGumComponent>();
+        }
+    }
+
+    return CachedGobbleGumComp;
+}
+
 bool ABaseWeapon::HasAmmo() const
 {
     return  CurrentAmmo > 0 || ReserveAmmo > 0;
@@ -551,6 +589,44 @@ bool ABaseWeapon::HasAmmo() const
 bool ABaseWeapon::NeedsAmmo() const
 {
     return  (ReserveAmmo < CurrentWeaponData.MaxReserveAmmo);
+}
+
+void ABaseWeapon::AddReserveAmmo(int32 MaxClipAmmo)
+{
+    if (!HasAuthority() || MaxClipAmmo <= 0 || ReserveAmmo >= CurrentWeaponData.MaxReserveAmmo) return;
+
+    ReserveAmmo = FMath::Clamp(ReserveAmmo + MaxClipAmmo, 0, CurrentWeaponData.MaxReserveAmmo);
+    MARK_PROPERTY_DIRTY_FROM_NAME(ABaseWeapon, ReserveAmmo, this);
+
+    const bool bEquipped = IsEquipped();
+
+    if (bEquipped && OwnerCharacter->IsLocallyControlled())
+    {
+        OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+
+        if (CurrentAmmo <= 0)
+        {
+            if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+            Reload();
+        }
+    }
+
+    if (bEquipped && OwnerCharacter && !OwnerCharacter->IsLocallyControlled())
+    {
+        Client_SyncReserveAmmo(ReserveAmmo);
+    }
+}
+
+void ABaseWeapon::Client_SyncReserveAmmo_Implementation(int32 AmmoToReserve)
+{
+    ReserveAmmo = AmmoToReserve;
+    OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
+
+    if (CurrentAmmo <= 0)
+    {
+        if (OwnerCharacter->IsSprinting()) OwnerCharacter->StopSprint();
+        Reload();
+    }
 }
 
 void ABaseWeapon::ResetDownedAmmo(bool bIsFallbackWeapon)
@@ -746,7 +822,6 @@ void ABaseWeapon::Client_OnAmmoRefilled_Implementation(bool bWasEmpty, bool bIsC
     if (!bIsCurrentWeapon || !IsEquipped()) return;
 
     ReserveAmmo = NewReserveAmmo;
-
     OnAmmoChanged.ExecuteIfBound(CurrentAmmo, ReserveAmmo);
 
     if (bWasEmpty || CurrentAmmo <= 0)

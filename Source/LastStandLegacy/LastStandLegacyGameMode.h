@@ -40,6 +40,9 @@ protected:
 
 public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
+    bool ShouldZombieSpawn = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")
     TSubclassOf<AZombie> ZombieClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LastStandLegacyGameMode|Zombie Settings")

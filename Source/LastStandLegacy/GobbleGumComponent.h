@@ -144,6 +144,7 @@ public:
     void ModifyAutoUpgradeWallBuyCount(int32 Delta);
     bool ShouldAutoUpgradeBoxWeapon() const { return AutoUpgradeBoxWeaponCount > 0; }
     void ModifyAutoUpgradeBoxWeaponCount(int32 Delta);
+   
     void ConsumeEventTriggeredGum();
 
     bool IsMeleeInstaKillActive() const { return MeleeInstaKillCount > 0; }
@@ -161,6 +162,9 @@ public:
     bool IsOverclockedCircuitActive() const { return bIsOverclockedCircuitActive; }
     void SetOverclockedCircuit(bool IsActive);
 
+    void ModifyDeadEyeCount(int32 Delta);
+    bool ShouldActiveDeadEye() const { return DeadEyeCount > 0; }
+
 private:
     TWeakObjectPtr<UGobbleGumAction_HappyHour> ActiveHappyHourAction;
     TWeakObjectPtr<UGobbleGumAction_BloodTax> ActiveBloodTaxAction;
@@ -169,4 +173,11 @@ private:
     uint8 AutoUpgradeBoxWeaponCount = 0;
     uint8 MeleeInstaKillCount = 0;
     float PointsMultiplier = 1.0f;
+    
+public:
+    UPROPERTY(Replicated)
+    uint8 DeadEyeCount = 0;
+
+    bool HasDeadEye() const { return DeadEyeCount > 0; }
+   
 };

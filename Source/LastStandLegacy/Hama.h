@@ -549,7 +549,6 @@ public:
         bool HasQuickRevive() const { return OwnedPerks.Contains(FName("QuickRevive")); }
         FORCEINLINE bool HasElectricCherry() const { return OwnedPerks.Contains(FName(TEXT("ElectricCherry"))); }
 
-
 protected:
         FTimerHandle PerkDrinkTimerHandle;
         void GivePendingPerk();
@@ -748,9 +747,6 @@ protected:
     void OnRep_ShoppingFree();
 
 public:
-    // پاشەکەوتکردنی زۆرترین ٢ چەک (بێ چەکی سێیەمی Mule Kick) بۆ Legacy Keeper
-    TArray<FLegacySavedWeapon> GetWeaponsForLegacyKeeper() const;
-
-    // گەڕاندنەوەی چەکەکان لە کاتی Respawn ئەگەر Legacy Keeper چالاک بووبێت
+    TArray<TSubclassOf<ABaseWeapon>> GetWeaponsForLegacyKeeper() const;
     bool TryRestoreLegacyKeeperWeapons();
 };

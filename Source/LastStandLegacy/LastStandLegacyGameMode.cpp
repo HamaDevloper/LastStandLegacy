@@ -118,8 +118,10 @@ void ALastStandLegacyGameMode::BeginPlay()
     }
 
     SpawnRandomPerks();
-    StartFirstRound();
-    
+    if (ShouldZombieSpawn)
+    {
+        StartFirstRound();
+    }
 }
 
 void ALastStandLegacyGameMode::StartFirstRound()

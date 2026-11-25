@@ -190,6 +190,11 @@ void AHama::PossessedBy(AController* NewController)
     OwnerController = Cast<AHamaPlayerController>(NewController);
 
     StartCrossHairTimer();
+
+    if (HasAuthority())
+    {
+        TryRestoreLegacyKeeperWeapons();
+    }
 }
 
 void AHama::UnPossessed()
@@ -514,22 +519,19 @@ void AHama::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* Old
     }
 }
 
-TArray<FLegacySavedWeapon> AHama::GetWeaponsForLegacyKeeper() const
+TArray<TSubclassOf<ABaseWeapon>> AHama::GetWeaponsForLegacyKeeper() const
 {
-    TArray<FLegacySavedWeapon> Snapshot;
+    TArray<TSubclassOf<ABaseWeapon>> Snapshot;
     Snapshot.Reserve(2);
 
-    // بە پێی ڕیزبەندی چەکەکان دەپشکنین و ڕێک لە ٢ چەکدا دەوەستین تا چەکی سێیەم (Mule Kick) نەگەڕێتەوە
+    // تەنها زۆرترین ٢ چەک دەگرین تا چەکی سێیەمی Mule Kick نەگەڕێتەوە
     const TArray<ABaseWeapon*, TInlineAllocator<3>> Slots = { PrimaryWeapon, SecondaryWeapon, ThirdWeapon };
 
     for (ABaseWeapon* Wep : Slots)
     {
         if (IsValid(Wep))
         {
-            FLegacySavedWeapon SavedEntry;
-            SavedEntry.WeaponClass = Wep->GetClass();
-            Snapshot.Add(SavedEntry);
-
+            Snapshot.Add(Wep->GetClass());
             if (Snapshot.Num() >= 2)
             {
                 break;
@@ -550,13 +552,13 @@ bool AHama::TryRestoreLegacyKeeperWeapons()
         return false;
     }
 
-    TArray<FLegacySavedWeapon> RestoredWeapons = PS->ConsumePendingLegacyLoadout();
-    if (RestoredWeapons.Num() == 0)
+    TArray<TSubclassOf<ABaseWeapon>> RestoredClasses = PS->ConsumePendingLegacyLoadout();
+    if (RestoredClasses.Num() == 0)
     {
         return false;
     }
 
-    // ئەگەر CreateDefaultWeapon لە BeginPlay پێش PossessedBy چەکی سەرەتایی دروست کردبێت، پاقژی دەکەینەوە
+    // ئەگەر CreateDefaultWeapon لە BeginPlay دەمانچەی سەرەتایی دروست کردبێت، پاقژی دەکەینەوە
     if (IsValid(PrimaryWeapon))
     {
         if (CurrentWeapon == PrimaryWeapon)
@@ -568,18 +570,22 @@ bool AHama::TryRestoreLegacyKeeperWeapons()
         MARK_PROPERTY_DIRTY_FROM_NAME(AHama, PrimaryWeapon, this);
     }
 
-    const int32 MaxRestoreCount = FMath::Min(RestoredWeapons.Num(), 2);
+    const int32 MaxRestoreCount = FMath::Min(RestoredClasses.Num(), 2);
     for (int32 i = 0; i < MaxRestoreCount; ++i)
     {
-        if (RestoredWeapons[i].WeaponClass)
+        if (RestoredClasses[i])
         {
-            GiveWeapon(RestoredWeapons[i].WeaponClass);
+            GiveWeapon(RestoredClasses[i]);
             if (IsValid(CurrentWeapon))
             {
                 CurrentWeapon->RefillAmmo();
             }
         }
     }
+
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogTemp, Warning, TEXT("[LegacyKeeper] Restored %d weapons for %s"), MaxRestoreCount, *GetName());
+#endif
 
     return true;
 }

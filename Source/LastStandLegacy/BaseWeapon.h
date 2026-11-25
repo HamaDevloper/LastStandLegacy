@@ -19,6 +19,7 @@ class UCurveFloat;
 class ALastStandLegacyGameState;
 class URecoilComponent;
 class UAimOffsetBlendSpace1D;
+class UGobbleGumComponent;
 
 DECLARE_DELEGATE_TwoParams(FOnAmmoChangedSignature, int32, int32);
 DECLARE_MULTICAST_DELEGATE(FOnWeaponDataInitializedSignature);
@@ -268,6 +269,9 @@ protected:
     UPROPERTY()
     mutable TObjectPtr<ALastStandLegacyGameState> GSCache;
 
+    UPROPERTY(Transient)
+    mutable TObjectPtr<UGobbleGumComponent> CachedGobbleGumComp = nullptr;
+
     ALastStandLegacyGameState* GetGameStateCache() const;
 
 public:
@@ -292,6 +296,11 @@ public:
     bool IsEquipped() const;
     bool NeedsAmmo() const;
 
+    void AddReserveAmmo(int32 MaxClipAmmo);
+
+    UFUNCTION(Client, Reliable)
+    void Client_SyncReserveAmmo(int32 AmmoToReserve);
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
     TSubclassOf<ABaseWeapon> CachedUpgradedClass;
 
@@ -308,5 +317,7 @@ public:
 protected:
     UFUNCTION(Client, Reliable)
     void Client_SyncDownedAmmo(int32 NewCurrentAmmo, int32 NewReserveAmmo);
+
+    UGobbleGumComponent* GetCachedGobbleComponents() const ;
 
 };
