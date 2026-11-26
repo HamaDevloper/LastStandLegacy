@@ -862,11 +862,31 @@ float AZombie::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 
     if (Health <= 0.f)
     {
+        AHama* Attacker = Cast<AHama>(DamageCauser);
+        if (!Attacker && EventInstigator)
+        {
+            Attacker = Cast<AHama>(EventInstigator->GetPawn());
+        }
+
+        const bool bHasVampirePerk = (Attacker && Attacker->HasVampireMeleePerk()); // فەنکشنی پشکنینی پەرکەکەت
+
         if (TargetPlayerState)
         {
-            const int32 Points = bIsMelee ? 130 : 100;
+            int32 Points = bIsMelee ? 130 : 100;
+            if (bIsMelee && bHasVampirePerk)
+            {
+                Points *= 2;
+            }
+
             TargetPlayerState->AddPoints(bDoublePoints ? Points * 2 : Points);
             TargetPlayerState->AddKills(1);
+        }
+
+        if (bIsMelee && bHasVampirePerk)
+        {
+            // ئەگەر Brawler Mode چالاک بوو 8% خوێن، ئەگەر Melee ئاسایی بوو 15% خوێن
+            const float HealPercent = Attacker->IsBrawlerModeActive() ? 0.08f : 0.15f;
+            //Attacker->HealPlayerByPercent(HealPercent);
         }
 
         Die(EventInstigator);

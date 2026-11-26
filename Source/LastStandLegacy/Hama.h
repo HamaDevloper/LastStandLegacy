@@ -547,6 +547,7 @@ public:
         bool HasDeadshot() const { return OwnedPerks.Contains(FName("Deadshot")); }
         bool HasMuleKick() const { return OwnedPerks.Contains(FName("MuleKick")); }
         bool HasQuickRevive() const { return OwnedPerks.Contains(FName("QuickRevive")); }
+        bool HasVampireMeleePerk() const { return OwnedPerks.Contains(FName("VampireMeleePerk")); }
         FORCEINLINE bool HasElectricCherry() const { return OwnedPerks.Contains(FName(TEXT("ElectricCherry"))); }
 
 protected:

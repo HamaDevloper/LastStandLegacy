@@ -295,13 +295,6 @@ void AMonkeyBomb::OnRep_AttractionActivated()
     }
 }
 
-float AMonkeyBomb::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
-{
-    if (!HasAuthority() || bHasExploded || DamageAmount <= 0.0f) return 0.0f;
-    Explode();
-    return DamageAmount;
-}
-
 void AMonkeyBomb::Explode()
 {
     if (!HasAuthority() || bHasExploded) return;

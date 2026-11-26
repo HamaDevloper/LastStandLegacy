@@ -156,7 +156,6 @@ void ABasePerk::Interact(AHama* InteractingPlayer)
 
 void ABasePerk::OnRep_IsDepleted()
 {
-    // ١. ناچالاککردنی کارلێککردن
     if (TriggerBox)
     {
         TriggerBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
