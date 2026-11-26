@@ -750,4 +750,5 @@ protected:
 public:
     TArray<TSubclassOf<ABaseWeapon>> GetWeaponsForLegacyKeeper() const;
     bool TryRestoreLegacyKeeperWeapons();
+    
 };

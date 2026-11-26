@@ -54,6 +54,12 @@ protected:
     UPROPERTY(meta = (BindWidget))
     TObjectPtr<UCommonTextBlock> ReviveText;
 
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UCommonTextBlock> DownText;
+
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr<UCommonTextBlock> RevivesText;
+
     UPROPERTY(meta = (BindWidgetOptional))
     TObjectPtr<UCommonActionWidget> InteractActionWidget;
 
@@ -125,6 +131,12 @@ public:
 
     UFUNCTION()
     void HandleKillsUpdate(int32 NewKills);
+
+    UFUNCTION()
+    void HandleDownsUpdate(int32 NewPoints);
+
+    UFUNCTION()
+    void HandleRevivedUpdate(int32 NewRevived);
 
     UFUNCTION()
     void HandleRoundUpdate(int32 NewRound);

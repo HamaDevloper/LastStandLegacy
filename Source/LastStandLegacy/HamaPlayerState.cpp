@@ -24,6 +24,8 @@ void AHamaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Points, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Kills, SharedParams);
     DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, AssignedRole, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Downes, SharedParams);
+    DOREPLIFETIME_WITH_PARAMS_FAST(AHamaPlayerState, Revives, SharedParams);
 }
 
 void AHamaPlayerState::SetAssignedRole(EHamaAbilityType NewRole)
@@ -114,6 +116,28 @@ void AHamaPlayerState::AddKills(int32 Amount)
     }
 }
 
+void AHamaPlayerState::AddDowns(int32 Amount)
+{
+    if (HasAuthority() || Amount > 0)
+    {
+        Downes += Amount;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Downes, this);
+
+        OnRep_Downed();
+    }
+}
+
+void AHamaPlayerState::AddRevives(int32 Amount)
+{
+    if (HasAuthority() || Amount > 0)
+    {
+        Revives += Amount;
+        MARK_PROPERTY_DIRTY_FROM_NAME(AHamaPlayerState, Revives, this);
+
+        OnRep_Revived();
+    }
+}
+
 void AHamaPlayerState::OnRep_Points()
 {
     OnPointsChanged.ExecuteIfBound(Points);
@@ -122,6 +146,16 @@ void AHamaPlayerState::OnRep_Points()
 void AHamaPlayerState::OnRep_Kills()
 {
     OnKillsChanged.ExecuteIfBound(Kills);
+}
+
+void AHamaPlayerState::OnRep_Downed()
+{
+    OnDownsChanged.ExecuteIfBound(Downes);
+}
+
+void AHamaPlayerState::OnRep_Revived()
+{
+    OnRevivesChanged.ExecuteIfBound(Revives);
 }
 
 void AHamaPlayerState::SetLegacyKeeperArmed(bool bArmed)

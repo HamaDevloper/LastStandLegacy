@@ -7,6 +7,8 @@
 
 DECLARE_DELEGATE_OneParam(FOnPointsChangedSignature, int32);
 DECLARE_DELEGATE_OneParam(FOnKillsChangedSignature, int32);
+DECLARE_DELEGATE_OneParam(FOnDownsChangedSignature, int32);
+DECLARE_DELEGATE_OneParam(FOnRevievsChangedSignature, int32);
 
 class ABaseWeapon;
 
@@ -20,6 +22,8 @@ public:
 
     FOnPointsChangedSignature OnPointsChanged;
     FOnKillsChangedSignature OnKillsChanged;
+    FOnDownsChangedSignature OnDownsChanged;
+    FOnRevievsChangedSignature OnRevivesChanged;
 
 protected:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -29,6 +33,12 @@ protected:
 
     UPROPERTY(ReplicatedUsing = OnRep_Kills, BlueprintReadOnly, Category = "Player State")
     int32 Kills;
+
+    UPROPERTY(ReplicatedUsing = OnRep_Downed, BlueprintReadOnly, Category = "Player State")
+    int32 Downes;
+
+    UPROPERTY(ReplicatedUsing = OnRep_Revived, BlueprintReadOnly, Category = "Player State")
+    int32 Revives;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player State")
     int32 MaxPointToEarn = 1000000;
@@ -45,29 +55,35 @@ protected:
     UFUNCTION()
     void OnRep_AssignedRole();
 
-public:
-    UFUNCTION(BlueprintCallable, Category = "Economy")
-    void SetPoints(int32 NewPoints);
+    UFUNCTION()
+    void OnRep_Downed();
 
-    UFUNCTION(BlueprintCallable, Category = "Player State")
+    UFUNCTION()
+    void OnRep_Revived();
+
+public:
+    void SetPoints(int32 Amount);
+
     void AddPoints(int32 Amount, bool bAffectedByMultiplier = true);
 
-    UFUNCTION(BlueprintCallable, Category = "Player State")
     void RemovePoints(int32 Amount);
 
-    UFUNCTION(BlueprintCallable, Category = "Player State")
-    void AddKills(int32 Amount);
-
-    UFUNCTION(BlueprintCallable, Category = "Player State")
     int32 GetPoints() const { return Points; }
 
-    UFUNCTION(BlueprintCallable, Category = "Player State")
+    void AddKills(int32 Amount);
+
     int32 GetKills() const { return Kills; }
 
-    UFUNCTION(BlueprintCallable, Category = "Player State")
+    void AddDowns(int32 Amount);
+
+    int32 GetDowns() const { return Downes; }
+
+    void AddRevives(int32 Amount);
+
+    int32 GetRevievs() const { return Revives; }
+
     void SetAssignedRole(EHamaAbilityType NewRole);
 
-    UFUNCTION(BlueprintCallable, Category = "Player State")
     EHamaAbilityType GetAssignedRole() const { return AssignedRole; }
 
     float GetExactPing() const { return GetPingInMilliseconds(); }

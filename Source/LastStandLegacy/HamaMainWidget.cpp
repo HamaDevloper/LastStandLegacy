@@ -144,6 +144,8 @@ void UHamaMainWidget::BindPlayerState(AHamaPlayerState* InPlayerState)
     {
         CachedHamaPS->OnPointsChanged.Unbind();
         CachedHamaPS->OnKillsChanged.Unbind();
+        CachedHamaPS->OnDownsChanged.Unbind();
+        CachedHamaPS->OnRevivesChanged.Unbind();
     }
 
     CachedHamaPS = InPlayerState;
@@ -152,6 +154,8 @@ void UHamaMainWidget::BindPlayerState(AHamaPlayerState* InPlayerState)
 
     CachedHamaPS->OnPointsChanged.BindUObject(this, &UHamaMainWidget::HandlePointsUpdate);
     CachedHamaPS->OnKillsChanged.BindUObject(this, &UHamaMainWidget::HandleKillsUpdate);
+    CachedHamaPS->OnDownsChanged.BindUObject(this, &UHamaMainWidget::HandleDownsUpdate);
+    CachedHamaPS->OnRevivesChanged.BindUObject(this, &UHamaMainWidget::HandleRevivedUpdate);
 
     HandlePointsUpdate(CachedHamaPS->GetPoints());
     HandleKillsUpdate(CachedHamaPS->GetKills());
@@ -204,6 +208,22 @@ void UHamaMainWidget::HandleKillsUpdate(int32 NewKills)
     if (Kills)
     {
         Kills->SetText(FText::AsNumber(NewKills, &NoGroupingOptions));
+    }
+}
+
+void UHamaMainWidget::HandleDownsUpdate(int32 NewPoints)
+{
+    if (DownText)
+    {
+        DownText->SetText(FText::AsNumber(NewPoints, &NoGroupingOptions));
+    }
+}
+
+void UHamaMainWidget::HandleRevivedUpdate(int32 NewRevived)
+{
+    if (RevivesText)
+    {
+        RevivesText->SetText(FText::AsNumber(NewRevived, &NoGroupingOptions));
     }
 }
 
@@ -647,6 +667,8 @@ void UHamaMainWidget::UnbindAllEvents()
     {
         CachedHamaPS->OnPointsChanged.Unbind();
         CachedHamaPS->OnKillsChanged.Unbind();
+        CachedHamaPS->OnDownsChanged.Unbind();
+        CachedHamaPS->OnRevivesChanged.Unbind();
     }
     CachedHamaPS.Reset();
 

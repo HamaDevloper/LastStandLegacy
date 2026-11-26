@@ -2328,6 +2328,11 @@ void AHama::OnPlayerDowned()
         }
     }
 
+    if (AHamaPlayerState* PS = GetPlayerState<AHamaPlayerState>())
+    {
+        PS->AddDowns(1);
+    }
+
     if (GobbleGumComponent)
     {
         GobbleGumComponent->Server_CancelEatingGum();
@@ -3327,9 +3332,10 @@ void AHama::Server_CompleteRevive()
     {
         Target->HealthComponent->Revive();
 
-        if (AHamaPlayerState* MyPS = GetPlayerState<AHamaPlayerState>())
+        if (AHamaPlayerState* PS = GetPlayerState<AHamaPlayerState>())
         {
-            MyPS->AddPoints(100);
+            PS->AddRevives(1);
+            PS->AddPoints(100);
         }
     }
 
